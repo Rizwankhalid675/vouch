@@ -27,6 +27,10 @@
  *  3b. Added `validate_agent_names`, also ours and also not upstream's: upstream
  *     checks a name for presence only, and a name is interpolated into text a
  *     guest reads. See the note on that function.
+ *  3c. Added `validate_declared_front_man`, ours, not upstream's. Upstream resolves
+ *     the front man positionally and never reads `metadata.front_man`, so a
+ *     network whose declared front man names no agent is valid upstream and runs
+ *     a different agent than its own metadata advertises. See the note on it.
  *  4. Dropped nothing.
  *
  * Function names are kept in upstream's snake_case deliberately; see graph.ts.
@@ -105,6 +109,32 @@ export function validate_agent_names(config: NetworkConfig): string[] {
   return errors;
 }
 
+/**
+ * OURS, not upstream's.
+ *
+ * `find_front_man` is positional and never reads `metadata.front_man`. So a
+ * publisher who renames an agent and forgets the metadata ships a network that
+ * validates, runs, and advertises an entry point that does not exist — the most
+ * ordinary failure a real publisher actually ships, and one that is silent
+ * everywhere: the manifest, the metadata and the running agent can all disagree
+ * and nothing says so.
+ *
+ * Reported as a named field with its bad value, because "invalid network" is not
+ * a structured validation error. The value is quoted so that `quotedTokensOnly`
+ * filters it: this validator runs over a peer's document too.
+ *
+ * Checked only when the field is present. It is optional, and a network that
+ * declares nothing is not making a claim that can be wrong.
+ */
+export function validate_declared_front_man(config: NetworkConfig): string[] {
+  const declared = config.metadata?.front_man;
+  if (declared === undefined || declared === null || declared === "") return [];
+  for (const agent of config.tools ?? []) {
+    if (agent.name === declared) return [];
+  }
+  return [`metadata.front_man names '${declared}', which is not an agent in this network.`];
+}
+
 /** OURS, not upstream's. §3.1 requires rejecting duplicate agent references. */
 export function validate_duplicate_names(config: NetworkConfig): string[] {
   const errors: string[] = [];
@@ -125,5 +155,6 @@ export function validate_network(config: NetworkConfig): string[] {
     ...validate_missing_nodes(config),
     ...validate_duplicate_names(config),
     ...validate_agent_names(config),
+    ...validate_declared_front_man(config),
   ];
 }

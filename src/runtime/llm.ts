@@ -106,13 +106,20 @@ export function hostOf(url: string): string {
 }
 
 /**
- * The setup error for a real router with no key. Names the host, says what to do,
- * says where the key stays — and then says the thing upstream cannot: that the
- * part of this site that decides whether food is safe does not need a model at
- * all, so it is still working.
+ * The setup error for a real router with no key — §3.4's "a missing key MUST stop
+ * the model call with a clear setup error", and the fifth of the five refusals
+ * this build has to make visible.
+ *
+ * "Clear" is doing work there. It names the host, says exactly what to do about
+ * it, and says where the key stays — upstream's `llm.js` sets that bar and this
+ * matches it. Then it says the thing upstream cannot: `check_safety` and the
+ * verdict beside each dish need no key at all, because they are deterministic
+ * and never call a model. A missing key degrades the conversation without
+ * degrading the safety, and a visitor reading a setup error is exactly who needs
+ * to be told that.
  */
 export function missingKeyMessage(baseUrl: string): SiteText {
-  return siteText`An AI provider key is required for ${hostOf(baseUrl) || "the configured provider"}. Open the model settings above, paste your key, then select Save. Your key stays in this browser and is sent only to that provider. The safety check is not affected: the verdict beside each dish is computed here, from the published ingredients, and never calls a model.`;
+  return siteText`An AI provider key is required for ${hostOf(baseUrl) || "the configured provider"}. Open the model settings above, paste your key, then select Save. Your key stays in this browser and is sent only to that provider. No model call was made. The safety check is not affected: check_safety and the verdict beside each dish are computed here, from the published ingredients, and work with no key at all.`;
 }
 
 export interface RouterOptions {

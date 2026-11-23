@@ -13,16 +13,17 @@
  *    (upstream's `schemaFor`), and each registered site action into another;
  *  - dispatches an action through the registry, which validates its arguments and
  *    obtains the guest's confirmation when the action commits something;
- *  - bounds execution: model calls, delegations, depth and a true-cycle check
- *    (§3.1; a repeated invocation of the same agent is NOT a cycle, an agent
- *    appearing in its own ancestry is);
+ *  - bounds execution: model calls, delegations, depth, a wall clock and a
+ *    true-cycle check (§3.1; a repeated invocation of the same agent is NOT a
+ *    cycle, an agent appearing in its own ancestry is);
  *  - fails closed. An unresolvable or unauthorised call is reported to the
  *    network and never represented as having succeeded.
  */
 
 import type { Finding } from "../../contracts.ts";
 import type { Refusal } from "../gate/gate.ts";
-import { RuntimeMessage, joinSiteText, joinTokens, ours, siteText, tokenOrOmitted, type SiteText } from "./errors.ts";
+import { RuntimeMessage, joinSiteText, joinTokens, ours, siteText, tokenOrOmitted } from "./errors.ts";
+import { BudgetError, DEFAULT_LIMITS, TurnClock, type Limits } from "./limits.ts";
 import type { ChatMessage, ModelReply, Router } from "./llm.ts";
 import type { Transcript } from "./transcript.ts";
 import type { NetworkConfig, Receipt, TraceEntry } from "./types.ts";
@@ -31,56 +32,19 @@ import { allowed_downstream_sly, filter_sly_data, type SlyData } from "./upstrea
 import { schemaFor, type ToolSchema } from "./upstream/tool-schema.ts";
 import type { ActionRegistry, ActionScope, ConfirmFn } from "./upstream/action-registry.ts";
 
-export interface Limits {
-  /**
-   * Model calls within ONE TURN, across every agent. Per turn, not per session:
-   * the runaway this exists to stop is a turn that will not finish, and a
-   * session-lifetime budget instead bricks the assistant after N questions with
-   * no way back, which is worse than no limit for anyone actually using the site.
-   */
-  maxModelCalls: number;
-  /** Agent-to-agent delegations within one turn. */
-  maxAgentCalls: number;
-  /** How deep delegation may nest. */
-  maxDepth: number;
-  /** Tool-call rounds within a single turn. */
-  maxRounds: number;
-  /**
-   * Model calls for the whole conversation. A backstop against a page left open
-   * all day, set far above any honest session, and recoverable: reaching it tells
-   * the guest to start a new conversation, and the panel has a control that does.
-   */
-  maxSessionModelCalls: number;
-}
+/** The bounds and the overrun error now live in `limits.ts`; re-exported from their original home. */
+export { BudgetError, DEFAULT_LIMITS, TurnClock } from "./limits.ts";
+export type { Limits } from "./limits.ts";
 
-export const DEFAULT_LIMITS: Limits = {
-  maxModelCalls: 16,
-  maxAgentCalls: 12,
-  maxDepth: 3,
-  maxRounds: 6,
-  maxSessionModelCalls: 300,
-};
-
-/** Thrown when an execution limit is reached. Carries the limit, so the UI can show it. */
-export class BudgetError extends RuntimeMessage {
-  constructor(
-    readonly budget: keyof Limits,
-    readonly limit: number,
-  ) {
-    super(
-      (siteText`Execution limit reached: ${budget} is ${limit}. Nothing further was run, and nothing was left half-done.` +
-        (budget === "maxSessionModelCalls"
-          ? " Start a new conversation to carry on; the verdict beside each dish is unaffected either way."
-          : " Ask again, more simply, and this turn starts from a fresh budget.")) as SiteText,
-    );
-    this.name = "BudgetError";
-  }
-}
-
-/** Thrown when an agent appears in its own delegation ancestry. */
+/**
+ * Thrown when an agent appears in its own DELEGATION ancestry, inside one
+ * network. The across-networks case — network A composing B composing A — is
+ * `CompositionCycleError` in `composition.ts`; they are different graphs and are
+ * reported separately on purpose.
+ */
 export class CycleError extends RuntimeMessage {
   constructor(readonly path: string[]) {
-    super(joinSiteText(ours("Composition cycle refused: "), joinTokens(path, " → "), ours(". The call was not made.")));
+    super(joinSiteText(ours("Delegation cycle refused: "), joinTokens(path, " → "), ours(". The call was not made.")));
     this.name = "CycleError";
   }
 }
@@ -125,12 +89,15 @@ export class Conversation {
   private sessionModelCalls = 0;
   /** An action whose outcome we could not confirm. Set once; never cleared by us. */
   private unresolvedWrite: Receipt | null = null;
+  /** This turn's wall clock. Restarted by `send`, like the per-turn call budgets. */
+  private readonly clock: TurnClock;
 
   constructor(private readonly deps: ConversationDeps) {
     const front = find_front_man(deps.config);
     if (!front) throw new Error("This network declares no front agent, so there is nothing to talk to.");
     this.frontMan = front;
     this.limits = { ...DEFAULT_LIMITS, ...deps.limits };
+    this.clock = new TurnClock(this.limits.maxElapsedMs, () => this.now());
   }
 
   /** The write we started and could not confirm, if there is one. Shown, never retried. */
@@ -159,15 +126,22 @@ export class Conversation {
   }
 
   private spend(budget: "maxModelCalls" | "maxAgentCalls"): void {
+    // The wall clock is checked at every step boundary, so it bounds a turn that
+    // is making progress too slowly as well as one that has stalled.
+    this.clock.check();
     if (budget === "maxModelCalls") {
       if (this.sessionModelCalls >= this.limits.maxSessionModelCalls) {
-        throw new BudgetError("maxSessionModelCalls", this.limits.maxSessionModelCalls);
+        throw new BudgetError("maxSessionModelCalls", this.limits.maxSessionModelCalls, this.sessionModelCalls);
       }
-      if (this.modelCalls >= this.limits.maxModelCalls) throw new BudgetError("maxModelCalls", this.limits.maxModelCalls);
+      if (this.modelCalls >= this.limits.maxModelCalls) {
+        throw new BudgetError("maxModelCalls", this.limits.maxModelCalls, this.modelCalls);
+      }
       this.modelCalls += 1;
       this.sessionModelCalls += 1;
     } else {
-      if (this.agentCalls >= this.limits.maxAgentCalls) throw new BudgetError("maxAgentCalls", this.limits.maxAgentCalls);
+      if (this.agentCalls >= this.limits.maxAgentCalls) {
+        throw new BudgetError("maxAgentCalls", this.limits.maxAgentCalls, this.agentCalls);
+      }
       this.agentCalls += 1;
     }
   }
@@ -214,8 +188,28 @@ export class Conversation {
     return parts.filter(Boolean).join("\n\n");
   }
 
-  /** One turn. Returns the gated text that reached the screen. */
+  /**
+   * One turn. Returns the gated text that reached the screen.
+   *
+   * The wall clock is armed here and disarmed in `finally`, so a finished turn
+   * leaves no timer behind. An abort that fired is reported as the wall-clock
+   * budget rather than as a network error: a router that accepted a POST and
+   * never answered is an overrun, and the guest should be told which limit
+   * stopped them, not handed "something went wrong".
+   */
   async send(userText: string): Promise<TurnResult> {
+    this.clock.start();
+    try {
+      return await this.runTurn(userText);
+    } catch (err) {
+      if (this.clock.overran) throw this.clock.error();
+      throw err;
+    } finally {
+      this.clock.stop();
+    }
+  }
+
+  private async runTurn(userText: string): Promise<TurnResult> {
     const invocationId = this.id();
     // A fresh budget for this turn. See `Limits.maxModelCalls`.
     this.modelCalls = 0;
@@ -228,7 +222,10 @@ export class Conversation {
 
     for (let round = 0; round < this.limits.maxRounds; round += 1) {
       this.spend("maxModelCalls");
-      const reply = await this.deps.router.chat({ messages, tools });
+      const reply = await this.deps.router.chat({ messages, tools, ...this.signal() });
+      // Checked again on the way back: a call that returned after the budget ran
+      // out does not get to put its words on the screen.
+      this.clock.check();
       if (reply.toolCalls.length === 0) {
         const result = this.deps.transcript.showModelText(reply.content, this.deps.findings(), {
           source: reply.source,
@@ -243,7 +240,13 @@ export class Conversation {
         messages.push({ role: "tool", tool_call_id: call.id, name: call.name, content: outcome });
       }
     }
-    throw new BudgetError("maxRounds", this.limits.maxRounds);
+    throw new BudgetError("maxRounds", this.limits.maxRounds, this.limits.maxRounds);
+  }
+
+  /** The abort signal for this turn's model calls, spread into `chat`'s argument. */
+  private signal(): { signal?: AbortSignal } {
+    const signal = this.clock.signal;
+    return signal ? { signal } : {};
   }
 
   private assistantTurn(reply: ModelReply): ChatMessage {
@@ -387,7 +390,8 @@ export class Conversation {
 
     for (let round = 0; round < this.limits.maxRounds; round += 1) {
       this.spend("maxModelCalls");
-      const reply = await this.deps.router.chat({ messages, ...(tools.length > 0 ? { tools } : {}) });
+      const reply = await this.deps.router.chat({ messages, ...(tools.length > 0 ? { tools } : {}), ...this.signal() });
+      this.clock.check();
       if (reply.toolCalls.length === 0) return reply.content;
       messages.push(this.assistantTurn(reply));
       for (const call of reply.toolCalls) {
@@ -395,7 +399,7 @@ export class Conversation {
         messages.push({ role: "tool", tool_call_id: call.id, name: call.name, content: outcome });
       }
     }
-    throw new BudgetError("maxRounds", this.limits.maxRounds);
+    throw new BudgetError("maxRounds", this.limits.maxRounds, this.limits.maxRounds);
   }
 }
 

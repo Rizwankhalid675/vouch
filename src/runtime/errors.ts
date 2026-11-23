@@ -90,6 +90,22 @@ export function joinSiteText(...parts: (SiteText | string)[]): SiteText {
 }
 
 /**
+ * The network validator interpolates names out of a network definition into its
+ * messages (`Agent 'x' references missing tool 'y'.`). Those come from OUR
+ * published file today, but the same validator runs over a peer's network when a
+ * composition is loaded, and a peer's agent could be named with a sentence. Every
+ * quoted interpolation that is not token-shaped is replaced before the message
+ * reaches the page.
+ *
+ * Lives here, beside `TOKEN`, rather than in `boot.ts`, because two callers now
+ * need it: the startup path and the composition loader. `boot.ts` re-exports it,
+ * so its original import path still works.
+ */
+export function quotedTokensOnly(message: string): string {
+  return message.replace(/'([^']*)'/g, (_m, inner: string) => (TOKEN.test(inner) ? `'${inner}'` : "'<name omitted>'"));
+}
+
+/**
  * An error whose message this runtime wrote, and can therefore show the guest.
  *
  * Anything that is not one of these is reported in our own words instead, with

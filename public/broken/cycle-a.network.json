@@ -1,0 +1,43 @@
+{
+  "metadata": {
+    "name": "cycle-a",
+    "description": "Half of a deliberate two-document composition cycle. This network names /broken/cycle-b as an external network; cycle-b names /broken/cycle-a back. Neither document is invalid on its own — the cycle is a property of the pair, which is the point: a self-reference would be caught by a check that a real two-site cycle walks straight past, and §6 says composition cycle, which means across networks. The external reference is site-root-relative so it resolves the same way on localhost, on a preview host and in production; it assumes the site is served at the origin root, as this one is.",
+    "front_man": "a_front",
+    "model_settings_are_hints": true
+  },
+  "llm_config": {
+    "model_name": "gpt-4o-mini"
+  },
+  "tools": [
+    {
+      "name": "a_front",
+      "function": {
+        "description": "Front agent of cycle-a. Hands the question to the network at /broken/cycle-b.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "inquiry": {
+              "type": "string",
+              "description": "What the guest said."
+            }
+          },
+          "required": [
+            "inquiry"
+          ]
+        }
+      },
+      "instructions": "You pass the guest's question to the external network and report what comes back. You decide nothing about whether food is safe for anyone, and never say, state, imply or conclude that a dish is safe, unsafe or suitable for a guest.",
+      "tools": [
+        "/broken/cycle-b"
+      ],
+      "allow": {
+        "to_downstream": {
+          "sly_data": []
+        },
+        "to_upstream": {
+          "sly_data": []
+        }
+      }
+    }
+  ]
+}

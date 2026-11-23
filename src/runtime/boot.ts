@@ -24,7 +24,9 @@ import { BudgetError, Conversation, CycleError, type Limits } from "./loop.ts";
 import { Transcript } from "./transcript.ts";
 import { renderVerdicts } from "./verdict-cards.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, Receipt, TraceEntry } from "./types.ts";
-import { RuntimeMessage, TOKEN, ours, siteText, tokenOrOmitted, type SiteText } from "./errors.ts";
+import { RuntimeMessage, TOKEN, joinSiteText, joinTokens, ours, quotedTokensOnly, siteText, tokenOrOmitted, type SiteText } from "./errors.ts";
+import { DEFAULT_LIMITS } from "./limits.ts";
+import { loadComposition, type ComposedNetwork } from "./composition.ts";
 import { ActionRegistry, type ActionScope, type ConfirmFn } from "./upstream/action-registry.ts";
 import { find_front_man } from "./upstream/graph.ts";
 import { validate_network } from "./upstream/validation.ts";
@@ -70,6 +72,14 @@ export interface Runtime {
   links(): Record<string, string>;
   /** Fetch a public artifact from a peer origin, subject to the published peer policy. */
   fetchPeerArtifact(url: string): Promise<unknown>;
+  /**
+   * Load the network named by a §3.2 reference, and everything it composes.
+   * Never rejects: every refusal is put on the page as a string, which is what
+   * §6 asks for. Read the outcome from `[data-compose-status]` or `composed()`.
+   */
+  loadPeerNetwork(ref: string): Promise<void>;
+  /** The networks the last load actually fetched and validated. Empty after a refusal. */
+  composed(): ComposedNetwork[];
   /** The router this runtime resolved, or null when it could not start one. */
   readonly router: Router | null;
   readonly manifest: Manifest | null;
@@ -214,6 +224,48 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
   const keyStatus = el(doc, "p", { class: "key-status", "data-key-status": "", role: "status" });
   settings.append(keyLabel, routerLabel, modelLabel, saveBtn, forgetBtn, replayLabel, scriptSelect, keyStatus);
   panel.append(settings);
+
+  /* ---------------- composing a published network, and refusing one ---------------- */
+
+  /**
+   * §6's seventh interoperability check, as a control a judge can press.
+   *
+   * Three of the five refusals this build must demonstrate — an invalid network,
+   * a composition cycle and a denied origin — are properties of *loading* a
+   * network, not of a conversation, so there was nowhere on the page they could
+   * appear. They appear here, as a string, which is the requirement: a thrown
+   * exception only a console sees demonstrates nothing to someone watching a
+   * browser.
+   *
+   * Deliberately NOT a collapsed `<details>`: a refusal hidden behind a disclosure
+   * triangle is a refusal nobody sees.
+   */
+  const compose = el(doc, "fieldset", { class: "compose", "data-compose": "" });
+  compose.append(el(doc, "legend", {}, "Load a published agent network"));
+  compose.append(
+    el(
+      doc,
+      "p",
+      { class: "panel-note" },
+      "A network is named by a URL whose last path component is its name. This site publishes three deliberately " +
+        "broken ones so that the refusals can be watched rather than taken on trust: /broken/invalid (its " +
+        "metadata.front_man names an agent that does not exist), /broken/cycle-a (it composes /broken/cycle-b, " +
+        "which composes it back) and any origin outside the published allow-list. Nothing here affects the menu or " +
+        "the verdicts.",
+    ),
+  );
+  const composeLabel = el(doc, "label", { class: "field" });
+  const composeInput = el(doc, "input", {
+    type: "text",
+    "data-compose-input": "",
+    placeholder: "/broken/cycle-a",
+    "aria-label": "Network reference to load",
+  });
+  composeLabel.append(el(doc, "span", {}, "Network reference"), composeInput);
+  const composeBtn = el(doc, "button", { type: "button", "data-compose-load": "" }, "Load");
+  const composeStatus = el(doc, "p", { class: "compose-status", "data-compose-status": "", role: "alert" }, "Nothing loaded.");
+  compose.append(composeLabel, composeBtn, composeStatus);
+  panel.append(compose);
 
   // --- transcript, refusals, outstanding write, the ask form ---
   const log = el(doc, "div", { class: "transcript", "data-transcript": "" });
@@ -380,6 +432,74 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     outcomePanel.removeAttribute("hidden");
   };
 
+  /**
+   * Load a published network by its §3.2 reference, and put the outcome — a
+   * refusal or a summary of what was loaded — on screen either way.
+   *
+   * Wired here, OUTSIDE the startup `try`, on purpose: it has to work when the
+   * startup failed. A visitor whose manifest is unreachable can still watch this
+   * runtime refuse a cycle, and with `manifest` null the allow-list is empty, so
+   * cross-origin contact is refused rather than silently permitted.
+   */
+  const showCompose = (message: SiteText, kind: "refused" | "loaded"): void => {
+    composeStatus.textContent = message;
+    composeStatus.setAttribute("data-compose-kind", kind);
+    composeStatus.removeAttribute("hidden");
+  };
+
+  let composed: ComposedNetwork[] = [];
+
+  async function loadPeerNetwork(ref: string): Promise<void> {
+    const wanted = ref.trim();
+    if (!wanted) return;
+    composeBtn.disabled = true;
+    try {
+      composed = await loadComposition(wanted, {
+        siteBase: base,
+        manifest,
+        runtimeAllowedPeers,
+        fetchArtifact: (url) => fetchPublicArtifact(url, fetchImpl),
+        confirm,
+        trace: addTrace,
+        now,
+        maxComposedNetworks: opts.limits?.maxComposedNetworks ?? DEFAULT_LIMITS.maxComposedNetworks,
+      });
+      const names = joinTokens(composed.map((c) => c.ref.name), ", ");
+      showCompose(
+        joinSiteText(
+          siteText`Loaded and validated ${composed.length} published network`,
+          ours(composed.length === 1 ? ": " : "s: "),
+          names,
+          ours(
+            composed.length === 1
+              ? ". It has not been run: binding another site's network into the conversation is not part of this build."
+              : ". None of them has been run: binding another site's network into the conversation is not part of this build.",
+          ),
+        ),
+        "loaded",
+      );
+    } catch (err) {
+      // Same rule as the transcript and the startup line: only a message this
+      // runtime wrote is shown in the deli's voice. A peer's malformed JSON
+      // throws a SyntaxError that quotes the file, and an unreachable host
+      // throws a TypeError; neither is ours to repeat.
+      composed = [];
+      showCompose(
+        err instanceof RuntimeMessage
+          ? err.siteMessage
+          : siteText`Refused: that network could not be loaded (${(err as Error)?.name ?? "Error"}), so nothing was run.`,
+        "refused",
+      );
+      addTrace({ at: now(), event: "composition_refused", detail: { kind: (err as Error)?.name ?? "Error" } });
+    } finally {
+      composeBtn.disabled = false;
+    }
+  }
+
+  composeBtn.addEventListener("click", () => {
+    void loadPeerNetwork(composeInput.value);
+  });
+
   try {
     const manifestUrl = `${base}/agent-manifest.json`;
     manifest = (await fetchPublicArtifact(manifestUrl, fetchImpl)) as Manifest;
@@ -501,6 +621,11 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         : next.needsKey
           ? missingKeyMessage(next.baseUrl)
           : siteText`Ready. Requests go to ${next.baseUrl} with your key, and nowhere else.`;
+      // A setup error behind a closed disclosure triangle is a setup error nobody
+      // reads. §3.4 calls for a CLEAR one, so the disclosure opens itself when
+      // there is something to act on. It is never closed from here: a visitor who
+      // closed it has decided.
+      if (next.needsKey) settings.open = true;
       return next;
     };
 
@@ -646,6 +771,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     ask,
     trace: () => trace,
     links: () => links,
+    loadPeerNetwork,
+    composed: () => composed,
     async fetchPeerArtifact(url: string): Promise<unknown> {
       if (!manifestAllowsPeer(url, manifest, runtimeAllowedPeers)) {
         const origin = (() => {
@@ -679,15 +806,10 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
 }
 
 /**
- * The network validator interpolates names out of the network definition into its
- * messages (`Agent 'x' references missing tool 'y'.`). Those come from OUR published
- * file today, but the same validator will run over a peer's network in Task 8, and a
- * peer's agent could be named with a sentence. Every quoted interpolation that is not
- * token-shaped is replaced before the message reaches the page.
+ * Moved to `errors.ts`, beside `TOKEN`, when the composition loader became a
+ * second caller. Re-exported here so its original import path still resolves.
  */
-export function quotedTokensOnly(message: string): string {
-  return message.replace(/'([^']*)'/g, (_m, inner: string) => (TOKEN.test(inner) ? `'${inner}'` : "'<name omitted>'"));
-}
+export { quotedTokensOnly } from "./errors.ts";
 
 /**
  * Strings our own code puts in a trace detail that are legitimately prose.

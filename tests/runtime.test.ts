@@ -1801,8 +1801,11 @@ describe("the stored key can be deleted, and the safety layer does not care", ()
     const t = s.transcriptText();
     expect(t).toContain("api.openai.com");
     expect(t).toContain("stays in this browser");
-    // The sentence only this product can add.
-    expect(t).toContain("never calls a model");
+    // The sentence only this product can add. Task 7 made it name `check_safety`,
+    // because the §3.4 setup error is where a visitor finds out that the part of
+    // the site deciding whether food is safe never needed a key.
+    expect(t).toContain("work with no key at all");
+    expect(t).toContain("check_safety");
   });
 });
 
@@ -1918,7 +1921,10 @@ describe("execution is bounded and failures are visible", () => {
     await s.runtime.ask("go");
     expect(s.runtime.trace().some((e) => e.event === "cycle_refused")).toBe(true);
     const toolResults = (await h.routerBodies()).flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content));
-    expect(toolResults.some((c) => c.includes("Composition cycle refused: a → b → a"))).toBe(true);
+    // Task 7 renamed this refusal "Delegation cycle": it is an agent inside its
+    // own ancestry in ONE network. §6's "composition cycle" is across networks
+    // and is `CompositionCycleError`, which has its own wording and its own test.
+    expect(toolResults.some((c) => c.includes("Delegation cycle refused: a → b → a"))).toBe(true);
   });
 
   test("a tool call the network does not have is reported as a failure, not as a result", async () => {

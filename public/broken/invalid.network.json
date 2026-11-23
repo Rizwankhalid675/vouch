@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "name": "invalid",
+    "description": "A network that must be refused. It is well-formed JSON and well-formed in every other respect; the one defect is that metadata.front_man names 'concierge', and no agent in tools[] is called that. That is what a publisher actually ships: an agent gets renamed and the metadata does not follow. The reference runtime resolves the front man positionally and never reads this field, so nothing upstream notices, and the network runs a different entry point than it advertises.",
+    "front_man": "concierge",
+    "model_settings_are_hints": true
+  },
+  "llm_config": {
+    "model_name": "gpt-4o-mini"
+  },
+  "tools": [
+    {
+      "name": "greeter",
+      "function": {
+        "description": "Greets a guest and routes what they ask.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "inquiry": {
+              "type": "string",
+              "description": "What the guest said."
+            }
+          },
+          "required": [
+            "inquiry"
+          ]
+        }
+      },
+      "instructions": "You greet guests and route what they ask to dish_describer. You decide nothing about whether food is safe for anyone, and never say, state, imply or conclude that a dish is safe, unsafe or suitable for a guest.",
+      "tools": [
+        "dish_describer"
+      ],
+      "allow": {
+        "to_downstream": {
+          "sly_data": []
+        },
+        "to_upstream": {
+          "sly_data": []
+        }
+      }
+    },
+    {
+      "name": "dish_describer",
+      "function": {
+        "description": "Describes a dish from the information it is given.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string",
+              "description": "A question about a dish."
+            }
+          },
+          "required": [
+            "question"
+          ]
+        }
+      },
+      "instructions": "You describe dishes from the information you are given, and nothing else. You never say, state, imply or conclude that a dish is safe, unsafe or suitable for anyone.",
+      "tools": [],
+      "allow": {
+        "to_downstream": {
+          "sly_data": []
+        },
+        "to_upstream": {
+          "sly_data": []
+        }
+      }
+    }
+  ]
+}

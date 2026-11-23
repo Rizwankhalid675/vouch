@@ -105,6 +105,15 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
 .model-settings .forget { border-color: #8c2317; color: #7d1f14; }
 .key-status { margin: .6rem 0 0; font-size: .85rem; color: var(--muted); }
 
+/* The §6 refusal demonstration. Never a collapsed <details>: a refusal nobody sees is not a visible error. */
+.compose { border: 1px solid var(--rule); border-radius: 4px; padding: .75rem 1rem 1rem; margin: 0; }
+.compose legend { font-weight: 700; padding: 0 .35rem; }
+.compose .field { margin-top: .6rem; }
+.compose button { font: inherit; margin-top: .5rem; border: 1px solid var(--rule); background: var(--paper); border-radius: 4px; padding: .45rem .8rem; }
+.compose-status { margin: .6rem 0 0; font-size: .85rem; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.compose-status[data-compose-kind="refused"] { color: #7d1f14; }
+.compose-status[data-compose-kind="loaded"] { color: var(--ink); }
+
 .transcript { display: grid; gap: .75rem; max-height: 26rem; overflow-y: auto; }
 .turn { border-left: 3px solid var(--rule); padding-left: .7rem; }
 .turn-who { margin: 0; font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }

@@ -73,3 +73,41 @@ describe("the deli site, no agent", () => {
     expect(document.querySelector("[data-agent]")).toBeNull();
   });
 });
+
+describe("derived allergens are disclosed on the page", () => {
+  test("turkey club discloses dairy, which is only derived (brioche -> butter -> dairy)", () => {
+    const t = document.querySelector("[data-item='turkey_club'] [data-contains]")!.textContent!.toLowerCase();
+    expect(t).toContain("dairy");
+    expect(t).toContain("gluten");
+    expect(t).toContain("egg");
+    expect(t).toContain("pork");
+  });
+
+  test("chili chicken plate discloses the unknown component", () => {
+    const t = document.querySelector("[data-item='chili_chicken_plate'] [data-contains]")!.textContent!.toLowerCase();
+    expect(t).toContain("unknown");
+    expect(t).toContain("supplier chili sauce");
+  });
+
+  test("an item with no ingredient data says contents unknown", () => {
+    const t = document.querySelector("[data-item='daily_special'] [data-contains]")!.textContent!.toLowerCase();
+    expect(t).toContain("unknown");
+  });
+
+  test("every card carries a Contains line", () => {
+    expect(document.querySelectorAll("[data-contains]")).toHaveLength(MENU.items.length);
+  });
+});
+
+describe("the prerendered page (what a no-script reader gets)", () => {
+  test("prices survive the build step intact, and every card carries ingredients and Contains", async () => {
+    const { prerender } = await import("../src/site/prerender.ts");
+    const out = prerender(html, MENU);
+    const doc = new DOMParser().parseFromString(out, "text/html");
+    expect(doc.querySelectorAll("[data-item]")).toHaveLength(MENU.items.length);
+    expect(doc.querySelector("[data-item='reuben'] .price")!.textContent).toBe("$11.50");
+    expect(doc.querySelector("[data-item='lemonade'] .price")!.textContent).toBe("$3.50");
+    expect(doc.querySelector("[data-item='turkey_club'] [data-contains]")!.textContent!.toLowerCase()).toContain("dairy");
+    expect(doc.querySelector("aside.cart")).not.toBeNull();
+  });
+});

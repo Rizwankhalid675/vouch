@@ -28,6 +28,7 @@ h2 { font: 700 1.6rem/1.2 var(--serif); margin: 0 0 .5rem; }
 .item-head { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
 .item h3 { margin: 0; font: 700 1.15rem/1.25 var(--serif); }
 .price { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.item, .item > * { min-width: 0; overflow-wrap: anywhere; }
 .ingredients { margin: 0; font-size: .9rem; color: var(--muted); }
 .ingredients .label { display: block; font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink); }
 .verdict-slot:empty { display: none; }
@@ -36,7 +37,7 @@ h2 { font: 700 1.6rem/1.2 var(--serif); margin: 0 0 .5rem; }
 button { font: inherit; cursor: pointer; }
 .add, .checkout { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 4px; padding: .65rem 1rem; font-weight: 600; min-height: 2.75rem; }
 .add:hover, .checkout:hover:not(:disabled) { background: #7d2218; }
-.checkout:disabled { background: var(--rule); color: var(--muted); cursor: not-allowed; }
+.checkout:disabled { background: var(--rule); color: #5a4d3f; cursor: not-allowed; }
 button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offset: 2px; }
 
 .cart { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 1rem; align-self: start; }

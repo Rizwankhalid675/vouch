@@ -1,5 +1,6 @@
 import type { Menu, MenuItem } from "../../contracts.ts";
-import { MENU } from "../safety/canon.ts";
+import { MENU, RESTRICTIONS } from "../safety/canon.ts";
+import { allergensOf, firstGap } from "../safety/derive.ts";
 
 /** Money is handled in integer cents so totals never drift. */
 const cents = (price: number): number => Math.round(price * 100);
@@ -11,6 +12,35 @@ const esc = (s: string): string =>
 /** Plain-language ingredient names, exactly the list the safety checker reasons over. */
 export function ingredientNames(item: MenuItem, menu: Menu): string[] {
   return item.ingredients.map((id) => menu.ingredients[id]?.name ?? id);
+}
+
+/** Ids worth naming in "Contains": everything a restriction avoids, plus mustard (named in the data, no restriction yet). */
+const ALLERGEN_IDS = new Set<string>([...RESTRICTIONS.flatMap((r) => r.avoid), "mustard"]);
+
+/**
+ * The derived allergens of an item, in plain words, and where the data runs out.
+ * Disclosure of data only: no verdict about anyone's restrictions.
+ */
+export function containsLine(item: MenuItem, menu: Menu): string {
+  const found = new Set<string>();
+  const gaps: string[] = [];
+  for (const ing of item.ingredients) {
+    for (const r of allergensOf(ing, menu)) {
+      if (ALLERGEN_IDS.has(r.allergen)) found.add(menu.ingredients[r.allergen]?.name ?? r.allergen);
+    }
+    const gap = firstGap(ing, menu);
+    if (gap) gaps.push(menu.ingredients[gap.allergen]?.name ?? gap.allergen);
+  }
+  if (item.ingredients.length === 0) return "unknown. No ingredient information has been recorded for this item.";
+  const known = [...found].map((n) => n.toLowerCase());
+  const parts: string[] = [];
+  if (known.length > 0) parts.push(known.join(", "));
+  else if (gaps.length === 0) parts.push("none of the allergens we track");
+  if (gaps.length > 0) {
+    const list = [...new Set(gaps)].map((g) => g.toLowerCase()).join(" and ");
+    parts.push(`unknown: ${list} has no published ingredient list`);
+  }
+  return parts.join("; ");
 }
 
 /** One menu card. Pure string, so the build can prerender it and the page reads without JS. */
@@ -26,6 +56,7 @@ export function itemHtml(item: MenuItem, menu: Menu): string {
     <span class="price">${fmt(cents(item.price))}</span>
   </div>
   <p class="ingredients" data-ingredients>${ingredients}</p>
+  <p class="contains" data-contains><span class="label">Contains</span> ${esc(containsLine(item, menu))}</p>
   <!-- Per-item verdict mount point. Filled by the verdict display, never by chat prose. -->
   <div class="verdict-slot" data-verdict-slot="${esc(item.id)}"></div>
   <button type="button" class="add" data-add>Add to order</button>

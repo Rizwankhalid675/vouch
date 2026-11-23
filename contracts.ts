@@ -34,6 +34,12 @@ export type Verdict = "safe" | "unsafe" | "unknown";
 export interface Finding {
   item: string;
   verdict: Verdict;
+  /**
+   * The allergen ids this verdict speaks to; anything outside it is unverified.
+   * The union of the `avoid` lists of the restrictions the checker was given.
+   * A `safe` Finding with `covered: []` asserts nothing: no restrictions were checked.
+   */
+  covered: string[];
   /** The exact ingredient and rule that decided it. Present unless safe. */
   because?: { ingredient: string; allergen: string; via: string[] };
 }

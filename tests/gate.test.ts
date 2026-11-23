@@ -11,7 +11,7 @@ const find = (id: string): Finding => {
   if (!item) throw new Error(`no item ${id}`);
   return verdictFor(item, [dairyFree], MENU);
 };
-const safe = (item: string): Finding => ({ item, verdict: "safe" });
+const safe = (item: string, covered: string[] = ["dairy"]): Finding => ({ item, verdict: "safe", covered });
 
 describe("the gate: no unbacked safety claim reaches the screen", () => {
   test("an unbacked safety claim never reaches the screen", () => {
@@ -52,13 +52,32 @@ describe("the gate: no unbacked safety claim reaches the screen", () => {
     expect(r.reason).toBe("unknown");
   });
 
+  test("a safe finding covering dairy does NOT back a gluten-free claim, but DOES back dairy-free", () => {
+    const f = safe("fruit_cup", ["dairy"]);
+    const g = gate("The fruit cup is gluten-free.", [f]);
+    expect(g.refusals[0]!.reason).toBe("not_checked");
+    expect(g.shown).not.toMatch(/gluten-free/);
+    expect(gate("The fruit cup is dairy-free.", [f]).refusals).toEqual([]);
+    expect(gate("The fruit cup is dairy-free and gluten-free.", [f]).refusals.length).toBe(1);
+    expect(gate("The fruit cup is dairy-free and gluten-free.", [safe("fruit_cup", ["dairy", "gluten"])]).refusals).toEqual([]);
+  });
+
+  test("a safe finding with covered: [] backs nothing; generic claims are never backed", () => {
+    expect(gate("The fruit cup is dairy-free.", [safe("fruit_cup", [])]).refusals[0]!.reason).toBe("not_checked");
+    expect(gate("The fruit cup is safe for you.", [safe("fruit_cup", ["dairy"])]).refusals[0]!.reason).toBe("not_checked");
+    expect(gate("The fruit cup is nut-free.", [safe("fruit_cup", ["peanut"])]).refusals.length).toBe(1);
+    expect(find("fruit_cup").covered).toEqual(["dairy"]);
+    const none = verdictFor(MENU.items.find((i) => i.id === "fruit_cup")!, [], MENU);
+    expect(none).toEqual({ item: "fruit_cup", verdict: "safe", covered: [] });
+  });
+
   test("an unsafe finding does not back a safety claim", () => {
     const r = gate("The Reuben is dairy-free.", [find("reuben")]).refusals[0]!;
     expect(r.reason).toBe("unsafe");
   });
 
   test("one safe finding cannot outvote an unknown/unsafe finding for the same item", () => {
-    const unk: Finding = { item: "fruit_cup", verdict: "unknown", because: { ingredient: "x", allergen: "unknown", via: ["x"] } };
+    const unk: Finding = { item: "fruit_cup", verdict: "unknown", covered: ["dairy"], because: { ingredient: "x", allergen: "unknown", via: ["x"] } };
     expect(gate("The fruit cup is dairy-free.", [safe("fruit_cup"), unk]).refusals.length).toBe(1);
   });
 

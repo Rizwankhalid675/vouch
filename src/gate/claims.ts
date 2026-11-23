@@ -27,7 +27,33 @@ export interface Claim {
    * claim about an ingredient, so such a claim can never be backed.
    */
   ingredientSubject: boolean;
+  /** Allergen ids the claim speaks about (canonical, e.g. "dairy", "gluten"). */
+  allergens: string[];
+  /**
+   * True when the claim cannot be pinned to specific allergen ids (generic
+   * "safe for you", "vegan", an unmapped word). Such a claim can never be backed.
+   */
+  unscoped: boolean;
 }
+
+const ALLERGEN_IDS: Record<string, string[]> = {
+  dairy: ["dairy"], milk: ["dairy"], lactose: ["dairy"], cheese: ["dairy"], butter: ["dairy"],
+  cream: ["dairy"], yogurt: ["dairy"], yoghurt: ["dairy"], whey: ["dairy"], casein: ["dairy"],
+  egg: ["egg"], eggs: ["egg"],
+  gluten: ["gluten"], wheat: ["gluten"], flour: ["gluten"], barley: ["gluten"], rye: ["gluten"],
+  nut: ["peanut", "tree_nut"], nuts: ["peanut", "tree_nut"], peanut: ["peanut"], peanuts: ["peanut"],
+  "tree nut": ["tree_nut"], "tree nuts": ["tree_nut"], almond: ["tree_nut"], almonds: ["tree_nut"],
+  walnut: ["tree_nut"], walnuts: ["tree_nut"], cashew: ["tree_nut"], cashews: ["tree_nut"],
+  pecan: ["tree_nut"], pecans: ["tree_nut"], pistachio: ["tree_nut"], pistachios: ["tree_nut"],
+  hazelnut: ["tree_nut"], hazelnuts: ["tree_nut"],
+  shellfish: ["shellfish"], shrimp: ["shellfish"], prawn: ["shellfish"], crab: ["shellfish"],
+  lobster: ["shellfish"], mollusc: ["shellfish"], mollusk: ["shellfish"],
+  fish: ["fish"], salmon: ["fish"], tuna: ["fish"], anchovy: ["fish"], anchovies: ["fish"],
+  soy: ["soy"], soya: ["soy"], soybean: ["soy"],
+  sesame: ["sesame"], tahini: ["sesame"],
+  pork: ["pork"], bacon: ["pork"], ham: ["pork"], lard: ["pork"],
+  mustard: ["mustard"],
+};
 
 export interface Segment {
   /** Exact original slice, including trailing whitespace. */
@@ -232,7 +258,23 @@ function classify(core: string, menu: Menu): Claim | undefined {
   if (hits.length === 0) return undefined;
   hits.sort((a, b) => a.index - b.index);
   const { items, masked } = resolveItems(s, menu);
+  const ids = new Set<string>();
+  let unscoped = false;
+  for (const m of masked.matchAll(STATIC_RE)) {
+    const mapped = ALLERGEN_IDS[m[0]];
+    if (mapped) mapped.forEach((i) => ids.add(i));
+    else unscoped = true; // "sugar", "meat", "allergens": a word we cannot map to an allergen id
+  }
+  // "kiwi-free", "cross-free": the X in X-free must itself be a mapped allergen
+  for (const m of masked.matchAll(/(?<![a-z0-9])([a-z0-9]+)(?:-| )?free(?![a-z0-9])/g)) {
+    const x = m[1]!;
+    if (x !== "free" && !ALLERGEN_IDS[x]) unscoped = true;
+  }
+  if (/(?<![a-z0-9])(?:vegan|vegetarian|pescatarian|halal|kosher|keto|paleo|plant[- ]based|allerg\w*|intoleran\w*|celiac|coeliac|diet\w*|restrictions?)(?![a-z0-9])/.test(masked)) unscoped = true;
+  if (ids.size === 0) unscoped = true;
   const claim: Claim = {
+    allergens: [...ids],
+    unscoped,
     text: core,
     items,
     claimed: hits[0]!.text.trim(),

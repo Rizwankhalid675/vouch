@@ -18,7 +18,7 @@
  *     match it and add the sentence only this product can add.
  */
 
-import { RuntimeMessage } from "./errors.ts";
+import { RuntimeMessage, joinSiteText, ours, siteText, type SiteText } from "./errors.ts";
 import type { TraceEntry } from "./types.ts";
 import type { ToolSchema } from "./upstream/tool-schema.ts";
 import rawScripts from "../../data/scripted-replies.json" with { type: "json" };
@@ -111,13 +111,8 @@ export function hostOf(url: string): string {
  * part of this site that decides whether food is safe does not need a model at
  * all, so it is still working.
  */
-export function missingKeyMessage(baseUrl: string): string {
-  return (
-    `An AI provider key is required for ${hostOf(baseUrl) || "the configured provider"}. ` +
-    `Open the model settings above, paste your key, then select Save. ` +
-    `Your key stays in this browser and is sent only to that provider. ` +
-    `The safety check is not affected: the verdict beside each dish is computed here, from the published ingredients, and never calls a model.`
-  );
+export function missingKeyMessage(baseUrl: string): SiteText {
+  return siteText`An AI provider key is required for ${hostOf(baseUrl) || "the configured provider"}. Open the model settings above, paste your key, then select Save. Your key stays in this browser and is sent only to that provider. The safety check is not affected: the verdict beside each dish is computed here, from the published ingredients, and never calls a model.`;
 }
 
 export interface RouterOptions {
@@ -219,10 +214,22 @@ export class Router {
       // for you" would be unverified prose attributed to the deli. Only a
       // machine-shaped error code is extracted, and only if it is token-shaped.
       const code = await providerErrorCode(resp);
+      // Two literals rather than one with a conditional fragment interpolated: a
+      // fragment like " (invalid_api_key)" has whitespace in it, so `siteText`
+      // would filter the whole thing away. Only bare tokens are interpolated.
+      // `advice` is ours, so it is APPENDED as site text rather than interpolated
+      // as a value — `siteText` filters values, and ours has whitespace in it.
+      const advice = ours(
+        " Check the key and the router in the model settings above. The provider's own response is not shown " +
+          "here, because this site does not repeat text it cannot vouch for.",
+      );
       throw new RuntimeMessage(
-        `The model router at ${hostOf(this.baseUrl)} returned HTTP ${resp.status}${code ? ` (${code})` : ""}. ` +
-          `Check the key and the router in the model settings above. The provider's own response is not shown here, ` +
-          `because this site does not repeat text it cannot vouch for.`,
+        joinSiteText(
+          code
+            ? siteText`The model router at ${hostOf(this.baseUrl)} returned HTTP ${resp.status}, provider code ${code}.`
+            : siteText`The model router at ${hostOf(this.baseUrl)} returned HTTP ${resp.status}.`,
+          advice,
+        ),
       );
     }
     const json = (await resp.json()) as {
@@ -244,7 +251,7 @@ export class Router {
    */
   private replay(): ModelReply {
     const script = scriptById(this.scriptId);
-    if (!script) throw new RuntimeMessage(`No recorded reply named '${this.scriptId}'.`);
+    if (!script) throw new RuntimeMessage(siteText`No recorded reply named '${this.scriptId}'.`);
     const turn = script.turns[this.scriptStep];
     this.scriptStep += 1;
     this.onTrace({

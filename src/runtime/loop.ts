@@ -22,7 +22,7 @@
 
 import type { Finding } from "../../contracts.ts";
 import type { Refusal } from "../gate/gate.ts";
-import { RuntimeMessage } from "./errors.ts";
+import { RuntimeMessage, joinSiteText, joinTokens, ours, siteText, tokenOrOmitted, type SiteText } from "./errors.ts";
 import type { ChatMessage, ModelReply, Router } from "./llm.ts";
 import type { Transcript } from "./transcript.ts";
 import type { NetworkConfig, Receipt, TraceEntry } from "./types.ts";
@@ -68,10 +68,10 @@ export class BudgetError extends RuntimeMessage {
     readonly limit: number,
   ) {
     super(
-      `Execution limit reached: ${budget} is ${limit}. Nothing further was run, and nothing was left half-done.` +
+      (siteText`Execution limit reached: ${budget} is ${limit}. Nothing further was run, and nothing was left half-done.` +
         (budget === "maxSessionModelCalls"
           ? " Start a new conversation to carry on; the verdict beside each dish is unaffected either way."
-          : " Ask again, more simply, and this turn starts from a fresh budget."),
+          : " Ask again, more simply, and this turn starts from a fresh budget.")) as SiteText,
     );
     this.name = "BudgetError";
   }
@@ -80,7 +80,7 @@ export class BudgetError extends RuntimeMessage {
 /** Thrown when an agent appears in its own delegation ancestry. */
 export class CycleError extends RuntimeMessage {
   constructor(readonly path: string[]) {
-    super(`Composition cycle refused: ${path.join(" → ")}. The call was not made.`);
+    super(joinSiteText(ours("Composition cycle refused: "), joinTokens(path, " → "), ours(". The call was not made.")));
     this.name = "CycleError";
   }
 }
@@ -306,7 +306,7 @@ export class Conversation {
         );
         this.deps.trace({ at: this.now(), event: "action_arguments", detail: { action: name, arguments: validated } });
         if (got === null) {
-          this.deps.transcript.showRuntime(`You declined "${name}". Nothing was done.`, "declined");
+          this.deps.transcript.showRuntime(siteText`You declined "${name}". Nothing was done.`, "declined");
           this.deps.onReceipts?.(name, null);
           return `DECLINED: the guest did not approve ${name}. It did not run.`;
         }
@@ -367,7 +367,16 @@ export class Conversation {
       event: "agent_delegated",
       detail: { agent: name, from: stack[stack.length - 1]!, slyDataKeys: Object.keys(passed), depth: stack.length },
     });
-    this.deps.transcript.showRuntime(`Asked ${name.replace(/_/g, " ")}.`, "delegated");
+    // `name` comes from the published network. OURS today; a PEER's in Task 8, and
+    // a peer author chooses that string. Token-filtered like every interpolation
+    // into the site's voice. `validate_agent_names` also rejects such a network at
+    // startup, so this is the second of two nets rather than the only one.
+    // Filtered first, then prettified: the underscore swap happens on a value we
+    // have already vouched for, not on one we are about to.
+    this.deps.transcript.showRuntime(
+      joinSiteText(ours("Asked "), tokenOrOmitted(name).replace(/_/g, " "), ours(".")),
+      "delegated",
+    );
 
     const messages: ChatMessage[] = [
       { role: "system", content: this.systemPrompt(name) },

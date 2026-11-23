@@ -24,6 +24,9 @@
  *     reject "duplicate or missing agent references"; upstream's generated
  *     validator covers missing but not duplicate. This addition is ours, and its
  *     message wording is ours, not upstream's.
+ *  3b. Added `validate_agent_names`, also ours and also not upstream's: upstream
+ *     checks a name for presence only, and a name is interpolated into text a
+ *     guest reads. See the note on that function.
  *  4. Dropped nothing.
  *
  * Function names are kept in upstream's snake_case deliberately; see graph.ts.
@@ -72,6 +75,36 @@ export function validate_front_man(config: NetworkConfig): string[] {
   return errors;
 }
 
+/**
+ * OURS, not upstream's.
+ *
+ * An agent's name is interpolated into places a guest reads — a delegation notice
+ * in the site's own voice, a validator message, a trace line. Upstream checks a
+ * name only for PRESENCE, never for shape, so a network whose agent is *named*
+ * with a sentence is valid upstream and produces, on our page:
+ *
+ *   Hollis & Rye — Asked The Reuben is dairy-free and safe for you.
+ *
+ * Ours are tokens, so this is latent today. Task 8 loads a peer network from a
+ * second origin and a peer author chooses that string, which makes it live. The
+ * network is refused rather than rendered: failing closed at startup protects
+ * every place a name is interpolated at once, including places not written yet.
+ *
+ * This is the first of two nets. The second is that every interpolation into the
+ * site's voice goes through `siteText`, which token-filters it anyway.
+ */
+export function validate_agent_names(config: NetworkConfig): string[] {
+  const errors: string[] = [];
+  for (const agent of config.tools ?? []) {
+    const name = agent.name;
+    if (name === undefined || name === null) continue; // validate_shape reports this
+    if (name.length > 64 || !/^[A-Za-z0-9_.:-]+$/.test(name)) {
+      errors.push(`Agent name is not a usable identifier: '${name}'.`);
+    }
+  }
+  return errors;
+}
+
 /** OURS, not upstream's. §3.1 requires rejecting duplicate agent references. */
 export function validate_duplicate_names(config: NetworkConfig): string[] {
   const errors: string[] = [];
@@ -91,5 +124,6 @@ export function validate_network(config: NetworkConfig): string[] {
     ...validate_front_man(config),
     ...validate_missing_nodes(config),
     ...validate_duplicate_names(config),
+    ...validate_agent_names(config),
   ];
 }

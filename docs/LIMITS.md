@@ -48,8 +48,22 @@ loopback hosts; this site does not).
 
 A verdict card is a pure function of **(the menu, the guest's restriction set)**.
 Nothing reachable from the model may change what any card shows — not its verdict,
-not its text, not its presence, not its order. Cards re-render when the guest
+not its text, not its **presence**, not its order. Cards re-render when the guest
 changes their restrictions, and at no other time.
+
+*Presence* and *text* are both meant literally, and both are tested literally:
+
+- **Text** includes the text a card gives to assistive technology, not only its
+  `textContent`. `aria-label` **replaces** an element's accessible name, so a card
+  whose visible text is byte-identical to the checker's could still read a model's
+  ungated claim to a screen-reader user. The assertions compare a card's whole
+  readable surface — text nodes, every text-bearing attribute, form-control values
+  — against lines computed independently from `verdictFor` + `cardLines`.
+- **Presence** means presented, not in the DOM. `display:none`, the `hidden`
+  attribute and `aria-hidden="true"` each hide a card while every existence check
+  still passes, so every card is asserted visible, on itself and on each ancestor.
+  A model that can hide every card blanks the safety channel as surely as one that
+  can overwrite it.
 
 This is enforced by a signature, not by a convention: `renderVerdicts` takes the
 guest's `Restriction[]` and computes the verdicts itself; it has no parameter that
@@ -143,15 +157,53 @@ the DOM was then enumerated and classified, and the rule they all follow now is:
 | Action argument *keys*, and validator messages | `{"The Reuben is dairy-free": 1}` reached the rendered trace twice | the trace records only schema-declared keys plus a count, and a classification instead of the validator's message |
 | Network validator interpolations | `Agent 'x' references missing tool 'y'` — ours today, a peer's in Task 8 | quoted interpolations that are not token-shaped are replaced |
 | The claimed phrase in a refusal | model text, named deliberately (SPEC 4.4) | filtered for meaningless tokens *and* bounded to a phrase |
+| A published agent's **name** | `Hollis & Rye — Asked The Reuben is dairy-free and safe for you.` Ours are tokens; a **peer's are not**, and Task 8 loads a peer network from a second origin | the network is refused at startup (`validate_agent_names`), **and** the notice token-filters the name anyway |
+| The startup catch | a malformed artifact's `SyntaxError` quotes the file | only a `RuntimeMessage` is shown; anything else becomes our own sentence plus a kind |
+| The unknown-outcome card's source line | a handler's raw `error` | token-filtered |
+| The key-status line | `selectTopRouter`'s message | token-filtered |
 
-Two independent nets, both tested: each trace call site records no model-chosen
-string, **and** the trace renderer refuses to print any string that is not
-token-shaped or explicitly allow-listed. The second exists because the first depends
-on every future call site remembering.
+### The mechanism
 
-What this does **not** claim: that the class is exhausted. It claims that the class
-was swept once, with the enumeration written down, and that each net is pinned by a
-test that fails when the net is removed.
+Stating the rule in prose made it a convention, and the convention acquired four
+bypasses inside one round. It is now a **type**:
+
+```ts
+type SiteText = string & { readonly __siteText: unique symbol };
+```
+
+`Transcript.showRuntime`, the startup error line and the key status take `SiteText`
+and nothing else. Only two functions produce it: `ours(...)` for a literal written
+in this repository, and the `` siteText`...` `` tagged template, whose literal parts
+are ours by construction and whose every `${value}` is **token-filtered** — anything
+with whitespace in it is replaced with `<omitted>` rather than printed. A call site
+that passes a raw string does not compile.
+
+One idiom follows from that and is worth knowing: filter values *then* join with our
+own separator (`joinTokens`), rather than joining then filtering, because a
+separator with a space in it would take the whole joined string down with it.
+
+Note that this half of the mechanism is enforced at **compile time**, so no runtime
+test can fail when it is removed — widening the parameter back to `string` is
+undetectable to the suite. What the suite pins is the filtering behaviour
+(`siteText`, `tokenOrOmitted`, `joinTokens`) and each call site's observable output.
+
+Two further independent nets, both tested: each trace call site records no
+model-chosen string, **and** the trace renderer refuses to print any string that is
+not token-shaped or allow-listed. The second exists because the first depends on
+every future call site remembering.
+
+### What is "ours"
+
+Values rendered without filtering are the site's own published data: menu item and
+ingredient names, restriction display names, our fixture labels. They sit at the
+same trust level as the source of this repository. Everything else — model output,
+a published network's agent names, a provider's response text, a handler's error
+message — is either gated, filtered, or not rendered.
+
+What this does **not** claim: that the class is exhausted. It claims the class was
+swept twice, with the enumeration written down both times, that the second sweep
+found four bypasses the first had left, and that each net is pinned by a test that
+fails when the net is removed.
 
 ### 2.3 Private context is not isolated between sibling agents
 
@@ -188,6 +240,13 @@ A real deployment would need both.
   verdicts are unaffected, because none of them calls a model.
 - The key lives in origin-scoped `localStorage` under one key, `vouch-byok-v1`, and
   can be deleted from the same panel it is entered in.
+- The test that proves the key goes only to the router scans **captured requests**,
+  and the capture is **synchronous**: an exfiltration beacon is fire-and-forget, and
+  an earlier version read the body behind an `await` before recording it, so such a
+  request landed after the assertions had run and was never scanned. Bodies are read
+  at scan time, so neither body kind (string, `URLSearchParams`, `FormData`, `Blob`,
+  `ReadableStream`) nor timing can hide one. All five shapes are pinned in both
+  awaited and fire-and-forget form.
 - **Origin-scoped storage is not isolation from other scripts on this origin.** The
   spec says so and so do we. The only mitigation that actually holds is loading no
   third-party script, which this site does. There is no Content-Security-Policy

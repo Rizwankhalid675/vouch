@@ -13,6 +13,7 @@
 import type { Finding, Menu, Restriction } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { gate, REFUSAL_MARKER, type Refusal } from "../gate/gate.ts";
+import { ours, siteText, type SiteText } from "./errors.ts";
 import { guestVerdictCard } from "./verdict-cards.ts";
 
 /**
@@ -75,7 +76,7 @@ export class Transcript {
    * yourself reaching for this with a string that came from a model, stop — that
    * is the bypass this whole design exists to prevent.
    */
-  showRuntime(text: string, kind = "runtime"): HTMLElement {
+  showRuntime(text: SiteText, kind = "runtime"): HTMLElement {
     return this.append(kind, "Hollis & Rye", text);
   }
 

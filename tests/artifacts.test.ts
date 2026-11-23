@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { RESTRICTIONS } from "../src/safety/canon.ts";
@@ -479,5 +479,51 @@ describe("links.json (§3.3 peer-network link map)", () => {
     nestedOnly.manifest.allowed_peers = undefined;
     nestedOnly.manifest.peer_policy.allowed_peers = ["https://bakery.example"];
     expect(peerWiring(nestedOnly)).not.toEqual([]);
+  });
+});
+
+/**
+ * The provenance claim has to be checkable, because this project holds everyone
+ * else to that standard. The SHA appears in `PROVENANCE.md`, in `upstream-pins.json`
+ * and in all six adapted files' notices; they could drift apart silently, so they
+ * are pinned to each other here.
+ */
+describe("upstream provenance is self-consistent (Apache-2.0 §4, and our own standard)", () => {
+  const pins = JSON.parse(readFileSync(resolve(import.meta.dirname, "..", "docs/vendor/upstream-pins.json"), "utf8"));
+  const provenance = readFileSync(resolve(import.meta.dirname, "..", "docs/vendor/PROVENANCE.md"), "utf8");
+  const ADAPTED = [
+    "graph.ts", "validation.ts", "sly-data.ts", "router.ts", "action-registry.ts", "tool-schema.ts",
+  ];
+
+  test("the pinned commit is a full 40-hex SHA", () => {
+    expect(pins.commit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test("PROVENANCE.md names that commit, and no other", () => {
+    const shas = [...new Set([...provenance.matchAll(/\b[0-9a-f]{40}\b/g)].map((m) => m[0]))];
+    expect(shas).toEqual([pins.commit]);
+  });
+
+  test.each(ADAPTED)("src/runtime/upstream/%s's notice names that commit, and no other", (file) => {
+    const src = readFileSync(resolve(import.meta.dirname, "..", "src/runtime/upstream", file), "utf8");
+    const shas = [...new Set([...src.matchAll(/\b[0-9a-f]{40}\b/g)].map((m) => m[0]))];
+    expect(shas, file).toEqual([pins.commit]);
+    expect(src, file).toContain("Apache License 2.0");
+    expect(src, file).toMatch(/CHANGES WE MADE \(Apache-2\.0 §4\(b\)\)/);
+  });
+
+  test("every pinned source has a 64-hex digest, and PROVENANCE.md records it", () => {
+    const files = Object.entries<string>(pins.files);
+    expect(files.length).toBe(6);
+    for (const [name, digest] of files) {
+      expect(digest, name).toMatch(/^[0-9a-f]{64}$/);
+      expect(provenance, name).toContain(digest);
+      expect(provenance, name).toContain(name);
+    }
+  });
+
+  test("the adapted directory holds exactly the six files the provenance accounts for", () => {
+    const listed = readdirSync(resolve(import.meta.dirname, "..", "src/runtime/upstream")).sort();
+    expect(listed).toEqual([...ADAPTED].sort());
   });
 });

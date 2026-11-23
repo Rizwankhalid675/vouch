@@ -22,9 +22,9 @@ import { KeyStore, type StorageLike } from "./key-store.ts";
 import { Router, SCRIPTED_ROUTER, SCRIPTS, missingKeyMessage } from "./llm.ts";
 import { BudgetError, Conversation, CycleError, type Limits } from "./loop.ts";
 import { Transcript } from "./transcript.ts";
-import { clearVerdicts, renderVerdicts } from "./verdict-cards.ts";
+import { renderVerdicts } from "./verdict-cards.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, Receipt, TraceEntry } from "./types.ts";
-import { RuntimeMessage } from "./errors.ts";
+import { RuntimeMessage, TOKEN, ours, siteText, tokenOrOmitted, type SiteText } from "./errors.ts";
 import { ActionRegistry, type ActionScope, type ConfirmFn } from "./upstream/action-registry.ts";
 import { find_front_man } from "./upstream/graph.ts";
 import { validate_network } from "./upstream/validation.ts";
@@ -333,7 +333,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
 
   /* ---------------- everything below may fail without breaking the above ---------------- */
 
-  const fail = (message: string): void => {
+  const fail = (message: SiteText): void => {
     errorLine.textContent = message;
     errorLine.removeAttribute("hidden");
     askInput.disabled = true;
@@ -372,7 +372,9 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
             `It has NOT been tried again, and it will not be: repeating something we cannot account for could do it twice. ` +
             `Check your order before trying once more yourself.`,
       ),
-      el(doc, "p", { class: "verdict-source" }, `Request ${r.requestId}. ${r.error ?? ""}`.trim()),
+      // `r.error` is a handler's message. Ours all interpolate enum-validated ids,
+      // but the next handler added will not know that, so it is filtered here.
+      el(doc, "p", { class: "verdict-source" }, siteText`Request ${r.requestId}. ${r.error ?? ""}`.trim()),
     );
     outcomePanel.append(card);
     outcomePanel.removeAttribute("hidden");
@@ -388,7 +390,9 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       : (manifest.networks ?? [])[0];
     if (!entry) {
       // Fail closed: never silently run a different published network.
-      throw new RuntimeMessage(`No published network named '${opts.network ?? "(first)"}' in ${manifestUrl}; refusing to run a different one.`);
+      throw new RuntimeMessage(
+        siteText`No published network named '${opts.network ?? "(first)"}' in ${manifestUrl}; refusing to run a different one.`,
+      );
     }
 
     const hoconUrl = new URL(entry.hocon, `${base}/`).toString();
@@ -397,16 +401,17 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     const errors = validate_network(network).map(quotedTokensOnly);
     if (errors.length > 0) {
       // §6: an invalid network is stopped with visible errors, not a blank page.
-      throw new RuntimeMessage(`The published network at ${hoconUrl} is not valid and was not run:\n• ${errors.join("\n• ")}`);
+      throw new RuntimeMessage(
+        (siteText`The published network at ${hoconUrl} is not valid and was not run:` + `\n• ${errors.join("\n• ")}`) as SiteText,
+      );
     }
     const front = find_front_man(network);
-    if (!front) throw new RuntimeMessage(`The published network at ${hoconUrl} declares no front agent.`);
+    if (!front) throw new RuntimeMessage(siteText`The published network at ${hoconUrl} declares no front agent.`);
     if (front !== entry.front_man) {
       // The manifest says one thing and the positional rule says another. Both are
       // published, so a visitor cannot tell which a runtime will honour. Refuse.
       throw new RuntimeMessage(
-        `The manifest names '${entry.front_man}' as the front agent, but the network's first instructed agent is '${front}'. ` +
-          `Those must agree before this network can be run.`,
+        siteText`The manifest names '${entry.front_man}' as the front agent, but the network's first instructed agent is '${front}'. Those must agree before this network can be run.`,
       );
     }
     addTrace({ at: now(), event: "network_loaded", detail: { url: hoconUrl, frontMan: front, agents: (network.tools ?? []).length } });
@@ -427,11 +432,16 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     if (mismatch.length > 0) {
       // A declared action that does not exist, or a `commits` flag that lies, is
       // worse than publishing nothing. Refuse to run the agent at all.
-      throw new RuntimeMessage(`The published action catalog and this runtime disagree, so the assistant was not started:\n• ${mismatch.join("\n• ")}`);
+      throw new RuntimeMessage(
+        (ours("The published action catalog and this runtime disagree, so the assistant was not started:") +
+          `\n• ${mismatch.map(quotedTokensOnly).join("\n• ")}`) as SiteText,
+      );
     }
     for (const name of registry.catalog(scope).map((e) => e.name)) {
       if ((network.tools ?? []).some((a) => a.name === name)) {
-        throw new RuntimeMessage(`'${name}' is both a registered site action and an agent in the network. Refusing to run an ambiguous catalog.`);
+        throw new RuntimeMessage(
+          siteText`'${name}' is both a registered site action and an agent in the network. Refusing to run an ambiguous catalog.`,
+        );
       }
     }
     addTrace({
@@ -457,7 +467,12 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       try {
         selectedRoute = selectTopRouter(manifest, override, key, modelInput.value.trim());
       } catch (err) {
-        keyStatus.textContent = String((err as Error).message);
+        // `selectTopRouter` is upstream's; its message is ours by adoption, but it
+        // is still filtered rather than trusted.
+        keyStatus.textContent =
+          err instanceof RuntimeMessage
+            ? err.siteMessage
+            : siteText`This site publishes no usable AI provider route for the key you supplied.`;
         return null;
       }
       const next = new Router({
@@ -482,10 +497,10 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         },
       });
       keyStatus.textContent = next.scripted
-        ? `Replaying a recorded reply. No model is called and no key is used. The gate, the checker and the verdict cards all run for real.`
+        ? ours("Replaying a recorded reply. No model is called and no key is used. The gate, the checker and the verdict cards all run for real.")
         : next.needsKey
           ? missingKeyMessage(next.baseUrl)
-          : `Ready. Requests go to ${next.baseUrl} with your key, and nowhere else.`;
+          : siteText`Ready. Requests go to ${next.baseUrl} with your key, and nowhere else.`;
       return next;
     };
 
@@ -508,7 +523,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
           for (const r of receipts) {
             if (r.status === "unknown") showOutstanding(r, name);
             else if (r.status === "succeeded" && name === "checkout_demo_order") {
-              transcript.showRuntime("Your demo order is in. No payment was taken and no food is being made.", "receipt");
+              transcript.showRuntime(ours("Your demo order is in. No payment was taken and no food is being made."), "receipt");
             }
           }
         },
@@ -520,7 +535,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     saveBtn.addEventListener("click", () => {
       const key = keyInput.value.trim();
       if (!keyStore.available) {
-        keyStatus.textContent = "This browser will not let this site store anything, so a key cannot be kept here.";
+        keyStatus.textContent = ours("This browser will not let this site store anything, so a key cannot be kept here.");
         return;
       }
       if (key) {
@@ -538,8 +553,9 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       // Rebuild first: starting a keyless router rewrites the status line, and the
       // visitor should be left reading what happened to their key, not a setup error.
       rebuild();
-      keyStatus.textContent =
-        "Your key has been deleted from this browser. The verdict beside each dish is unaffected: it never needed a model.";
+      keyStatus.textContent = ours(
+        "Your key has been deleted from this browser. The verdict beside each dish is unaffected: it never needed a model.",
+      );
     });
 
     resetBtn.addEventListener("click", () => {
@@ -549,15 +565,21 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       refusalPanel.setAttribute("hidden", "");
       outcomePanel.replaceChildren();
       outcomePanel.setAttribute("hidden", "");
-      transcript.showRuntime("New conversation. The verdict beside each dish is unchanged: it never depended on the conversation.", "reset");
+      transcript.showRuntime(ours("New conversation. The verdict beside each dish is unchanged: it never depended on the conversation."), "reset");
     });
 
     replayBox.addEventListener("change", () => rebuild());
     scriptSelect.addEventListener("change", () => rebuild());
   } catch (err) {
-    const message = String((err as Error)?.message ?? err);
-    fail(`${message}\n\nThe menu, the ingredient lists and the safety verdicts on this page are unaffected: they are worked out here and never call a model.`);
-    addTrace({ at: now(), event: "startup_failed", detail: { stage: startupStage } });
+    // Same rule as the transcript: only a message this runtime wrote is shown in
+    // the site's voice. A malformed artifact throws a SyntaxError whose message
+    // quotes the file; that is not ours to repeat.
+    const message =
+      err instanceof RuntimeMessage
+        ? err.siteMessage
+        : siteText`The agent could not be started (${(err as Error)?.name ?? "Error"} while loading the ${startupStage}).`;
+    fail((message + "\n\nThe menu, the ingredient lists and the safety verdicts on this page are unaffected: they are worked out here and never call a model.") as SiteText);
+    addTrace({ at: now(), event: "startup_failed", detail: { stage: startupStage, kind: (err as Error)?.name ?? "Error" } });
   }
 
   /* ---------------- asking ---------------- */
@@ -566,7 +588,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     if (!text.trim()) return;
     if (!conversation || !router) {
       transcript.showRuntime(
-        "The assistant is not running, so there is nobody to ask. The verdict beside each dish still works.",
+        ours("The assistant is not running, so there is nobody to ask. The verdict beside each dish still works."),
         "error",
       );
       return;
@@ -586,7 +608,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       // sentence instead of its message. The transcript labels a runtime line
       // "Hollis & Rye", and the deli does not repeat text it cannot vouch for.
       if (err instanceof BudgetError || err instanceof CycleError || err instanceof RuntimeMessage) {
-        transcript.showRuntime(err.message, "error");
+        transcript.showRuntime(err.siteMessage, "error");
         if (err instanceof BudgetError) {
           addTrace({ at: now(), event: "budget_stopped", detail: { budget: err.budget, limit: err.limit } });
         } else if (err instanceof CycleError) {
@@ -594,8 +616,10 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         }
       } else {
         transcript.showRuntime(
-          "Something went wrong talking to the model router, and the reply was not shown. " +
-            "The details are under \u201cWhat this ran\u201d. The verdict beside each dish is unaffected.",
+          ours(
+            "Something went wrong talking to the model router, and the reply was not shown. " +
+              "The details are under \u201cWhat this ran\u201d. The verdict beside each dish is unaffected.",
+          ),
           "error",
         );
         addTrace({ at: now(), event: "turn_failed", detail: { kind: (err as Error)?.name ?? "Error" } });
@@ -670,9 +694,6 @@ export function quotedTokensOnly(message: string): string {
  * Everything else must be token-shaped (no whitespace) to be rendered.
  */
 const SAFE_TRACE_TEXT = new Set(["local BYOK (not shown)", "none", "<text omitted>"]);
-
-/** Token-shaped: an id, a name, a URL, a host, a status. No whitespace, so no prose. */
-const TOKEN = /^[A-Za-z0-9_.:/#@?&=+~,;()[\]{}$*%!-]*$/;
 
 /**
  * A trace detail with every string that could be prose replaced. Recursive, because

@@ -44,8 +44,27 @@ In Task 6 some of it was **adapted into this repository**.
 
 Every line range quoted below resolves against that commit and nothing else, so the
 claims in this file are checkable rather than assertable. Each adapted file's own
-notice carries the same SHA in a permalink. The six upstream sources were re-fetched
-at that exact SHA and verified byte-identical to what was adapted:
+notice carries the same SHA in a permalink. The six upstream sources were re-fetched at that exact SHA and verified
+byte-identical to what was adapted. **The SHA-256 of each is recorded below**, so
+"verified byte-identical" is a one-command check rather than a claim you have to
+take on trust:
+
+```
+sha256  (upstream file at commit 486ecf2)
+d3344326b105069bfd7cd2de2bfa42a5e8963f88859a0fc33e678c5113b624af  nsdeploy/runtime/generated/graph.gen.mjs
+fc56d29878e18fa94f988311fe60f5f2e7823a45498f43139f87619015a59b3a  nsdeploy/runtime/generated/validation.gen.mjs
+653d3d6988109151f3200636ac4f143d66d4e363d4f1ab03af00216ee3c70c04  nsdeploy/runtime/generated/sly_data.gen.mjs
+69331a83b9a5bbf3de62fea53d9ff1219a3eb2ff3ce005062b7716f5f0723bb3  nsdeploy/runtime/engine.js
+899a1eb474f09ac2521b550eea936ff621ccf42fdd2b74e0729676eeec013fca  nsdeploy/runtime/actions.js
+ebca618b329e9d43e6b88ce43dc863e55efb0064a247812e72dcd12d9b2fceac  nsdeploy/runtime/runner.js
+```
+
+To check one yourself:
+
+```
+curl -sL https://raw.githubusercontent.com/cognizant-ai-lab/nsdeploy/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/actions.js | shasum -a 256
+```
+
 
 | Upstream file | Permalink |
 |---|---|

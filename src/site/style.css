@@ -62,3 +62,72 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
   .layout { grid-template-columns: minmax(0, 1fr) 20rem; }
   .cart { position: sticky; top: 1rem; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Verdict cards. Rendered beside the dish, from the checker, never    */
+/* from chat. A verdict must read the same in monochrome, so every     */
+/* state carries a word and a mark, not only a colour.                 */
+/* ------------------------------------------------------------------ */
+.verdict { border-radius: 4px; padding: .6rem .7rem; border-left: 5px solid var(--muted); background: #f4ece0; }
+.verdict-head { display: flex; align-items: baseline; gap: .45rem; margin: 0 0 .25rem; font-size: .95rem; }
+.verdict-mark { font-weight: 700; font-size: 1.05rem; line-height: 1; }
+.verdict-reason { margin: 0; font-size: .88rem; }
+.verdict-scope, .verdict-source { margin: .3rem 0 0; font-size: .74rem; color: #574a3c; }
+/* #8c2317 on #fbeae7 is 6.4:1; #1f5c33 on #e8f3ea is 5.6:1; both pass AA for body text. */
+.verdict-unsafe { border-left-color: #8c2317; background: #fbeae7; }
+.verdict-unsafe .verdict-head { color: #7d1f14; }
+.verdict-unknown { border-left-color: #8a5a00; background: #fdf3df; }
+.verdict-unknown .verdict-head { color: #6d4700; }
+.verdict-safe { border-left-color: #1f5c33; background: #e8f3ea; }
+.verdict-safe .verdict-head { color: #1a4e2b; }
+.verdict-unchecked { border-left-color: var(--rule); background: #f3eee3; }
+.verdict-unchecked .verdict-head { color: var(--muted); }
+
+/* ------------------------------------------------------------------ */
+/* The agent panel. Created at runtime by src/runtime/boot.ts; the      */
+/* shipped HTML contains none of it, because the site must work with    */
+/* no agent at all.                                                     */
+/* ------------------------------------------------------------------ */
+.agent-host { max-width: 72rem; margin: 0 auto; padding: 0 1rem 3rem; }
+.vouch-panel { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 1.25rem; display: grid; gap: 1rem; }
+.panel-note, .byok-note { margin: 0; color: var(--muted); font-size: .9rem; max-width: 46rem; }
+.restrictions { border: 1px solid var(--rule); border-radius: 4px; padding: .75rem 1rem 1rem; margin: 0; }
+.restrictions legend { font-weight: 700; padding: 0 .35rem; }
+.restriction { display: inline-flex; align-items: center; gap: .35rem; margin: 0 1rem .4rem 0; }
+.verdict-status { margin: .6rem 0 0; font-size: .88rem; color: var(--ink); }
+.model-settings { border: 1px solid var(--rule); border-radius: 4px; padding: .5rem .75rem; }
+.model-settings summary { font-weight: 600; cursor: pointer; }
+.model-settings > *:not(summary) { margin-top: .6rem; }
+.field { display: grid; gap: .2rem; max-width: 32rem; font-size: .85rem; }
+.field-inline { display: flex; align-items: center; gap: .4rem; }
+.field input[type="password"], .field input[type="url"], .field input[type="text"] { font: inherit; padding: .45rem .5rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); }
+.model-settings button { border: 1px solid var(--rule); background: var(--paper); border-radius: 4px; padding: .45rem .8rem; }
+.model-settings .forget { border-color: #8c2317; color: #7d1f14; }
+.key-status { margin: .6rem 0 0; font-size: .85rem; color: var(--muted); }
+
+.transcript { display: grid; gap: .75rem; max-height: 26rem; overflow-y: auto; }
+.turn { border-left: 3px solid var(--rule); padding-left: .7rem; }
+.turn-who { margin: 0; font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.turn-text { margin: .15rem 0 0; white-space: pre-wrap; }
+.turn-guest { border-left-color: var(--ink); }
+.turn-agent { border-left-color: var(--accent); }
+.turn-error .turn-text, .runtime-error { color: #7d1f14; }
+.turn-delegated .turn-text, .turn-declined .turn-text, .turn-receipt .turn-text { font-size: .85rem; color: var(--muted); }
+.replay-tag { margin: 0 0 .25rem; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6d4700; background: #fdf3df; border: 1px solid #e3cf9d; border-radius: 3px; padding: .15rem .4rem; display: inline-block; }
+
+.refusals { border: 1px solid #e3cf9d; background: #fdf3df; border-radius: 4px; padding: .75rem 1rem; }
+.refusal-head { margin: 0; font-weight: 600; font-size: .9rem; color: #6d4700; }
+.refusals ul { margin: .4rem 0 0; padding-left: 1.2rem; font-size: .85rem; }
+.confirm { border: 2px solid var(--accent); border-radius: 4px; padding: .75rem 1rem; }
+.confirm-head { margin: 0 0 .4rem; font-weight: 700; }
+.confirm ul { margin: 0 0 .6rem; padding-left: 1.2rem; font-size: .9rem; }
+.confirm code { display: block; font-size: .8rem; color: #574a3c; overflow-wrap: anywhere; }
+.confirm button { font: inherit; margin-right: .5rem; padding: .5rem .9rem; border-radius: 4px; border: 1px solid var(--rule); background: var(--paper); }
+.confirm [data-confirm-yes] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.runtime-error { margin: 0; white-space: pre-wrap; font-size: .9rem; }
+.ask { display: flex; gap: .5rem; }
+.ask input { flex: 1; font: inherit; padding: .6rem .7rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); }
+.ask button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 4px; padding: .6rem 1.1rem; font-weight: 600; }
+.ask input:disabled, .ask button:disabled { background: var(--rule); color: #5a4d3f; }
+.trace summary { font-size: .85rem; color: var(--muted); cursor: pointer; }
+.trace ol { margin: .5rem 0 0; padding-left: 1.4rem; font-size: .75rem; color: var(--muted); overflow-wrap: anywhere; }

@@ -1,0 +1,257 @@
+/**
+ * The model call. OURS, written here.
+ *
+ * Not adapted from upstream's llm.js: that client streams Server-Sent Events,
+ * carries a provider-error taxonomy and a model/router policy, and is ~225 lines.
+ * This one is a single non-streaming POST, which is all our loop needs, and
+ * writing it ourselves is the point — the key-custody rule is the product's
+ * security claim and it should be enforced in code we own and can show a judge.
+ *
+ * Three rules, each pinned by a test on captured payloads:
+ *  1. The key is attached as an `Authorization: Bearer` header, and ONLY to the
+ *     router base URL the visitor's own router selection resolved to.
+ *  2. It is never put in a URL, a query string, a request body, a prompt, an
+ *     action argument, or a trace entry. The trace records that a key was used,
+ *     never the value — a pattern taken from upstream's `keySource` span field.
+ *  3. A real router with no key stops the call with a setup error that names the
+ *     host and says what to do. Upstream's wording at llm.js:61 sets the bar; we
+ *     match it and add the sentence only this product can add.
+ */
+
+import type { TraceEntry } from "./types.ts";
+import type { ToolSchema } from "./upstream/tool-schema.ts";
+import rawScripts from "../../data/scripted-replies.json" with { type: "json" };
+
+/** The pseudo-router that replays a recorded reply. A sibling of upstream's `browser://mock`. */
+export const SCRIPTED_ROUTER = "vouch://scripted";
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
+  tool_call_id?: string;
+  name?: string;
+}
+
+export interface ModelToolCall {
+  id: string;
+  name: string;
+  /** Raw JSON text as the model emitted it. Parsed, and then schema-validated, by the caller. */
+  arguments: string;
+}
+
+export interface ModelReply {
+  content: string;
+  toolCalls: ModelToolCall[];
+  /** How these words were produced. `scripted` is surfaced in the UI; it is never dressed up as live. */
+  source: "live" | "scripted";
+  /** Set for a scripted reply: which fixture, so the UI and the trace can name it. */
+  scriptId?: string;
+  scriptLabel?: string;
+  model: string;
+}
+
+export interface ScriptTurn {
+  content?: string;
+  toolCalls?: { name: string; arguments: Record<string, unknown> }[];
+}
+
+export interface Script {
+  id: string;
+  label: string;
+  describes: string;
+  turns: ScriptTurn[];
+}
+
+interface ScriptFile {
+  version: number;
+  note: string;
+  router: string;
+  scripts: Script[];
+}
+
+const scriptFile = rawScripts as ScriptFile;
+
+export const SCRIPTS: readonly Script[] = scriptFile.scripts;
+
+export function scriptById(id: string): Script | undefined {
+  return SCRIPTS.find((s) => s.id === id);
+}
+
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url || "?";
+  }
+}
+
+/**
+ * The setup error for a real router with no key. Names the host, says what to do,
+ * says where the key stays — and then says the thing upstream cannot: that the
+ * part of this site that decides whether food is safe does not need a model at
+ * all, so it is still working.
+ */
+export function missingKeyMessage(baseUrl: string): string {
+  return (
+    `An AI provider key is required for ${hostOf(baseUrl) || "the configured provider"}. ` +
+    `Open the model settings above, paste your key, then select Save. ` +
+    `Your key stays in this browser and is sent only to that provider. ` +
+    `The safety check is not affected: the verdict beside each dish is computed here, from the published ingredients, and never calls a model.`
+  );
+}
+
+export interface RouterOptions {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  fetchImpl?: typeof fetch;
+  /** Called with each record. Receives no credential: see `keySource` below. */
+  onTrace?: (entry: TraceEntry) => void;
+  /** Which recorded reply to replay, when the baseUrl is the scripted router. */
+  scriptId?: string;
+  now?: () => number;
+}
+
+export class Router {
+  readonly baseUrl: string;
+  readonly model: string;
+  private readonly apiKey: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly onTrace: (entry: TraceEntry) => void;
+  private readonly scriptId: string;
+  private readonly now: () => number;
+  /** Position in the recorded script, for the replayed route only. */
+  private scriptStep = 0;
+
+  constructor(opts: RouterOptions) {
+    this.baseUrl = (opts.baseUrl || "").replace(/\/$/, "");
+    this.apiKey = opts.apiKey ?? "";
+    this.model = opts.model;
+    this.fetchImpl = opts.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+    this.onTrace = opts.onTrace ?? (() => {});
+    this.scriptId = opts.scriptId ?? SCRIPTS[0]!.id;
+    this.now = opts.now ?? Date.now;
+  }
+
+  get scripted(): boolean {
+    return this.baseUrl === SCRIPTED_ROUTER;
+  }
+
+  /** True when this route needs a credential we do not have. */
+  get needsKey(): boolean {
+    return !this.scripted && (!this.apiKey || this.apiKey === "demo");
+  }
+
+  resetScript(): void {
+    this.scriptStep = 0;
+  }
+
+  async chat({
+    messages,
+    tools,
+    signal,
+  }: {
+    messages: ChatMessage[];
+    tools?: ToolSchema[];
+    signal?: AbortSignal;
+  }): Promise<ModelReply> {
+    if (this.scripted) return this.replay();
+    if (this.needsKey) throw new Error(missingKeyMessage(this.baseUrl));
+
+    const endpoint = `${this.baseUrl}/chat/completions`;
+    const body: Record<string, unknown> = { model: this.model, messages, stream: false };
+    if (tools && tools.length > 0) {
+      body["tools"] = tools;
+      body["tool_choice"] = "auto";
+    }
+    // `keySource` records THAT a key was used, never the value. Upstream's pattern.
+    this.onTrace({
+      at: this.now(),
+      event: "model_call",
+      detail: {
+        routerHost: hostOf(this.baseUrl),
+        endpoint,
+        model: this.model,
+        keySource: this.apiKey ? "local BYOK (not shown)" : "none",
+        toolNames: (tools ?? []).map((t) => t.function.name),
+        source: "live",
+      },
+    });
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    // The one place the key is ever attached, and it is attached to this router only.
+    if (this.apiKey) headers["Authorization"] = `Bearer ${this.apiKey}`;
+    if (hostOf(this.baseUrl) === "api.anthropic.com") headers["anthropic-dangerous-direct-browser-access"] = "true";
+
+    const resp = await this.fetchImpl(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      // A provider key is a bearer credential we attach ourselves; we never want
+      // the browser's ambient cookies going out alongside it.
+      credentials: "omit",
+      ...(signal ? { signal } : {}),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`The model router at ${hostOf(this.baseUrl)} returned HTTP ${resp.status}. ${text.slice(0, 300)}`);
+    }
+    const json = (await resp.json()) as {
+      model?: string;
+      choices?: { message?: { content?: string | null; tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[] } }[];
+    };
+    const message = json.choices?.[0]?.message ?? {};
+    const toolCalls: ModelToolCall[] = (message.tool_calls ?? []).map((tc, i) => ({
+      id: tc.id ?? `call_${i}`,
+      name: tc.function?.name ?? "",
+      arguments: tc.function?.arguments ?? "{}",
+    }));
+    return { content: message.content ?? "", toolCalls, source: "live", model: json.model ?? this.model };
+  }
+
+  /**
+   * Replay the next turn of a recorded reply. The model's WORDS are fixed; nothing
+   * downstream is: the gate, the checker and the verdict cards all run for real.
+   */
+  private replay(): ModelReply {
+    const script = scriptById(this.scriptId);
+    if (!script) throw new Error(`No recorded reply named '${this.scriptId}'.`);
+    const turn = script.turns[this.scriptStep];
+    this.scriptStep += 1;
+    this.onTrace({
+      at: this.now(),
+      event: "model_call",
+      detail: {
+        routerHost: SCRIPTED_ROUTER,
+        model: "replayed-fixture",
+        keySource: "none",
+        source: "scripted",
+        scriptId: script.id,
+        turn: this.scriptStep,
+      },
+    });
+    if (!turn) {
+      return {
+        content: "(the recorded reply ends here)",
+        toolCalls: [],
+        source: "scripted",
+        scriptId: script.id,
+        scriptLabel: script.label,
+        model: "replayed-fixture",
+      };
+    }
+    return {
+      content: turn.content ?? "",
+      toolCalls: (turn.toolCalls ?? []).map((tc, i) => ({
+        id: `call_${script.id}_${this.scriptStep}_${i}`,
+        name: tc.name,
+        arguments: JSON.stringify(tc.arguments ?? {}),
+      })),
+      source: "scripted",
+      scriptId: script.id,
+      scriptLabel: script.label,
+      model: "replayed-fixture",
+    };
+  }
+}

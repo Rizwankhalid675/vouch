@@ -39,5 +39,11 @@
   </footer>
 
   <script type="module" src="./shop.ts"></script>
+  <!--
+    The agent panel is additive and creates its own markup at runtime, so this
+    document contains no agent element. If this module never loads, the deli above
+    is unchanged and still works, which is the point.
+  -->
+  <script type="module" src="./agent.ts"></script>
 </body>
 </html>

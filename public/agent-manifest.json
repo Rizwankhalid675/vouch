@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "site": {
+    "name": "Vouch & Co.",
+    "description": "A deli whose menu can be browsed and ordered without any agent, and whose agents describe food but never decide whether it is safe to eat."
+  },
+  "networks": [
+    {
+      "name": "vouch",
+      "description": "Menu guide, restriction reader and order builder for Vouch & Co.",
+      "front_man": "front_of_house",
+      "hocon": "vouch.network.json"
+    }
+  ],
+  "llm_router": {
+    "protocol": "openai-compatible",
+    "default": {
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "requires_key": true,
+      "note": "Model and generation settings are hints. The caller's active router and model policy take precedence."
+    },
+    "byok": true
+  },
+  "peer_policy": {
+    "allowed_peers": [],
+    "consent": "required_before_contact",
+    "private_context": "deny_by_default",
+    "router_inherited_by_peers": true
+  }
+}

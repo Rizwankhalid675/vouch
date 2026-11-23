@@ -11,6 +11,8 @@ const prerenderMenu: Plugin = {
 export default defineConfig({
   root: "src/site",
   base: "./",
+  // The three conformance artifacts (§3.3) live in /public and are copied to the site root.
+  publicDir: "../../public",
   build: { outDir: "../../dist", emptyOutDir: true },
   plugins: [prerenderMenu],
 });

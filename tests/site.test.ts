@@ -177,6 +177,12 @@ describe("mustard is tracked, so a hidden mustard is disclosed", () => {
   });
 });
 
+describe("celery is tracked, so a derived celery is disclosed", () => {
+  test.each(["chicken_salad_sandwich", "matzo_ball_soup", "chicken_noodle_soup"])("%s names celery", (id) => {
+    expect($(`[data-item='${id}'] [data-contains]`)!.textContent!.toLowerCase()).toContain("celery");
+  });
+});
+
 describe("the card and the checker agree (parity)", () => {
   test("for every item and restriction, Contains matches verdictFor", () => {
     for (const item of MENU.items) {

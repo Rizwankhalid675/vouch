@@ -8,5 +8,6 @@
   { "id": "pork_free", "name": "No pork", "avoid": ["pork"] },
   { "id": "soy_free", "name": "Soy-free", "avoid": ["soy"] },
   { "id": "sesame_free", "name": "Sesame-free", "avoid": ["sesame"] },
-  { "id": "mustard_free", "name": "Mustard-free", "avoid": ["mustard"] }
+  { "id": "mustard_free", "name": "Mustard-free", "avoid": ["mustard"] },
+  { "id": "celery_free", "name": "Celery-free", "avoid": ["celery"] }
 ]

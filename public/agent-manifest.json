@@ -1,13 +1,13 @@
 {
   "version": 1,
   "site": {
-    "name": "Vouch & Co.",
+    "name": "Hollis & Rye",
     "description": "A deli whose menu can be browsed and ordered without any agent, and whose agents describe food but never decide whether it is safe to eat."
   },
   "networks": [
     {
       "name": "vouch",
-      "description": "Menu guide, restriction reader and order builder for Vouch & Co.",
+      "description": "Menu guide, restriction reader and order builder for Hollis & Rye.",
       "front_man": "front_of_house",
       "hocon": "vouch.network.json"
     }

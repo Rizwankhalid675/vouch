@@ -72,7 +72,7 @@ specification's own acceptance test.
 
 ### 4.1 The site
 
-A deli — **Vouch & Co.** — with a real menu whose items carry structured
+A deli — **Hollis & Rye** — with a real menu whose items carry structured
 ingredients, each tagged with allergens and derivations (e.g. `butter → dairy`,
 `semolina → gluten`). Ordinary HTML/CSS/JS, no framework, no backend. Browsable
 and orderable without ever speaking to an agent, because the spec requires the

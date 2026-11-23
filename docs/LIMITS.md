@@ -82,6 +82,22 @@ survivable, so that was the product's central claim being false.
 A model may still ASK for a verdict. It gets a `Finding` back in the conversation,
 and the conversation is gated. It does not get the display.
 
+### 2.0 What the key-isolation test can and cannot see
+
+The §6 key-isolation check asserts on captured payloads: every request a session makes is
+recorded synchronously at the moment it is made, its body read later at scan time, so neither
+the body's kind (string, `URLSearchParams`, `FormData`, stream, `Blob`) nor the timing of a
+fire-and-forget request can hide a leak. A beacon carrying the key to another origin fails the
+test in all five body shapes, awaited or not.
+
+**Its boundary is the injected `fetchImpl`.** The harness supplies the runtime's fetch rather
+than replacing the global one, so a module that called the global `fetch` directly would be
+invisible to this test. Today nothing does — the key exists only inside `LlmClient`, which
+holds `fetchImpl` — but the check is a check on the runtime's own request path, not a
+machine-wide guarantee, and it should not be read as one. Verified by mutation: a beacon
+through `fetchImpl` is caught; the same beacon through the global `fetch` escapes the harness
+without being tested at all, which is a limit of the test, not a hole in the product.
+
 ### 2.1 The gate withholds true statements, and more of them than you would expect
 
 The gate cannot tell a true safety claim from a false one and does not try. It

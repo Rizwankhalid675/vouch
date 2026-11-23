@@ -111,6 +111,33 @@ function verdictReach(d: Doc): string[] {
   return bad;
 }
 
+/**
+ * ALLOW-LIST for what an agent's `tools` may contain, for THIS network. Anything else fails, whatever it is called.
+ * §2.1 permits bare URLs and MCP descriptors in general; this network has none, and a name-based test cannot tell
+ * a bland alias ("dietary_helper") or a tool called "is_it_ok" from a harmless one. So the decision is explicit:
+ *  - AGENTS: the in-network agents. To add an agent, name it here and justify it in the commit.
+ *  - ALLOWED_KINDS: "agent" and "symbolic" (a name bound in links.json; Task 8's peer arrives this way, with its
+ *    binding and its allowed_peers entry, and needs NO edit here). To permit a bare URL or an MCP descriptor,
+ *    add "url" / "mcp" to ALLOWED_KINDS in the same commit that justifies it.
+ */
+const AGENTS = ["front_of_house", "menu_guide", "restriction_reader", "order_builder"];
+const ALLOWED_KINDS: string[] = ["agent", "symbolic"];
+
+function disallowedRefs(d: Doc, kinds: string[] = ALLOWED_KINDS, agentAllow: string[] = AGENTS): string[] {
+  const bound = Object.keys(d.links.networks?.[d.network.metadata.name] ?? {});
+  const bad: string[] = [];
+  for (const a of d.network.tools)
+    for (const t of a.tools ?? []) {
+      const r = resolveRef(t, d);
+      const ok =
+        r !== null &&
+        kinds.includes(r.kind) &&
+        (r.kind === "agent" ? agentAllow.includes(t) : r.kind === "symbolic" ? bound.includes(t) : true);
+      if (!ok) bad.push(`${a.name} -> ${JSON.stringify(t)}`);
+    }
+  return bad;
+}
+
 const doc: Doc = { manifest, network, links };
 const peerDoc = (extra: any): Doc => {
   const d = structuredClone(doc);
@@ -118,13 +145,20 @@ const peerDoc = (extra: any): Doc => {
   return d;
 };
 
-/** What the visitor's browser can actually call, from the manifest alone. */
+/**
+ * What the visitor's browser can actually call, from the manifest alone.
+ *
+ * This encodes the RULE of `selectTopRouter` in nsdeploy/runtime/engine.js; it does not copy its code.
+ * docs/vendor/ is the authority. If this diverges from upstream, the divergence is the defect being pinned:
+ * with a real key, upstream reads `llm_router.byok_router` ONLY and throws when it is absent or empty.
+ * There is deliberately no fallback to `base_url` here, because upstream has none.
+ */
 function routeFor(m: any, visitorKey: string | null): { baseUrl: string } {
   const r = m.llm_router ?? {};
   if (visitorKey) {
-    const url = r.byok_router || r.base_url;
-    if (!url) throw new Error("A real API key is configured, but this site publishes no AI provider route.");
-    return { baseUrl: url };
+    if (typeof r.byok_router !== "string" || r.byok_router === "")
+      throw new Error("A real API key is configured, but this site publishes no AI provider route.");
+    return { baseUrl: r.byok_router };
   }
   return { baseUrl: r.base_url || "" };
 }
@@ -175,6 +209,10 @@ describe("the visitor can actually run the network (§6 check 2)", () => {
     expect(route!.baseUrl).toMatch(/^https:\/\/[^/]+/);
   });
 
+  test("llm_router.byok_router is itself a non-empty https URL (a rename or an empty value cannot slip through)", () => {
+    expect(manifest.llm_router.byok_router).toMatch(/^https:\/\/[^/]+/);
+  });
+
   test("a model is available for the router the visitor ends up on", () => {
     expect(typeof network.llm_config.model_name).toBe("string");
     expect(network.llm_config.model_name.length).toBeGreaterThan(0);
@@ -185,6 +223,14 @@ describe("the visitor can actually run the network (§6 check 2)", () => {
     broken.llm_router = { default: broken.llm_router.default, byok: true };
     expect(routeFor(broken, null).baseUrl).toBe("");
     expect(() => routeFor(broken, "a-visitors-own-key")).toThrow();
+    for (const partial of [undefined, "", "https://not-the-key-name"]) {
+      // byok_router deleted, emptied, or (via the key being renamed) absent while base_url is still present.
+      const m = structuredClone(manifest);
+      if (partial === undefined) delete m.llm_router.byok_router;
+      else if (partial === "") m.llm_router.byok_router = "";
+      else ((m.llm_router.byok_router_renamed = m.llm_router.byok_router), delete m.llm_router.byok_router);
+      expect(() => routeFor(m, "a-visitors-own-key"), String(partial)).toThrow();
+    }
   });
 });
 
@@ -239,8 +285,27 @@ describe("vouch.network.json (§2.1)", () => {
     expect([...seen].sort()).toEqual([...names].sort());
   });
 
-  test("NO tool reference, by any route, reaches a safety verdict", () => {
+  test("NO tool reference, by any route, reaches a safety verdict (allow-list, plus name heuristics as a second net)", () => {
+    expect(disallowedRefs(doc)).toEqual([]);
     expect(verdictReach(doc)).toEqual([]);
+  });
+
+  test("the network contains exactly the allow-listed agents", () => {
+    expect([...names].sort()).toEqual([...AGENTS].sort());
+  });
+
+  test("...the allow-list is live: aliases, MCP tools of any name, bare URLs and unknown names all fail; a bound peer passes", () => {
+    const alias = structuredClone(doc);
+    alias.network.tools.push({ ...structuredClone(agents[1]), name: "dietary_helper" });
+    alias.network.tools[0].tools.push("dietary_helper");
+    expect(verdictReach(alias)).toEqual([]); // a bland name defeats the heuristic...
+    expect(disallowedRefs(alias)).not.toEqual([]); // ...but not the allow-list
+    expect(disallowedRefs(peerDoc({ url: "https://peer.example/mcp", tools: ["is_it_ok"] }))).not.toEqual([]);
+    expect(disallowedRefs(peerDoc("https://peer.example/agents/anything"))).not.toEqual([]);
+    expect(disallowedRefs(peerDoc("unbound_name"))).not.toEqual([]);
+    const peer = peerDoc("marrow_point");
+    peer.links.networks.vouch.marrow_point = "https://bakery.example/agents/marrow_point";
+    expect(disallowedRefs(peer)).toEqual([]); // Task 8's wiring needs no edit to the allow-list
   });
 
   test("...and that check is live: it passes a legitimate peer and fails every way of routing a verdict in", () => {

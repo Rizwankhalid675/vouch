@@ -14,6 +14,9 @@
   ],
   "llm_router": {
     "protocol": "openai-compatible",
+    "base_url": "https://api.openai.com/v1",
+    "byok_router": "https://api.openai.com/v1",
+    "mock": false,
     "default": {
       "base_url": "https://api.openai.com/v1",
       "model": "gpt-4o-mini",
@@ -27,5 +30,31 @@
     "consent": "required_before_contact",
     "private_context": "deny_by_default",
     "router_inherited_by_peers": true
-  }
+  },
+  "allowed_peers": [],
+  "deployment": {
+    "mode": "static"
+  },
+  "actions": [
+    {
+      "name": "get_menu_state",
+      "purpose": "Read the current menu, the guest's restrictions and the cart.",
+      "commits": false
+    },
+    {
+      "name": "check_safety",
+      "purpose": "Return the checker's verdict (safe, unsafe or unknown, with the deciding ingredient) for menu items under the guest's restrictions. The only source of a safety verdict; not callable from any agent's tools.",
+      "commits": false
+    },
+    {
+      "name": "add_to_cart",
+      "purpose": "Add a menu item to the cart after the guest confirms.",
+      "commits": true
+    },
+    {
+      "name": "checkout_demo_order",
+      "purpose": "Place a demo order. No payment is taken and nothing is fulfilled.",
+      "commits": true
+    }
+  ]
 }

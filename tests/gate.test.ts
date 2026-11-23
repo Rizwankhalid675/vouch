@@ -138,6 +138,10 @@ describe("the gate: no unbacked safety claim reaches the screen", () => {
     ]) expect(gate(s, []).refusals.length, s).toBe(1);
   });
 
+  test("obfuscation: spaced letters", () => {
+    expect(gate("The soup is d a i r y free.", []).refusals.length).toBe(1);
+  });
+
   test("descriptive prose with no safety claim passes untouched", () => {
     const prose = "The Reuben is stacked with corned beef and swiss on grilled rye. It costs $11.50 and is our most popular sandwich!\nOrder at the counter, and ask for extra pickles.";
     const g = gate(prose, [find("reuben")]);

@@ -8,7 +8,10 @@
  *          (itself generated upstream from neuro_san/kernel/validation.py)
  * Project: Cognizant AI Lab — nsDeploy
  * Licence: Apache License 2.0. Full text: docs/vendor/LICENSE-Apache-2.0.txt
- * Fetched: 2026-11-23. Recorded in docs/vendor/PROVENANCE.md.
+ * Fetched: 2026-11-23 at commit 486ecf26aa8775963f9b765f894734bef1ac9817.
+ * Permalink: https://github.com/cognizant-ai-lab/nsdeploy/blob/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/generated/validation.gen.mjs
+ *            (re-fetched at that SHA and verified byte-identical to what was adapted)
+ * Recorded in docs/vendor/PROVENANCE.md.
  *
  * CHANGES WE MADE (Apache-2.0 §4(b)):
  *  1. Translated from JavaScript to TypeScript; upstream's `_get` helper replaced

@@ -18,6 +18,7 @@
  *     match it and add the sentence only this product can add.
  */
 
+import { RuntimeMessage } from "./errors.ts";
 import type { TraceEntry } from "./types.ts";
 import type { ToolSchema } from "./upstream/tool-schema.ts";
 import rawScripts from "../../data/scripted-replies.json" with { type: "json" };
@@ -76,6 +77,24 @@ export const SCRIPTS: readonly Script[] = scriptFile.scripts;
 
 export function scriptById(id: string): Script | undefined {
   return SCRIPTS.find((s) => s.id === id);
+}
+
+/**
+ * A provider error code, if the body is JSON and the code is token-shaped
+ * (`invalid_api_key`, `model_not_found`). Anything with whitespace, punctuation or
+ * length is prose and is discarded rather than rendered.
+ */
+export async function providerErrorCode(resp: { text(): Promise<string> }): Promise<string> {
+  try {
+    const body: unknown = JSON.parse(await resp.text());
+    const err = (body as { error?: { code?: unknown; type?: unknown } })?.error;
+    for (const candidate of [err?.code, err?.type]) {
+      if (typeof candidate === "string" && /^[a-z0-9_.-]{1,64}$/i.test(candidate)) return candidate;
+    }
+  } catch {
+    /* not JSON, or no readable body: say nothing rather than guess */
+  }
+  return "";
 }
 
 export function hostOf(url: string): string {
@@ -157,7 +176,7 @@ export class Router {
     signal?: AbortSignal;
   }): Promise<ModelReply> {
     if (this.scripted) return this.replay();
-    if (this.needsKey) throw new Error(missingKeyMessage(this.baseUrl));
+    if (this.needsKey) throw new RuntimeMessage(missingKeyMessage(this.baseUrl));
 
     const endpoint = `${this.baseUrl}/chat/completions`;
     const body: Record<string, unknown> = { model: this.model, messages, stream: false };
@@ -194,8 +213,17 @@ export class Router {
       ...(signal ? { signal } : {}),
     });
     if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`The model router at ${hostOf(this.baseUrl)} returned HTTP ${resp.status}. ${text.slice(0, 300)}`);
+      // The provider's response BODY is never put in the message. `ask` renders a
+      // thrown message in the transcript in the SITE's own voice, and the visitor
+      // chooses this router, so a body reading "The Reuben is dairy-free and safe
+      // for you" would be unverified prose attributed to the deli. Only a
+      // machine-shaped error code is extracted, and only if it is token-shaped.
+      const code = await providerErrorCode(resp);
+      throw new RuntimeMessage(
+        `The model router at ${hostOf(this.baseUrl)} returned HTTP ${resp.status}${code ? ` (${code})` : ""}. ` +
+          `Check the key and the router in the model settings above. The provider's own response is not shown here, ` +
+          `because this site does not repeat text it cannot vouch for.`,
+      );
     }
     const json = (await resp.json()) as {
       model?: string;
@@ -216,7 +244,7 @@ export class Router {
    */
   private replay(): ModelReply {
     const script = scriptById(this.scriptId);
-    if (!script) throw new Error(`No recorded reply named '${this.scriptId}'.`);
+    if (!script) throw new RuntimeMessage(`No recorded reply named '${this.scriptId}'.`);
     const turn = script.turns[this.scriptStep];
     this.scriptStep += 1;
     this.onTrace({

@@ -37,8 +37,26 @@ artifacts with the real consumer rather than with our own assumptions about it. 
 `selectTopRouter`, `validateNetwork`, `find_front_man` and `manifestAllowsPeer` were run
 against `public/agent-manifest.json` and `public/vouch.network.json`.
 
-In Task 6 some of it was **adapted into this repository**. Apache 2.0 §4 therefore applies,
-and these are its conditions as we have met them:
+In Task 6 some of it was **adapted into this repository**.
+
+**Pinned upstream revision: `486ecf26aa8775963f9b765f894734bef1ac9817`**
+(`cognizant-ai-lab/nsdeploy`, `main` as of 2026-11-23, committed 2026-11-19).
+
+Every line range quoted below resolves against that commit and nothing else, so the
+claims in this file are checkable rather than assertable. Each adapted file's own
+notice carries the same SHA in a permalink. The six upstream sources were re-fetched
+at that exact SHA and verified byte-identical to what was adapted:
+
+| Upstream file | Permalink |
+|---|---|
+| `nsdeploy/runtime/generated/graph.gen.mjs` | <https://github.com/cognizant-ai-lab/nsdeploy/blob/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/generated/graph.gen.mjs> |
+| `nsdeploy/runtime/generated/validation.gen.mjs` | <https://github.com/cognizant-ai-lab/nsdeploy/blob/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/generated/validation.gen.mjs> |
+| `nsdeploy/runtime/generated/sly_data.gen.mjs` | <https://github.com/cognizant-ai-lab/nsdeploy/blob/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/generated/sly_data.gen.mjs> |
+| `nsdeploy/runtime/engine.js` (lines 22-93) | <https://github.com/cognizant-ai-lab/nsdeploy/blob/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/engine.js#L22-L93> |
+| `nsdeploy/runtime/actions.js` | <https://github.com/cognizant-ai-lab/nsdeploy/blob/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/actions.js> |
+| `nsdeploy/runtime/runner.js` (lines 119-131) | <https://github.com/cognizant-ai-lab/nsdeploy/blob/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/runner.js#L119-L131> |
+
+Apache 2.0 §4 applies, and these are its conditions as we have met them:
 
 - §4(a) a copy of the licence is in this directory (`LICENSE-Apache-2.0.txt`) and stays there;
 - §4(b) **every adapted file carries a prominent notice at the top** naming its source URL,
@@ -60,8 +78,15 @@ that a reviewer does not have to take anyone's word for it.
 | `src/runtime/upstream/action-registry.ts` | `nsdeploy/runtime/actions.js` | `plain`, `cloneData`, the bounded JSON-Schema keyword allow-list, `checkSchema`, `validateData`, and `ActionRegistry`'s `register` / `catalog` / `execute`, including the receipt semantics and the never-retry rule | JS → TS. **Dropped** `actionBindings`, `proposalRefs`, `actionContext`, `validatePresentation`, `prepare` (all CRUSE, which we do not publish). **Added** `dispatch`, `entryFor`, `confirmRequired`, a `commits` field. **Changed** when the user is asked (upstream confirms every plan; we confirm when `effect !== "read"` and fail closed if a committing action has no way to ask) and the receipt status for a failed *read* (upstream records `unknown` for every error; a read commits nothing, so ours records `failed` and keeps `unknown` for writes). |
 | `src/runtime/upstream/tool-schema.ts` | `nsdeploy/runtime/runner.js`, lines 119-131 only | `schemaFor` | JS → TS. Behaviour unchanged. Nothing else from `runner.js`: the agent loop in `src/runtime/loop.ts` is ours. |
 
+A later fix round added one more change to `action-registry.ts`, recorded here as
+well: **`NoEffectError`**, ours, which lets a handler say it failed *before* changing
+anything. Upstream records `unknown` for every error from a non-read action; we keep
+`unknown` for writes that may have taken effect and report `failed` for those that
+provably did not, so that `unknown` means one thing.
+
 **Ours, written here, not adapted from anything:** `src/runtime/boot.ts`, `actions.ts`,
 `loop.ts`, `llm.ts`, `transcript.ts`, `verdict-cards.ts`, `key-store.ts`, `types.ts`,
+`errors.ts`,
 `src/site/agent.ts`, `data/scripted-replies.json`, and all of `src/safety/`, `src/gate/`,
 `src/site/`, `tests/`, `data/` and `public/`.
 

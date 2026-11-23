@@ -24,6 +24,7 @@ import { BudgetError, Conversation, CycleError, type Limits } from "./loop.ts";
 import { Transcript } from "./transcript.ts";
 import { clearVerdicts, renderVerdicts } from "./verdict-cards.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, Receipt, TraceEntry } from "./types.ts";
+import { RuntimeMessage } from "./errors.ts";
 import { ActionRegistry, type ActionScope, type ConfirmFn } from "./upstream/action-registry.ts";
 import { find_front_man } from "./upstream/graph.ts";
 import { validate_network } from "./upstream/validation.ts";
@@ -227,42 +228,73 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     "aria-label": "Ask about the menu",
   });
   const askBtn = el(doc, "button", { type: "submit", "data-ask-send": "" }, "Ask");
-  form.append(askInput, askBtn);
+  const resetBtn = el(doc, "button", { type: "button", class: "reset", "data-new-conversation": "" }, "New conversation");
+  form.append(askInput, askBtn, resetBtn);
+  /**
+   * Standing chrome, not a sentence the model produces each turn.
+   *
+   * The published agent instructions tell every agent to say that the site's
+   * checker shows its verdict beside each dish. The gate withholds exactly that
+   * sentence once the menu has been mentioned (LIMITS.md §2.1), and the controller
+   * ruled that anything which must ALWAYS be true should not be said by the model
+   * at all. So it is said here, once, where it is always on screen and always
+   * true, rather than generated per turn and then withheld.
+   */
+  const standing = el(
+    doc,
+    "p",
+    { class: "standing-note", "data-standing-note": "", role: "note" },
+    "The assistant does not decide whether food is safe for you, and is not permitted to. " +
+      "The verdict beside each dish is this site's own, worked out from the published ingredient list. " +
+      "Read that, not the reply.",
+  );
   const errorLine = el(doc, "p", { class: "runtime-error", "data-runtime-error": "", role: "alert", hidden: "" });
   const traceBox = el(doc, "details", { class: "trace", "data-trace": "" });
   traceBox.append(el(doc, "summary", {}, "What this ran"));
   const traceList = el(doc, "ol", { "data-trace-list": "" });
   traceBox.append(traceList);
-  panel.append(log, refusalPanel, outcomePanel, confirmPanel, form, errorLine, traceBox);
+  panel.append(log, refusalPanel, outcomePanel, confirmPanel, standing, form, errorLine, traceBox);
   mount.append(panel);
 
-  const transcript = new Transcript(doc, log, refusalPanel, menu);
+
 
   /* ---------------- the verdict path: no model involved ---------------- */
 
-  let findings: Finding[] = [];
   const selected = (): Restriction[] => restrictions.filter((r) => boxes.some((b) => b.value === r.id && b.checked));
 
-  function paint(next: Finding[]): void {
-    findings = next;
+  /**
+   * The guest's verdict state. The ONLY thing that writes it is `check()`, and the
+   * only things that call `check()` are a checkbox `change` event and
+   * `Runtime.check()` — both of which read `selected()` and nothing else.
+   *
+   * No model-reachable code path appears below this line. It cannot: `renderVerdicts`
+   * takes the guest's restriction list, not a `Finding[]`, so there is no signature
+   * through which a model-requested check could write a card, and `SiteContext` no
+   * longer carries a display callback for an action handler to call.
+   */
+  let findings: Finding[] = [];
+
+  function check(): Finding[] {
     const chosen = selected();
+    findings = renderVerdicts(doc, chosen, menu, restrictions);
     if (chosen.length === 0) {
-      clearVerdicts(doc);
       verdictStatus.textContent =
         "Nothing is being checked yet. Tick what you avoid and a verdict appears beside every dish — no account, no key, no assistant.";
-      return;
+      return findings;
     }
-    const painted = renderVerdicts(doc, next, menu, restrictions);
     const counts = { unsafe: 0, unknown: 0, safe: 0 };
-    for (const f of next) {
+    for (const f of findings) {
       if (f.verdict === "unsafe") counts.unsafe += 1;
       else if (f.verdict === "unknown") counts.unknown += 1;
       else counts.safe += 1;
     }
+    // Describes the restriction set these findings were actually computed against,
+    // which is the guest's, because it is the only one that can get here.
     verdictStatus.textContent =
-      `Checked ${painted} ${painted === 1 ? "dish" : "dishes"} against ${chosen.map((r) => r.name).join(", ")}: ` +
+      `Checked ${findings.length} ${findings.length === 1 ? "dish" : "dishes"} against ${chosen.map((r) => r.name).join(", ")}: ` +
       `${counts.unsafe} unsafe, ${counts.unknown} we cannot tell, ${counts.safe} with no conflict found. ` +
       `Each verdict is shown beside its dish, with the ingredient that decided it.`;
+    return findings;
   }
 
   const ctx: SiteContext = {
@@ -270,14 +302,16 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     menu,
     restrictions,
     selected,
-    onFindings: paint,
     ...(opts.placeOrder ? { placeOrder: opts.placeOrder } : {}),
     ...(opts.checkoutTimeoutMs !== undefined ? { checkoutTimeoutMs: opts.checkoutTimeoutMs } : {}),
   };
 
-  const check = (): Finding[] => checkSafety({}, ctx).findings;
+  // Constructed here, after `selected`, so the refusal panel's cards are computed
+  // from the guest's selection like every other card.
+  const transcript = new Transcript(doc, log, refusalPanel, menu, restrictions, selected);
+
   for (const box of boxes) box.addEventListener("change", () => check());
-  paint([]);
+  check();
 
   /* ---------------- the registry and the four actions ---------------- */
 
@@ -285,7 +319,13 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
   const addTrace = (entry: TraceEntry): void => {
     trace.push(entry);
     const li = el(doc, "li", { "data-trace-event": entry.event });
-    li.textContent = `${entry.event} — ${JSON.stringify(entry.detail)}`;
+    // Rendered through `renderableDetail`, which is a SECOND net. Each trace call
+    // site is already responsible for not putting model-chosen prose in a detail
+    // (see loop.ts's `declaredKeys` and `refusalKind`), but the trace is a page
+    // surface and a future call site will forget. This one refuses to print any
+    // string that is not token-shaped or on the allow-list, so forgetting costs a
+    // "<text omitted>" rather than an ungated sentence in the DOM.
+    li.textContent = `${entry.event} — ${JSON.stringify(renderableDetail(entry.detail))}`;
     traceList.append(li);
   };
 
@@ -300,6 +340,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     askBtn.disabled = true;
   };
 
+  /** Which startup step we reached, for the trace. One of a fixed set of words. */
+  let startupStage = "manifest";
   let manifest: Manifest | null = null;
   let network: NetworkConfig | null = null;
   let links: Record<string, string> = {};
@@ -307,7 +349,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
   let conversation: Conversation | null = null;
   let scope: ActionScope | null = null;
 
-  const showOutstanding = (r: Receipt): void => {
+  const showOutstanding = (r: Receipt, action = "checkout_demo_order"): void => {
     // Deliberately the same vocabulary, and the same classes, as an unknown
     // verdict card. "We don't know" is this product's answer to a missing
     // ingredient list and to a write whose result never came back, and a judge
@@ -322,9 +364,13 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         doc,
         "p",
         { class: "verdict-reason" },
-        `The order was started and its result never came back, so we cannot tell you whether it went through. ` +
-          `It has NOT been tried again, and it will not be: repeating a write we cannot account for could place ` +
-          `a second order. Check your order before trying once more yourself.`,
+        action === "checkout_demo_order"
+          ? `The order was started and its result never came back, so we cannot tell you whether it went through. ` +
+            `It has NOT been tried again, and it will not be: repeating a write we cannot account for could place ` +
+            `a second order. Check your order before trying once more yourself.`
+          : `"${action}" was started and its result never came back, so we cannot tell you whether it took effect. ` +
+            `It has NOT been tried again, and it will not be: repeating something we cannot account for could do it twice. ` +
+            `Check your order before trying once more yourself.`,
       ),
       el(doc, "p", { class: "verdict-source" }, `Request ${r.requestId}. ${r.error ?? ""}`.trim()),
     );
@@ -342,22 +388,23 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       : (manifest.networks ?? [])[0];
     if (!entry) {
       // Fail closed: never silently run a different published network.
-      throw new Error(`No published network named '${opts.network ?? "(first)"}' in ${manifestUrl}; refusing to run a different one.`);
+      throw new RuntimeMessage(`No published network named '${opts.network ?? "(first)"}' in ${manifestUrl}; refusing to run a different one.`);
     }
 
     const hoconUrl = new URL(entry.hocon, `${base}/`).toString();
+    startupStage = "network";
     network = (await fetchPublicArtifact(hoconUrl, fetchImpl)) as NetworkConfig;
-    const errors = validate_network(network);
+    const errors = validate_network(network).map(quotedTokensOnly);
     if (errors.length > 0) {
       // §6: an invalid network is stopped with visible errors, not a blank page.
-      throw new Error(`The published network at ${hoconUrl} is not valid and was not run:\n• ${errors.join("\n• ")}`);
+      throw new RuntimeMessage(`The published network at ${hoconUrl} is not valid and was not run:\n• ${errors.join("\n• ")}`);
     }
     const front = find_front_man(network);
-    if (!front) throw new Error(`The published network at ${hoconUrl} declares no front agent.`);
+    if (!front) throw new RuntimeMessage(`The published network at ${hoconUrl} declares no front agent.`);
     if (front !== entry.front_man) {
       // The manifest says one thing and the positional rule says another. Both are
       // published, so a visitor cannot tell which a runtime will honour. Refuse.
-      throw new Error(
+      throw new RuntimeMessage(
         `The manifest names '${entry.front_man}' as the front agent, but the network's first instructed agent is '${front}'. ` +
           `Those must agree before this network can be run.`,
       );
@@ -368,21 +415,23 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     // external reference yet, so this resolves to {}; it is loaded anyway because
     // it is one of the three public artifacts, it is fetched under the same
     // no-credentials rule as the other two, and Task 8's peer binding arrives here.
+    startupStage = "links";
     links = await loadPublishedLinks(base, entry.name, fetchImpl);
     addTrace({ at: now(), event: "links_loaded", detail: { network: entry.name, bindings: Object.keys(links) } });
 
     scope = { base: base || "https://localhost", network: entry.name };
+    startupStage = "actions";
     registerSiteActions(registry, scope, ctx);
     const declared = manifest.actions ?? [];
     const mismatch = reconcileActions(registry, scope, declared);
     if (mismatch.length > 0) {
       // A declared action that does not exist, or a `commits` flag that lies, is
       // worse than publishing nothing. Refuse to run the agent at all.
-      throw new Error(`The published action catalog and this runtime disagree, so the assistant was not started:\n• ${mismatch.join("\n• ")}`);
+      throw new RuntimeMessage(`The published action catalog and this runtime disagree, so the assistant was not started:\n• ${mismatch.join("\n• ")}`);
     }
     for (const name of registry.catalog(scope).map((e) => e.name)) {
       if ((network.tools ?? []).some((a) => a.name === name)) {
-        throw new Error(`'${name}' is both a registered site action and an agent in the network. Refusing to run an ambiguous catalog.`);
+        throw new RuntimeMessage(`'${name}' is both a registered site action and an agent in the network. Refusing to run an ambiguous catalog.`);
       }
     }
     addTrace({
@@ -457,7 +506,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         onReceipts: (name, receipts) => {
           if (!receipts) return;
           for (const r of receipts) {
-            if (r.status === "unknown") showOutstanding(r);
+            if (r.status === "unknown") showOutstanding(r, name);
             else if (r.status === "succeeded" && name === "checkout_demo_order") {
               transcript.showRuntime("Your demo order is in. No payment was taken and no food is being made.", "receipt");
             }
@@ -493,12 +542,22 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         "Your key has been deleted from this browser. The verdict beside each dish is unaffected: it never needed a model.";
     });
 
+    resetBtn.addEventListener("click", () => {
+      rebuild();
+      log.replaceChildren();
+      refusalPanel.replaceChildren();
+      refusalPanel.setAttribute("hidden", "");
+      outcomePanel.replaceChildren();
+      outcomePanel.setAttribute("hidden", "");
+      transcript.showRuntime("New conversation. The verdict beside each dish is unchanged: it never depended on the conversation.", "reset");
+    });
+
     replayBox.addEventListener("change", () => rebuild());
     scriptSelect.addEventListener("change", () => rebuild());
   } catch (err) {
     const message = String((err as Error)?.message ?? err);
     fail(`${message}\n\nThe menu, the ingredient lists and the safety verdicts on this page are unaffected: they are worked out here and never call a model.`);
-    addTrace({ at: now(), event: "startup_failed", detail: { reason: message } });
+    addTrace({ at: now(), event: "startup_failed", detail: { stage: startupStage } });
   }
 
   /* ---------------- asking ---------------- */
@@ -522,11 +581,24 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       router.resetScript();
       await conversation.send(text);
     } catch (err) {
-      if (err instanceof BudgetError || err instanceof CycleError) {
+      // Only errors THIS runtime produced are rendered. Anything else - a parse
+      // failure on a provider response, a handler we did not write - gets our own
+      // sentence instead of its message. The transcript labels a runtime line
+      // "Hollis & Rye", and the deli does not repeat text it cannot vouch for.
+      if (err instanceof BudgetError || err instanceof CycleError || err instanceof RuntimeMessage) {
         transcript.showRuntime(err.message, "error");
-        addTrace({ at: now(), event: "budget_stopped", detail: { reason: err.message } });
+        if (err instanceof BudgetError) {
+          addTrace({ at: now(), event: "budget_stopped", detail: { budget: err.budget, limit: err.limit } });
+        } else if (err instanceof CycleError) {
+          addTrace({ at: now(), event: "budget_stopped", detail: { cycle: true } });
+        }
       } else {
-        transcript.showRuntime(String((err as Error)?.message ?? err), "error");
+        transcript.showRuntime(
+          "Something went wrong talking to the model router, and the reply was not shown. " +
+            "The details are under \u201cWhat this ran\u201d. The verdict beside each dish is unaffected.",
+          "error",
+        );
+        addTrace({ at: now(), event: "turn_failed", detail: { kind: (err as Error)?.name ?? "Error" } });
       }
     } finally {
       askBtn.disabled = false;
@@ -580,6 +652,47 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     outstanding: () => conversation?.outstanding ?? null,
     keyStore,
   };
+}
+
+/**
+ * The network validator interpolates names out of the network definition into its
+ * messages (`Agent 'x' references missing tool 'y'.`). Those come from OUR published
+ * file today, but the same validator will run over a peer's network in Task 8, and a
+ * peer's agent could be named with a sentence. Every quoted interpolation that is not
+ * token-shaped is replaced before the message reaches the page.
+ */
+export function quotedTokensOnly(message: string): string {
+  return message.replace(/'([^']*)'/g, (_m, inner: string) => (TOKEN.test(inner) ? `'${inner}'` : "'<name omitted>'"));
+}
+
+/**
+ * Strings our own code puts in a trace detail that are legitimately prose.
+ * Everything else must be token-shaped (no whitespace) to be rendered.
+ */
+const SAFE_TRACE_TEXT = new Set(["local BYOK (not shown)", "none", "<text omitted>"]);
+
+/** Token-shaped: an id, a name, a URL, a host, a status. No whitespace, so no prose. */
+const TOKEN = /^[A-Za-z0-9_.:/#@?&=+~,;()[\]{}$*%!-]*$/;
+
+/**
+ * A trace detail with every string that could be prose replaced. Recursive, because
+ * details nest (`arguments`, `argumentKeys`, `actions`). Numbers and booleans pass
+ * through: they cannot carry a sentence.
+ */
+export function renderableDetail(value: unknown): unknown {
+  if (typeof value === "string") {
+    return SAFE_TRACE_TEXT.has(value) || TOKEN.test(value) ? value : "<text omitted>";
+  }
+  if (Array.isArray(value)) return value.map(renderableDetail);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      // A KEY can be model-chosen too (a trace of an arguments object).
+      out[TOKEN.test(k) ? k : "<key omitted>"] = renderableDetail(v);
+    }
+    return out;
+  }
+  return value;
 }
 
 /**

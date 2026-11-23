@@ -32,6 +32,7 @@
  */
 
 import type { Finding, Menu, Restriction } from "../../contracts.ts";
+import { verdictFor } from "../safety/verdict.ts";
 
 /** What the card says at a glance. `unchecked` is ours, for a `safe` Finding that covered nothing. */
 export type CardKind = "safe" | "unsafe" | "unknown" | "unchecked";
@@ -94,10 +95,37 @@ export function checkedAgainst(f: Finding, restrictions: Restriction[]): string[
 }
 
 /**
+ * Every line of text a card shows, as data. Pure: a function of the Finding, the
+ * menu and the published restriction list, and of nothing else.
+ *
+ * It exists so that a test can assert a rendered card's `textContent` is EXACTLY
+ * these lines and nothing more. That assertion is what catches text arriving in a
+ * card from anywhere other than the checker.
+ */
+export function cardLines(f: Finding, menu: Menu, restrictions: Restriction[] = []): string[] {
+  const kind = cardKind(f);
+  const names = checkedAgainst(f, restrictions);
+  return [
+    MARK[kind],
+    HEADLINE[kind],
+    cardReason(f, menu),
+    ...(names.length > 0 ? [`Checked against: ${names.join(", ")}.`] : []),
+    "From the published ingredient list. Not a statement about the kitchen, and not medical advice.",
+  ];
+}
+
+/** A word, not only a colour: the verdict must survive a monochrome screen. */
+const MARK: Record<CardKind, string> = { unsafe: "✕", unknown: "?", safe: "✓", unchecked: "–" };
+
+/**
  * One card, built as DOM nodes rather than a markup string: nothing here can
  * inject HTML, and nothing here comes from a model.
+ *
+ * Module-private on purpose. See `renderVerdicts` below: no exported function in
+ * this module accepts a `Finding` from a caller and renders it, so there is no
+ * signature through which a Finding the model asked for could reach a card.
  */
-export function verdictCard(doc: Document, f: Finding, menu: Menu, restrictions: Restriction[] = []): HTMLElement {
+function verdictCard(doc: Document, f: Finding, menu: Menu, restrictions: Restriction[] = []): HTMLElement {
   const kind = cardKind(f);
   const el = doc.createElement("div");
   el.className = `verdict verdict-${kind}`;
@@ -110,8 +138,7 @@ export function verdictCard(doc: Document, f: Finding, menu: Menu, restrictions:
   head.className = "verdict-head";
   const mark = doc.createElement("span");
   mark.className = "verdict-mark";
-  // A word, not only a colour: the verdict must survive a monochrome screen.
-  mark.textContent = { unsafe: "✕", unknown: "?", safe: "✓", unchecked: "–" }[kind];
+  mark.textContent = MARK[kind];
   mark.setAttribute("aria-hidden", "true");
   const label = doc.createElement("strong");
   label.textContent = HEADLINE[kind];
@@ -140,21 +167,61 @@ export function verdictCard(doc: Document, f: Finding, menu: Menu, restrictions:
 }
 
 /**
- * Put each Finding in its own item's slot.
+ * THE INVARIANT THIS SIGNATURE EXISTS TO ENFORCE
  *
- * Replaces only the contents of a slot this function owns, and leaves every other
- * slot alone, so a card for one item cannot be wiped by a check of another.
- * Returns the number of cards rendered.
+ * The verdict cards are a pure function of (the menu, the guest's restriction set).
+ * Nothing reachable from the model may change what any card shows — not its
+ * verdict, not its text, not its presence, not its order.
+ *
+ * So this function **does not accept a `Finding`**. It takes the guest's selection
+ * and computes the verdicts itself, through `verdictFor`, which is pure over
+ * published data. `verdictCard` is module-private. There is therefore no signature
+ * anywhere in this module through which a Finding computed for a model's arguments
+ * could reach a slot: an attempt to do it does not type-check, rather than being a
+ * rule someone has to remember.
+ *
+ * (The first version of this file took `Finding[]`, and `check_safety` — a read
+ * action the guest is never asked about — handed it the model's own findings. A
+ * model asking "is the turkey club nut-free?" while the guest had ticked dairy-free
+ * replaced the unsafe card with a green tick. The cards are the defence in depth
+ * that makes the gate's documented leaks survivable, so that was the architecture's
+ * central claim being false. The signature is the fix.)
+ *
+ * An empty selection clears every slot: nothing was asked, so nothing is shown.
+ * Returns the findings rendered, for the caller's own state and for the gate.
  */
-export function renderVerdicts(doc: Document, findings: Finding[], menu: Menu, restrictions: Restriction[] = []): number {
-  let n = 0;
+export function renderVerdicts(doc: Document, selected: Restriction[], menu: Menu, published: Restriction[] = []): Finding[] {
+  if (selected.length === 0) {
+    clearVerdicts(doc);
+    return [];
+  }
+  const findings = menu.items.map((item) => verdictFor(item, selected, menu));
   for (const f of findings) {
     const slot = doc.querySelector<HTMLElement>(`[data-verdict-slot="${cssEscape(f.item)}"]`);
-    if (!slot) continue;
-    slot.replaceChildren(verdictCard(doc, f, menu, restrictions));
-    n += 1;
+    // Replaces only the contents of the slot this finding belongs to, so one
+    // item's check cannot wipe another's.
+    slot?.replaceChildren(verdictCard(doc, f, menu, published));
   }
-  return n;
+  return findings;
+}
+
+/**
+ * One card for one item, computed the same way `renderVerdicts` computes it, for a
+ * caller that wants to show the guest's verdict somewhere else as well (the refusal
+ * panel does). Takes the guest's selection, never a Finding, for the same reason.
+ * Returns null when nothing is selected, rather than inventing a verdict.
+ */
+export function guestVerdictCard(
+  doc: Document,
+  itemId: string,
+  selected: Restriction[],
+  menu: Menu,
+  published: Restriction[] = [],
+): HTMLElement | null {
+  if (selected.length === 0) return null;
+  const item = menu.items.find((i) => i.id === itemId);
+  if (!item) return null;
+  return verdictCard(doc, verdictFor(item, selected, menu), menu, published);
 }
 
 /** Empty every slot. The CSS hides an empty slot, so the card disappears with it. */

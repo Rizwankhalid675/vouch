@@ -7,7 +7,10 @@
  *          https://github.com/cognizant-ai-lab/nsdeploy/blob/main/nsdeploy/runtime/actions.js
  * Project: Cognizant AI Lab — nsDeploy
  * Licence: Apache License 2.0. Full text: docs/vendor/LICENSE-Apache-2.0.txt
- * Fetched: 2026-11-23. Recorded in docs/vendor/PROVENANCE.md.
+ * Fetched: 2026-11-23 at commit 486ecf26aa8775963f9b765f894734bef1ac9817.
+ * Permalink: https://github.com/cognizant-ai-lab/nsdeploy/blob/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/actions.js
+ *            (re-fetched at that SHA and verified byte-identical to what was adapted)
+ * Recorded in docs/vendor/PROVENANCE.md.
  *
  * CHANGES WE MADE (Apache-2.0 §4(b)):
  *  1. Translated from JavaScript to TypeScript; added types throughout.
@@ -49,11 +52,30 @@
  *     upstream's and is unchanged.
  *  9. ADDED a `requestId` to `not_started` receipts, which upstream omits, because
  *     our `Receipt` type requires one.
+ * 10. ADDED `NoEffectError`: a handler that fails before changing anything records
+ *     `failed`, not `unknown`, whatever its effect. Upstream has no equivalent.
  */
 
 import type { ActionSchema, ConfirmItem, Receipt } from "../types.ts";
 
 export type Effect = "read" | "write" | "irreversible";
+
+/**
+ * OURS, not upstream's. Thrown by a handler that failed BEFORE it changed
+ * anything, so the outcome is a plain failure and nothing is in doubt.
+ *
+ * Without it, every error from a non-read action records `unknown`, which is
+ * conservative but blunts the distinction: `add_to_cart` refusing because the page
+ * has no Add control would raise the same "your order may have gone through"
+ * warning as a checkout that genuinely timed out mid-write. `unknown` has to mean
+ * one thing to be worth anything.
+ */
+export class NoEffectError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NoEffectError";
+  }
+}
 export type Availability = "local-only" | "bridge" | "top-level";
 
 export const plain = (v: unknown): v is Record<string, unknown> =>
@@ -326,7 +348,7 @@ export class ActionRegistry {
         receipts.push({
           action: entry.ref,
           requestId,
-          status: entry.effect === "read" ? "failed" : "unknown",
+          status: entry.effect === "read" || error instanceof NoEffectError ? "failed" : "unknown",
           error: String((error as Error)?.message ?? error),
         });
         for (const { entry: rest } of plan.slice(i + 1)) {

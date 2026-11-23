@@ -11,12 +11,12 @@ import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
 import { verdictFor } from "../src/safety/verdict.ts";
 import { gate, REFUSAL_MARKER } from "../src/gate/gate.ts";
 import { mountShop } from "../src/site/shop.ts";
-import { boot, loadPublishedLinks, reconcileActions, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
+import { boot, loadPublishedLinks, quotedTokensOnly, reconcileActions, renderableDetail, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { actionDefinitions, checkSafety, registerSiteActions, type SiteContext } from "../src/runtime/actions.ts";
 import { KeyStore, KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
 import { SCRIPTED_ROUTER, SCRIPTS, scriptById } from "../src/runtime/llm.ts";
 import { describeReceipts } from "../src/runtime/loop.ts";
-import { cardKind, cardReason, renderVerdicts } from "../src/runtime/verdict-cards.ts";
+import { cardKind, cardLines, cardReason, renderVerdicts } from "../src/runtime/verdict-cards.ts";
 import { claimedLabel, refusalLine } from "../src/runtime/transcript.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, TraceEntry } from "../src/runtime/types.ts";
 import { ActionRegistry } from "../src/runtime/upstream/action-registry.ts";
@@ -88,8 +88,15 @@ function harness(opts: { replies?: ModelJson[]; artifacts?: Record<string, unkno
   };
   const fetchImpl = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input);
-    const bodyText = typeof init.body === "string" ? init.body : "";
-    captured.push({ url, init, request: new Request(url, init), bodyText });
+    const request = new Request(url, init);
+    // Read the body off the NORMALISED Request, not off `init`. `init.body` may be
+    // a URLSearchParams, a Blob, a FormData or a stream, and the previous version
+    // of this line (`typeof init.body === "string" ? init.body : ""`) made every
+    // one of those invisible: a beacon carrying the key to analytics.example in a
+    // URLSearchParams body passed the whole suite. Same reasoning the credentials
+    // and header assertions already use.
+    const bodyText = await request.clone().text().catch(() => "");
+    captured.push({ url, init, request, bodyText });
     if (opts.artifactError && url.startsWith(BASE)) throw new TypeError("Failed to fetch");
     if (url === ROUTER_URL) {
       const next = replies.shift();
@@ -186,6 +193,32 @@ const slot = (id: string): HTMLElement => document.querySelector<HTMLElement>(`[
 const card = (id: string): HTMLElement | null => document.querySelector<HTMLElement>(`[data-verdict-item="${id}"]`);
 const DAIRY = RESTRICTIONS.find((r) => r.id === "dairy_free")!;
 
+/**
+ * THE SLOTS LIVE IN THE PAGE, NOT IN THE PANEL.
+ *
+ * The first version of this suite scoped every "this prose must not appear"
+ * assertion to the transcript element or to `mount.textContent`. The verdict slots
+ * are in `document`, outside the mount, so a mutant that wrote the model's raw
+ * ungated reply into all 34 cards passed the whole suite. These three helpers exist
+ * so that no assertion in this file can make that mistake again: `pageText()` is
+ * the widest surface there is, and `slotsText()` is the one that was missed.
+ */
+const pageText = (): string => document.body.textContent ?? "";
+const slotsText = (): string[] => [...document.querySelectorAll<HTMLElement>("[data-verdict-slot]")].map((s) => s.textContent ?? "");
+const slotTextOf = (id: string): string => slot(id).textContent ?? "";
+
+/**
+ * What a card for `item` under `selected` must say, derived INDEPENDENTLY of the
+ * renderer from the pure functions: `verdictFor` from the safety layer and
+ * `cardLines` from the card module. Neither can see a model.
+ *
+ * An exact equality against this is the assertion that catches text reaching a
+ * card from anywhere else — a mutant appending the model's reply to the reason
+ * line, or replacing the headline, changes the string and fails.
+ */
+const expectedCardText = (itemId: string, selected: Restriction[]): string =>
+  cardLines(verdictFor(MENU.items.find((i) => i.id === itemId)!, selected, MENU), MENU, RESTRICTIONS).join("");
+
 beforeEach(() => {
   document.documentElement.innerHTML = html;
   mountShop(document);
@@ -259,9 +292,11 @@ describe("the verdict is displayed beside the dish, not through the chat", () =>
     const text = cardReason(nothing, MENU);
     expect(text).toContain("Nothing was checked");
     expect(text).toContain("not an all-clear");
-    expect(renderVerdicts(document, [nothing], MENU, RESTRICTIONS)).toBe(1);
-    expect(card("reuben")!.getAttribute("data-verdict")).toBe("unchecked");
-    expect(card("reuben")!.textContent).not.toContain("No conflict found");
+    expect(cardLines(nothing, MENU, RESTRICTIONS).join(" ")).not.toContain("No conflict found");
+    // And the renderer never produces that Finding in the first place: an empty
+    // selection clears every slot rather than painting 34 "not checked" cards.
+    expect(renderVerdicts(document, [], MENU, RESTRICTIONS)).toEqual([]);
+    expect(document.querySelectorAll("[data-verdict-slot] [data-verdict]")).toHaveLength(0);
   });
 
   test("with nothing selected, no card is shown at all and the page says why", async () => {
@@ -279,6 +314,303 @@ describe("the verdict is displayed beside the dish, not through the chat", () =>
     expect(card("reuben")).toBe(before);
   });
 });
+
+/* ================================================================== */
+/* A1. THE INVARIANT: cards are a pure function of menu x selection     */
+/* ================================================================== */
+
+describe("nothing reachable from the model can change what a card shows", () => {
+  /**
+   * THE MOST IMPORTANT TEST IN THIS PROJECT.
+   *
+   * Invariant: the verdict cards are a pure function of (the menu, the guest's
+   * restriction set). Not their verdict, not their text, not their presence, not
+   * their order may be changed by anything reachable from the model.
+   *
+   * The model here behaves CORRECTLY: it asks `check_safety` with a different
+   * restriction (the normal path when a guest who ticked Dairy-free types "is the
+   * turkey club nut-free?"), with no restriction at all, and for one item only.
+   * It also reads the menu and adds to the cart. Every slot's full text and the
+   * status line must come out byte-identical.
+   *
+   * WHAT BREAKS IT: putting a display callback back on `SiteContext` and calling
+   * it from `checkSafety`; giving `renderVerdicts` a `Finding[]` parameter again
+   * and passing it a model-requested result; calling `check()` from anywhere other
+   * than the checkbox handler. Each of those is the shipped bug this replaces.
+   */
+  test("a sequence of model tool calls leaves every card and the status line byte-identical", async () => {
+    const h = harness({
+      replies: [
+        callTool("check_safety", { restrictions: [] }, "c1"),
+        callTool("check_safety", { items: ["turkey_club"], restrictions: ["nut_free"] }, "c2"),
+        callTool("check_safety", { items: ["reuben"] }, "c3"),
+        callTool("get_menu_state", {}, "c4"),
+        callTool("add_to_cart", { item: "lemonade" }, "c5"),
+        say("I have had a look."),
+      ],
+      
+    });
+    const s = await session({ key: SENTINEL, h, limits: { maxRounds: 8 } });
+    s.tick("dairy_free");
+
+    const before = slotsText();
+    const statusBefore = s.$("[data-verdict-status]")!.textContent;
+    expect(before.filter((x) => x.includes("Unsafe")).length).toBe(15);
+
+    await s.runtime.ask("is the turkey club nut-free?");
+
+    expect(slotsText()).toEqual(before);
+    expect(s.$("[data-verdict-status]")!.textContent).toBe(statusBefore);
+    expect(s.$("[data-verdict-status]")!.textContent).toContain("15 unsafe");
+    expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
+    // The model really did get its answers: the calls happened, they just did not display.
+    // Each round resends the whole message list, so count distinct results.
+    const toolResults = [...new Set(h.routerBodies().flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content)))];
+    expect(toolResults.filter((c) => c.includes("succeeded"))).toHaveLength(5);
+    expect(toolResults.some((c) => c.includes('"verdict":"safe"') && c.includes("nut"))).toBe(true);
+  });
+
+  /**
+   * Every card's text is EXACTLY what the pure functions produce for the guest's
+   * selection, across every fixture, including the one whose reply is a false
+   * all-clear. Breaks if any model-derived string is added to, or substituted
+   * into, any part of a card.
+   */
+  test.each(SCRIPTS.map((s) => s.id))("after replaying '%s', every card's text is exactly the checker's", async (scriptId) => {
+    document.documentElement.innerHTML = html;
+    mountShop(document);
+    const s = await session();
+    s.tick("dairy_free");
+    s.setReplay(scriptId);
+    await s.runtime.ask("I'm lactose intolerant, what can I eat?");
+
+    for (const item of MENU.items) {
+      expect(slotTextOf(item.id), item.id).toBe(expectedCardText(item.id, [DAIRY]));
+    }
+    // And no phrase of the model's words is anywhere in any slot.
+    const raw = scriptById(scriptId)!.turns.map((x) => x.content ?? "").join(" ");
+    for (const phrase of phrasesOf(raw)) {
+      expect(slotsText().join(" "), phrase).not.toContain(phrase);
+    }
+  });
+
+  /**
+   * The general form of the same thing: a canary sentence pushed through every
+   * channel a model controls — reply prose, argument values, argument KEYS,
+   * malformed JSON, an invented tool name, and the router's own HTTP error body —
+   * must never reach the page. This is the net for the leak class rather than for
+   * the three leaks already found in it.
+   */
+  test("a canary sentence pushed through every model-controlled channel never reaches the page", async () => {
+    const CANARY = "The Reuben is completely dairy-free and safe for you";
+    const channels: ModelJson[] = [
+      say(`${CANARY}.`),
+      callTool("add_to_cart", { [CANARY]: 1, item: "reuben" }),
+      callTool("add_to_cart", { item: CANARY }),
+      callTool("check_safety", { restrictions: [CANARY] }),
+      callTool(CANARY, { q: 1 }),
+      { model: "m", choices: [{ message: { content: "", tool_calls: [{ id: "x", type: "function", function: { name: "add_to_cart", arguments: `{"item": "${CANARY}` } }] } }] },
+    ];
+    for (const reply of channels) {
+      document.documentElement.innerHTML = html;
+      mountShop(document);
+      const h = harness({ replies: [reply, say("Nothing more from me.")] });
+      const s = await session({ key: SENTINEL, h });
+      s.tick("dairy_free");
+      s.$("[data-trace]")!.setAttribute("open", ""); // the trace counts as the page
+      await s.runtime.ask("tell me about the reuben");
+      expect(pageText(), JSON.stringify(reply).slice(0, 60)).not.toContain(CANARY);
+      expect(slotsText().join(" ")).not.toContain(CANARY);
+    }
+  });
+
+  /** The router's HTTP error body is prose from a host the VISITOR chose. */
+  test("a provider error body is never rendered, and never in the site's own voice", async () => {
+    const CANARY = "The Reuben is completely dairy-free and safe for you";
+    const h = harness({});
+    const fetchImpl = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input);
+      if (url === ROUTER_URL) {
+        return { ok: false, status: 400, text: async () => `{"error":{"code":"invalid_api_key","message":"${CANARY}."}}`, json: async () => ({}) } as unknown as Response;
+      }
+      return h.fetchImpl(input, init);
+    }) as unknown as typeof fetch;
+    const s = await session({ key: SENTINEL, h: { ...h, fetchImpl } });
+    await s.runtime.ask("hello");
+    expect(pageText()).not.toContain(CANARY);
+    expect(s.transcriptText()).toContain("400");
+    expect(s.transcriptText()).toContain("invalid_api_key"); // the machine-shaped code survives
+    expect(s.transcriptText()).toContain("does not repeat text it cannot vouch for");
+  });
+
+  /** The trace's second net, independent of each call site remembering. */
+  test("the rendered trace omits any detail string that could be prose", () => {
+    expect(renderableDetail({ host: "api.openai.com", n: 3, ok: true })).toEqual({ host: "api.openai.com", n: 3, ok: true });
+    expect(renderableDetail({ keySource: "local BYOK (not shown)" })).toEqual({ keySource: "local BYOK (not shown)" });
+    expect(renderableDetail({ reason: "The Reuben is dairy-free." })).toEqual({ reason: "<text omitted>" });
+    expect(renderableDetail({ args: ["reuben", "The Reuben is dairy-free."] })).toEqual({ args: ["reuben", "<text omitted>"] });
+    expect(renderableDetail({ "The Reuben is dairy-free": 1 })).toEqual({ "<key omitted>": 1 });
+  });
+
+  /**
+   * The suppression half of C1, stated on its own: a model check that covers
+   * FEWER dishes, or none, cannot remove a card the guest's selection produced.
+   */
+  test("a narrower model check cannot remove or blank a card", async () => {
+    const h = harness({ replies: [callTool("check_safety", { items: ["lemonade"], restrictions: [] }), say("Done.")] });
+    const s = await session({ key: SENTINEL, h });
+    s.tick("dairy_free");
+    const before = slotsText();
+    await s.runtime.ask("check the lemonade");
+    expect(slotsText()).toEqual(before);
+    expect(document.querySelectorAll("[data-verdict-slot] [data-verdict]")).toHaveLength(MENU.items.length);
+    expect(slotsText().filter((x) => x.includes("Not checked"))).toHaveLength(0);
+  });
+
+  /**
+   * I6: the finding set the GATE is backed by is the guest's too. Breaks if the
+   * model's own `check_safety` result is ever fed back into boot's `findings`:
+   * after a one-item check, the Reuben claim below would be refused as
+   * `no_finding` (nothing known about it) instead of `unsafe` (the checker found
+   * a conflict), i.e. the model could choose the ground its reply is judged on.
+   */
+  test("a model check cannot narrow the finding set the gate backs a reply against", async () => {
+    const h = harness({
+      replies: [callTool("check_safety", { items: ["lemonade"], restrictions: ["nut_free"] }), say("The Reuben is dairy-free.")],
+    });
+    const s = await session({ key: SENTINEL, h });
+    s.tick("dairy_free");
+    await s.runtime.ask("check the lemonade, then tell me about the reuben");
+    expect(s.runtime.findings()).toHaveLength(MENU.items.length);
+    expect(s.$$("[data-refusal-reason]").map((e) => e.getAttribute("data-refusal-reason"))).toEqual(["unsafe"]);
+    expect(s.transcriptText()).toContain(REFUSAL_MARKER);
+  });
+
+  /**
+   * I2: the trace is both a page surface and a data surface. Two independent
+   * defences, pinned separately: the call sites record no model-chosen string
+   * (asserted here, on `runtime.trace()`, the data), and the renderer refuses to
+   * print one anyway (asserted above, on `renderableDetail`). Either alone would
+   * leave a hole; breaking either fails a test.
+   */
+  test("no model-chosen string reaches the recorded trace, keys included", async () => {
+    const CANARY = "The Reuben is completely dairy-free and safe for you";
+    const h = harness({ replies: [callTool("add_to_cart", { [CANARY]: 1, item: CANARY }), say("I could not.")] });
+    const s = await session({ key: SENTINEL, h });
+    await s.runtime.ask("add one");
+    expect(JSON.stringify(s.runtime.trace())).not.toContain(CANARY);
+    const proposed = s.runtime.trace().find((e) => e.event === "action_proposed")!;
+    expect(proposed.detail["argumentKeys"]).toEqual(["item"]); // declared by the schema, so safe to show
+    expect(proposed.detail["undeclaredKeyCount"]).toBe(1); // the sentence is counted, not named
+    const refused = s.runtime.trace().find((e) => e.event === "action_refused")!;
+    expect(refused.detail["kind"]).toBe("invalid_arguments");
+    expect(refused.detail["reason"]).toBeUndefined();
+  });
+
+  /**
+   * ...and the renderer really is wired to the sanitiser, through a real path.
+   *
+   * A refused peer target is traced with the URL it was asked for, and a caller can
+   * ask for anything. So the DATA keeps the whole string (it is evidence, and
+   * `leaks()` scans it) while the RENDERED trace omits it. Breaks if `addTrace`
+   * stops rendering through `renderableDetail` — which no other test catches,
+   * because the call sites no longer produce prose for it to catch.
+   */
+  test("the rendered trace omits prose that the recorded trace keeps", async () => {
+    const PROSE = "the reuben is dairy-free and safe";
+    const s = await session();
+    await expect(s.runtime.fetchPeerArtifact(PROSE)).rejects.toThrow();
+    expect(JSON.stringify(s.runtime.trace())).toContain(PROSE);
+    expect(s.$("[data-trace-list]")!.textContent).not.toContain(PROSE);
+    expect(s.$("[data-trace-list]")!.textContent).toContain("<text omitted>");
+    expect(pageText()).not.toContain(PROSE);
+  });
+
+  /**
+   * THE SWEEP, not the three patches.
+   *
+   * Every site in `src/runtime` that writes a string into the DOM was enumerated
+   * and classified. The ones that can carry a string we did not write are pinned
+   * here. The rule they all now follow: the transcript speaks in the deli's voice,
+   * so only an error THIS runtime wrote (a `RuntimeMessage`) may be shown; anything
+   * else is reported in our own words with its kind in the trace.
+   */
+  test("an error this runtime did not write is never shown in the site's voice", async () => {
+    const CANARY = "The Reuben is completely dairy-free and safe for you";
+    const h = harness({});
+    // A router that answers 200 with prose where JSON should be: `resp.json()`
+    // throws, and the thrown message is not one of ours.
+    const fetchImpl = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input);
+      if (url === ROUTER_URL) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new Error(CANARY);
+          },
+          text: async () => CANARY,
+        } as unknown as Response;
+      }
+      return h.fetchImpl(input, init);
+    }) as unknown as typeof fetch;
+    const s = await session({ key: SENTINEL, h: { ...h, fetchImpl } });
+    await s.runtime.ask("hello");
+    expect(pageText()).not.toContain(CANARY);
+    expect(s.transcriptText()).toContain("Something went wrong talking to the model router");
+    expect(s.runtime.trace().some((e) => e.event === "turn_failed")).toBe(true);
+  });
+
+  /**
+   * The validator interpolates names from a network definition. Ours are ours, but
+   * Task 8 runs the same validator over a peer's network, and a peer may name an
+   * agent with a sentence. Breaks if `quotedTokensOnly` is dropped.
+   */
+  test("a network whose agent is named with a sentence cannot put it on the page", async () => {
+    const CANARY = "The Reuben is dairy-free and safe for you";
+    expect(quotedTokensOnly(`Agent '${CANARY}' references missing tool 'x'.`)).toBe(
+      "Agent '<name omitted>' references missing tool 'x'.",
+    );
+    const hostile = structuredClone(NETWORK);
+    hostile.tools![0]!.tools = [CANARY];
+    const s = await session({ h: harness({ artifacts: { [`${BASE}/vouch.network.json`]: hostile } }) });
+    expect(s.$("[data-runtime-error]")!.hasAttribute("hidden")).toBe(false);
+    expect(s.$("[data-runtime-error]")!.textContent).toContain("<name omitted>");
+    expect(pageText()).not.toContain(CANARY);
+    // ...and the cards are still there, because none of this touched them.
+    s.tick("dairy_free");
+    expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
+  });
+
+  /** The claimed phrase a refusal names is model text, so it is bounded as well as filtered. */
+  test("a claimed phrase long enough to be a sentence is described, not quoted", () => {
+    expect(claimedLabel("dairy-free")).toBe("dairy-free");
+    expect(claimedLabel("free from dairy")).toBe("free from dairy");
+    expect(claimedLabel("The Reuben is completely dairy-free and safe for you")).toBe("a phrase in that sentence");
+    expect(claimedLabel("a".repeat(41))).toBe("a phrase in that sentence");
+    expect(claimedLabel("one two three four five six")).toBe("a phrase in that sentence");
+  });
+
+  /** Changing the guest's own selection is the one thing that DOES repaint. */
+  test("the guest's own selection is what repaints, and it repaints completely", async () => {
+    const s = await session();
+    s.tick("dairy_free");
+    const dairy = slotsText();
+    expect(dairy).toEqual(MENU.items.map((i) => expectedCardText(i.id, [DAIRY])));
+    s.tick("nut_free");
+    const both = RESTRICTIONS.filter((r) => ["dairy_free", "nut_free"].includes(r.id));
+    expect(slotsText()).toEqual(MENU.items.map((i) => expectedCardText(i.id, both)));
+    expect(slotsText()).not.toEqual(dairy);
+  });
+});
+
+/** Word runs of 5+, which is enough to be a sentence fragment rather than a shared word. */
+function phrasesOf(text: string): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  for (let i = 0; i + 5 <= words.length; i += 1) out.push(words.slice(i, i + 5).join(" "));
+  return out;
+}
 
 /* ================================================================== */
 /* A2. The shot the whole project exists for                           */
@@ -303,6 +635,8 @@ describe("a model giving a false all-clear, beside the card that contradicts it"
     expect(t).not.toContain("dairy-free, so that one is fine");
     expect(t).not.toContain("The Reuben is spotless as well.");
     expect(s.panelText()).not.toContain("The Turkey club is dairy-free, so that one is fine for you.");
+    expect(pageText()).not.toContain("The Turkey club is dairy-free, so that one is fine for you.");
+    expect(slotsText().join(" ")).not.toContain("dairy-free, so that one is fine");
 
     expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
     expect(card("reuben")!.getAttribute("data-verdict")).toBe("unsafe");
@@ -438,6 +772,9 @@ describe("model prose reaches the screen only through the gate", () => {
       s.tick("dairy_free");
       await s.runtime.ask("tell me");
       expect(s.transcriptText(), raw).not.toContain(raw);
+      // The whole document, which is where the verdict slots are.
+      expect(pageText(), raw).not.toContain(raw);
+      expect(slotsText().join(" "), raw).not.toContain(raw);
       expect(s.transcriptText(), raw).toContain(REFUSAL_MARKER);
     }
   });
@@ -454,6 +791,7 @@ describe("model prose reaches the screen only through the gate", () => {
     const s = await session({ key: SENTINEL, h });
     await s.runtime.ask("what is on the reuben?");
     expect(s.panelText()).not.toContain("MENU_GUIDE_INTERNAL_PROSE");
+    expect(pageText()).not.toContain("MENU_GUIDE_INTERNAL_PROSE");
     expect(s.transcriptText()).toContain("Asked menu guide");
     expect(s.transcriptText()).toContain("the verdict beside each one is the site's");
   });
@@ -493,20 +831,18 @@ describe("model prose reaches the screen only through the gate", () => {
 /* C. check_safety: registered, schema-validated, the only authority   */
 /* ================================================================== */
 
-function bareRegistry(): { registry: ActionRegistry; scope: { base: string; network: string }; ctx: SiteContext; painted: Finding[][] } {
-  const painted: Finding[][] = [];
+function bareRegistry(): { registry: ActionRegistry; scope: { base: string; network: string }; ctx: SiteContext } {
   const selected: Restriction[] = [DAIRY];
   const ctx: SiteContext = {
     doc: document,
     menu: MENU,
     restrictions: RESTRICTIONS,
     selected: () => selected,
-    onFindings: (f) => painted.push(f),
   };
   const registry = new ActionRegistry();
   const scope = { base: BASE, network: "vouch" };
   registerSiteActions(registry, scope, ctx);
-  return { registry, scope, ctx, painted };
+  return { registry, scope, ctx };
 }
 
 describe("check_safety is a registered site action, and the only source of a verdict", () => {
@@ -532,19 +868,28 @@ describe("check_safety is a registered site action, and the only source of a ver
     ["a number where an id belongs", { items: [7] }],
     ["a prototype-polluting key", { ["__proto__"]: { x: 1 }, items: ["reuben"] }],
   ])("check_safety refuses %s", async (_label, args) => {
-    const { registry, scope, painted } = bareRegistry();
+    const { registry, scope } = bareRegistry();
+    renderVerdicts(document, [DAIRY], MENU, RESTRICTIONS);
+    const before = slotsText();
     await expect(registry.dispatch(scope, "check_safety", args, null, "t")).rejects.toThrow();
-    expect(painted).toHaveLength(0);
+    expect(slotsText()).toEqual(before);
   });
 
-  test("check_safety runs on valid arguments, and its answer reaches the cards as well as the caller", async () => {
-    const { registry, scope, painted } = bareRegistry();
-    const got = await registry.dispatch(scope, "check_safety", { items: ["turkey_club"], restrictions: ["dairy_free"] }, null, "t");
+  /**
+   * The action answers its CALLER and changes nothing on the page. Breaks if a
+   * display hook is ever put back on `SiteContext`: a card would appear from a
+   * dispatch no guest asked for.
+   */
+  test("check_safety answers the caller and touches no card", async () => {
+    const { registry, scope } = bareRegistry();
+    renderVerdicts(document, [DAIRY], MENU, RESTRICTIONS);
+    const before = slotsText();
+    const got = await registry.dispatch(scope, "check_safety", { items: ["turkey_club"], restrictions: ["nut_free"] }, null, "t");
     expect(got.receipts![0]!.status).toBe("succeeded");
-    expect(painted).toHaveLength(1);
-    expect(painted[0]![0]!.verdict).toBe("unsafe");
-    // The side effect is the product: asking produced the display.
-    renderVerdicts(document, painted[0]!, MENU, RESTRICTIONS);
+    const result = got.receipts![0]!.result as { findings: Finding[]; checked: string[] };
+    expect(result.findings[0]!.verdict).toBe("safe"); // true for nut_free...
+    expect(result.checked).toEqual(["nut_free"]);
+    expect(slotsText()).toEqual(before); // ...and it changed nothing on the page
     expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
   });
 
@@ -749,6 +1094,10 @@ describe("an unknown outcome is reported as unknown, and never retried", () => {
     // Visible, in the same words an unknown verdict uses.
     const banner = s.$("[data-outcome-unknown]")!;
     expect(banner).not.toBeNull();
+    // Visible, not merely built: deleting the `removeAttribute("hidden")` used to
+    // leave this permanently invisible and pass the whole suite.
+    expect(s.$("[data-outcome]")!.hasAttribute("hidden")).toBe(false);
+    expect(banner.closest("[hidden]")).toBeNull();
     expect(banner.getAttribute("data-verdict")).toBe("unknown");
     expect(banner.textContent).toContain("We don't know");
     expect(banner.textContent).toContain("has NOT been tried again");
@@ -796,12 +1145,40 @@ describe("an unknown outcome is reported as unknown, and never retried", () => {
     expect(document.querySelector("[data-confirmation]")!.hasAttribute("hidden")).toBe(false);
   });
 
-  test("a checkout with an empty order does not place one", async () => {
+  /**
+   * `unknown` has to mean one thing to be worth anything. A committing action that
+   * fails BEFORE it touches the page provably did nothing, so it reports `failed`,
+   * and the "we don't know whether your order went through" banner stays down.
+   * Breaks if `NoEffectError` stops being honoured, or if a handler throws it after
+   * it has already clicked something.
+   */
+  test.each([
+    ["an empty order", "checkout_demo_order", {}, "empty"],
+    ["an item with no Add control on the page", "add_to_cart", { item: "reuben" }, "no Add control"],
+  ])("a committing action that fails before it changes anything reports failed, not unknown: %s", async (_label, action, args, hint) => {
+    document.documentElement.innerHTML = "<div></div>"; // no shop markup at all
     const { registry, scope } = bareRegistry();
-    const got = await registry.dispatch(scope, "checkout_demo_order", {}, async () => true, "t");
-    expect(got.receipts![0]!.status).toBe("unknown"); // it commits, so a failure to start is still not a certainty
-    expect(got.receipts![0]!.error).toContain("empty");
-    expect(document.querySelector("[data-confirmation]")!.hasAttribute("hidden")).toBe(true);
+    const got = await registry.dispatch(scope, action, args, async () => true, "t");
+    expect(got.receipts![0]!.status).toBe("failed");
+    expect(got.receipts![0]!.status).not.toBe("unknown");
+    expect(got.receipts![0]!.error).toContain(hint);
+  });
+
+  test("the unknown-outcome banner uses the right wording for the action that was left in doubt", async () => {
+    let calls = 0;
+    const h = harness({ replies: [callTool("checkout_demo_order", {}), say("Passed on.")] });
+    const s = await session({
+      key: SENTINEL,
+      h,
+      checkoutTimeoutMs: 120,
+      placeOrder: () => {
+        calls += 1;
+        return new Promise(() => {});
+      },
+    });
+    await s.runtime.ask("order it");
+    expect(calls).toBe(1);
+    expect(s.$("[data-outcome-unknown]")!.textContent).toContain("The order was started");
   });
 });
 
@@ -874,26 +1251,34 @@ describe("the visitor's key reaches the router they chose, and nothing else", ()
   });
 
   /** The scanner has to be able to fail, or the test above proves nothing. */
-  test("the scanner is live: a key in a URL, a query, a body, another header or the trace all trip it", () => {
-    const fake = (url: string, init: RequestInit = {}): Captured => ({
-      url,
-      init,
-      request: new Request(url, init),
-      bodyText: typeof init.body === "string" ? init.body : "",
-    });
-    expect(leaks([fake(`https://x.example/${SENTINEL}`)], [], [], SENTINEL)).toEqual([`url https://x.example/${SENTINEL}`]);
-    expect(leaks([fake(`https://x.example/a?key=${SENTINEL}`)], [], [], SENTINEL)).toHaveLength(2); // url and query
-    expect(leaks([fake("https://x.example/a", { method: "POST", body: `{"k":"${SENTINEL}"}` })], [], [], SENTINEL)).toEqual([
-      "body https://x.example/a",
-    ]);
-    expect(leaks([fake("https://x.example/a", { headers: { "X-Api-Key": SENTINEL } })], [], [], SENTINEL)).toEqual([
+  test("the scanner is live: a key in a URL, a query, any kind of body, another header or the trace all trip it", async () => {
+    // Built exactly the way `harness` builds a capture, so the liveness test
+    // cannot drift away from the thing it is testing.
+    const fake = async (url: string, init: RequestInit = {}): Promise<Captured> => {
+      const request = new Request(url, init);
+      return { url, init, request, bodyText: await request.clone().text().catch(() => "") };
+    };
+    expect(leaks([await fake(`https://x.example/${SENTINEL}`)], [], [], SENTINEL)).toEqual([`url https://x.example/${SENTINEL}`]);
+    expect(leaks([await fake(`https://x.example/a?key=${SENTINEL}`)], [], [], SENTINEL)).toHaveLength(2); // url and query
+    // Every body kind a real exfiltration beacon might use. The string case used to
+    // be the only one the scanner could see; the other two passed 78/78.
+    const bodies: BodyInit[] = [
+      `{"k":"${SENTINEL}"}`,
+      new URLSearchParams({ k: SENTINEL }),
+      new Blob([`k=${SENTINEL}`], { type: "text/plain" }),
+    ];
+    for (const body of bodies) {
+      const beacon = await fake("https://analytics.example/collect", { method: "POST", body });
+      expect(leaks([beacon], [], [], SENTINEL), String(body.constructor.name)).toEqual(["body https://analytics.example/collect"]);
+    }
+    expect(leaks([await fake("https://x.example/a", { headers: { "X-Api-Key": SENTINEL } })], [], [], SENTINEL)).toEqual([
       "header x-api-key https://x.example/a",
     ]);
     expect(leaks([], [{ at: 0, event: "oops", detail: { key: SENTINEL } }], [], SENTINEL)).toEqual(["trace"]);
     expect(leaks([], [], [[{ action: "a", description: "d", origin: "o", effect: "read", arguments: { k: SENTINEL } }]], SENTINEL)).toEqual([
       "confirm plan",
     ]);
-    expect(leaks([fake("https://x.example/a")], [{ at: 0, event: "fine", detail: {} }], [], SENTINEL)).toEqual([]);
+    expect(leaks([await fake("https://x.example/a")], [{ at: 0, event: "fine", detail: {} }], [], SENTINEL)).toEqual([]);
   });
 
   /**
@@ -1023,6 +1408,56 @@ describe("execution is bounded and failures are visible", () => {
     expect(s.transcriptText()).toContain("maxModelCalls is 1");
     expect(h.captured.filter((c) => c.url === ROUTER_URL)).toHaveLength(1);
     expect(s.runtime.trace().some((e) => e.event === "budget_stopped")).toBe(true);
+  });
+
+  /**
+   * I5: the per-turn budget resets. Breaks if `send` stops zeroing `modelCalls`:
+   * with a limit of 2, the third plain question used to print "Execution limit
+   * reached" and the assistant never recovered.
+   */
+  test("a plain question costs one call and the budget starts fresh every turn", async () => {
+    const h = harness({ replies: [say("One."), say("Two."), say("Three."), say("Four.")] });
+    const s = await session({ key: SENTINEL, h, limits: { maxModelCalls: 2 } });
+    for (const q of ["a", "b", "c", "d"]) await s.runtime.ask(q);
+    expect(s.transcriptText()).not.toContain("Execution limit reached");
+    expect(h.captured.filter((c) => c.url === ROUTER_URL)).toHaveLength(4);
+    expect(s.runtime.conversation!.usage().modelCalls).toBe(1); // this turn, not the session
+    expect(s.runtime.conversation!.usage().sessionModelCalls).toBe(4);
+  });
+
+  test("the session backstop stops the run and says how to carry on", async () => {
+    const h = harness({ replies: [say("One."), say("Two."), say("Three.")] });
+    const s = await session({ key: SENTINEL, h, limits: { maxSessionModelCalls: 2 } });
+    await s.runtime.ask("a");
+    await s.runtime.ask("b");
+    await s.runtime.ask("c");
+    expect(s.transcriptText()).toContain("maxSessionModelCalls is 2");
+    expect(s.transcriptText()).toContain("Start a new conversation");
+    expect(h.captured.filter((c) => c.url === ROUTER_URL)).toHaveLength(2);
+  });
+
+  test("the new-conversation control gives the budget back and leaves the cards alone", async () => {
+    const h = harness({ replies: [say("One."), say("Two."), say("Three.")] });
+    const s = await session({ key: SENTINEL, h, limits: { maxSessionModelCalls: 1 } });
+    s.tick("dairy_free");
+    const cards = slotsText();
+    await s.runtime.ask("a");
+    await s.runtime.ask("b");
+    expect(s.transcriptText()).toContain("maxSessionModelCalls");
+    s.$("[data-new-conversation]")!.click();
+    await s.runtime.ask("c");
+    expect(s.transcriptText()).toContain("Two."); // a fresh conversation really did run
+    expect(slotsText()).toEqual(cards);
+  });
+
+  /** The two always-true sentences are page chrome, not something a model says per turn. */
+  test("the standing note is on the page from the start and is not model output", async () => {
+    const s = await session({ h: harness({ artifactError: true }) });
+    const note = s.$("[data-standing-note]")!;
+    expect(note).not.toBeNull();
+    expect(note.textContent).toContain("does not decide whether food is safe");
+    expect(note.textContent).toContain("verdict beside each dish");
+    expect(s.$$("[data-turn]")).toHaveLength(0); // nothing has been said by anyone yet
   });
 
   test("an invalid published network is stopped with the validation errors on screen", async () => {

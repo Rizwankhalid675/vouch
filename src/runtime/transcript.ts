@@ -13,7 +13,7 @@
 import type { Finding, Menu, Restriction } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { gate, REFUSAL_MARKER, type Refusal } from "../gate/gate.ts";
-import { verdictCard } from "./verdict-cards.ts";
+import { guestVerdictCard } from "./verdict-cards.ts";
 
 /**
  * A `Refusal.claimed` is sometimes a meaningless token — "0", "i" — because of a
@@ -23,7 +23,12 @@ import { verdictCard } from "./verdict-cards.ts";
  */
 export function claimedLabel(claimed: string): string {
   const trimmed = claimed.trim();
-  return /[A-Za-z]{3,}/.test(trimmed) ? trimmed : "a phrase in that sentence";
+  // It is model text, so it is bounded as well as filtered: a PHRASE may be
+  // named (SPEC 4.4 asks for it) but a sentence may not ride in as one. Anything
+  // longer than a phrase, or with no word in it, is described instead of quoted.
+  if (!/[A-Za-z]{3,}/.test(trimmed)) return "a phrase in that sentence";
+  if (trimmed.length > 40 || trimmed.split(/\s+/).length > 5) return "a phrase in that sentence";
+  return trimmed;
 }
 
 /**
@@ -51,6 +56,13 @@ export class Transcript {
     private readonly refusalPanel: HTMLElement,
     private readonly menu: Menu = MENU,
     private readonly restrictions: Restriction[] = RESTRICTIONS,
+    /**
+     * The guest's own restriction selection. The refusal panel's verdict cards are
+     * computed from THIS and from nothing a caller hands in, for the same reason
+     * `renderVerdicts` takes no `Finding`: a card must never show a verdict the
+     * model asked for.
+     */
+    private readonly selected: () => Restriction[] = () => [],
   ) {}
 
   /** The guest's own words. Not model output; no gate applies. */
@@ -86,23 +98,22 @@ export class Transcript {
       tag.textContent = `Replayed reply, not a live model call${meta.scriptLabel ? `: ${meta.scriptLabel}` : ""}.`;
       row.prepend(tag);
     }
-    this.showRefusals(result.refusals, findings);
+    this.showRefusals(result.refusals);
     return result;
   }
 
   /**
    * A refusal says "read the verdict beside the dish". Showing that verdict right
    * here as well is strictly better than telling the guest to go and look: the
-   * card is built by the same renderer, from the same `Finding`, and the card in
-   * the dish's own slot remains the authoritative one. Nothing about the verdict
-   * passes through the model or the gate to get here — the findings arrive from
-   * the checker, exactly as they do for the slot.
+   * withheld sentence and the verdict that contradicts it end up in one place,
+   * which is how a reader meets them.
    *
-   * It also means the withheld sentence and the verdict that contradicts it are
-   * in one place, which is how a reader meets them: a refusal the guest has to
-   * go hunting to resolve is a refusal that teaches them nothing.
+   * The card is computed by `guestVerdictCard` from the GUEST's selection, the
+   * same way the slot card is. This function takes no `Finding` from anyone, so a
+   * verdict the model asked for cannot appear here either. When nothing is
+   * selected, or the item is unknown, no card is shown and none is invented.
    */
-  showRefusals(refusals: Refusal[], findings: Finding[] = []): void {
+  showRefusals(refusals: Refusal[]): void {
     if (refusals.length === 0) return;
     const block = this.doc.createElement("div");
     block.className = "refusal-block";
@@ -127,14 +138,14 @@ export class Transcript {
     cards.className = "refusal-verdicts";
     cards.setAttribute("data-refusal-verdicts", "");
     for (const id of items) {
-      const f = findings.find((x) => x.item === id);
-      if (!f) continue;
+      const card = guestVerdictCard(this.doc, id, this.selected(), this.menu, this.restrictions);
+      if (!card) continue;
       const wrap = this.doc.createElement("div");
       wrap.className = "refusal-verdict";
       const name = this.doc.createElement("p");
       name.className = "refusal-verdict-name";
       name.textContent = this.menu.items.find((i) => i.id === id)?.name ?? id;
-      wrap.append(name, verdictCard(this.doc, f, this.menu, this.restrictions));
+      wrap.append(name, card);
       cards.append(wrap);
     }
     if (cards.children.length > 0) block.append(cards);

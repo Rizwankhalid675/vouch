@@ -136,3 +136,5 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
 .refusal-verdicts .verdict { background: var(--card); }
 .refusal-verdicts .verdict-unsafe { background: #fbeae7; }
 .refusal-verdicts .verdict-unknown { background: #fdf3df; }
+.standing-note { margin: 0; padding: .55rem .7rem; border-left: 4px solid var(--accent); background: #f6ece2; color: #4a3d30; font-size: .85rem; }
+.ask .reset { background: var(--paper); color: var(--ink); border: 1px solid var(--rule); font-weight: 500; }

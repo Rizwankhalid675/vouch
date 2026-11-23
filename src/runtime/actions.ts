@@ -22,7 +22,7 @@ import type { Finding, Menu, MenuItem, Restriction } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { verdictFor } from "../safety/verdict.ts";
 import { containsLine, ingredientNames } from "../site/shop.ts";
-import type { ActionDefinition, ActionRegistry, ActionScope } from "./upstream/action-registry.ts";
+import { NoEffectError, type ActionDefinition, type ActionRegistry, type ActionScope } from "./upstream/action-registry.ts";
 
 /** What the actions need from the page and from the session. */
 export interface SiteContext {
@@ -32,8 +32,20 @@ export interface SiteContext {
   restrictions: Restriction[];
   /** What the guest has currently selected, which is what `check_safety` defaults to. */
   selected: () => Restriction[];
-  /** Called with each fresh set of findings, so the verdict cards can be rendered. */
-  onFindings: (findings: Finding[]) => void;
+  //
+  // There is deliberately NO display hook here.
+  //
+  // This interface used to carry `onFindings`, and `check_safety` called it. That
+  // made a model tool call the source of what the verdict cards showed: a model
+  // asking about nut_free while the guest had ticked dairy_free replaced an unsafe
+  // card with a green tick, with no confirmation and no notice, because
+  // `check_safety` is a read action. The cards are what makes the gate's documented
+  // leaks survivable, so that was the product's central claim being false.
+  //
+  // `check_safety` now returns a Finding to its caller and to nobody else. The cards
+  // are rendered from the guest's own selection by `renderVerdicts`, which does not
+  // accept a Finding at all. Do not add a display callback back to this interface.
+  //
   /**
    * Perform the demo order and return its receipt. The default clicks the site's
    * own checkout button and reads the confirmation back out of the DOM, because a
@@ -84,12 +96,16 @@ export function resolveItems(ids: string[] | undefined, menu: Menu): MenuItem[] 
   });
 }
 
-/** The verdict, from the pure layer, unaltered. */
+/**
+ * The verdict, from the pure layer, unaltered — returned to the caller and to
+ * nowhere else. This function touches no DOM and has no way to reach one: the
+ * agent network may ASK for a verdict, and what it gets back is an answer in the
+ * conversation, never a change to what the guest is shown.
+ */
 export function checkSafety(args: CheckSafetyArgs, ctx: SiteContext): { findings: Finding[]; checked: string[] } {
   const restrictions = resolveRestrictions(args.restrictions, ctx.restrictions, ctx.selected());
   const items = resolveItems(args.items, ctx.menu);
   const findings = items.map((item) => verdictFor(item, restrictions, ctx.menu));
-  ctx.onFindings(findings);
   return { findings, checked: restrictions.map((r) => r.id) };
 }
 
@@ -139,14 +155,18 @@ export function readCart(doc: Document): { item: string; quantity: number }[] {
  * uses, and the result is verified by reading the cart line back.
  */
 export function addToCart(doc: Document, menu: Menu, item: string, quantity: number): { item: string; quantity: number; cartQuantity: number } {
-  if (!itemById(menu, item)) throw new Error(`'${item}' is not an item on this menu.`);
+  // Everything before the first click is a NoEffectError: the cart provably did not
+  // change, so the outcome is a failure, not an unknown.
+  if (!itemById(menu, item)) throw new NoEffectError(`'${item}' is not an item on this menu.`);
   const card = doc.querySelector<HTMLElement>(`[data-item="${item}"]`);
   const button = card?.querySelector<HTMLElement>("[data-add]");
-  if (!button) throw new Error(`The page has no Add control for '${item}', so nothing was added.`);
+  if (!button) throw new NoEffectError(`The page has no Add control for '${item}', so nothing was added.`);
   const before = readCart(doc).find((l) => l.item === item)?.quantity ?? 0;
   for (let n = 0; n < quantity; n += 1) button.click();
   const after = readCart(doc).find((l) => l.item === item)?.quantity ?? 0;
   if (after !== before + quantity) {
+    // Clicks have already happened, so the cart may have changed partially. That
+    // is genuinely unknown, and stays a plain Error.
     throw new Error(`The cart shows ${after} of '${item}', not the ${before + quantity} expected. Read the order yourself before trying again.`);
   }
   return { item, quantity, cartQuantity: after };
@@ -155,10 +175,11 @@ export function addToCart(doc: Document, menu: Menu, item: string, quantity: num
 /** The default order placement: click the site's checkout, then read the confirmation back. */
 export function placeOrderInPage(doc: Document): { summary: string } {
   const lines = readCart(doc);
-  if (lines.length === 0) throw new Error("The order is empty, so there is nothing to place.");
+  // Again: everything before the click provably placed nothing.
+  if (lines.length === 0) throw new NoEffectError("The order is empty, so there is nothing to place.");
   const button = doc.querySelector<HTMLButtonElement>("[data-checkout]");
-  if (!button) throw new Error("The page has no checkout control, so no order was placed.");
-  if (button.disabled) throw new Error("The checkout control is disabled, so no order was placed.");
+  if (!button) throw new NoEffectError("The page has no checkout control, so no order was placed.");
+  if (button.disabled) throw new NoEffectError("The checkout control is disabled, so no order was placed.");
   button.click();
   const confirmation = doc.querySelector<HTMLElement>("[data-confirmation]");
   if (!confirmation || confirmation.hasAttribute("hidden")) {
@@ -325,6 +346,6 @@ export function siteControlsPresent(doc: Document): boolean {
 }
 
 /** The published defaults, for a caller that has no reason to override them. */
-export function defaultSiteContext(doc: Document, onFindings: (f: Finding[]) => void, selected: () => Restriction[]): SiteContext {
-  return { doc, menu: MENU, restrictions: RESTRICTIONS, selected, onFindings };
+export function defaultSiteContext(doc: Document, selected: () => Restriction[]): SiteContext {
+  return { doc, menu: MENU, restrictions: RESTRICTIONS, selected };
 }

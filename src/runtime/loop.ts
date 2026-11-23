@@ -22,6 +22,7 @@
 
 import type { Finding } from "../../contracts.ts";
 import type { Refusal } from "../gate/gate.ts";
+import { RuntimeMessage } from "./errors.ts";
 import type { ChatMessage, ModelReply, Router } from "./llm.ts";
 import type { Transcript } from "./transcript.ts";
 import type { NetworkConfig, Receipt, TraceEntry } from "./types.ts";
@@ -31,31 +32,53 @@ import { schemaFor, type ToolSchema } from "./upstream/tool-schema.ts";
 import type { ActionRegistry, ActionScope, ConfirmFn } from "./upstream/action-registry.ts";
 
 export interface Limits {
-  /** Model calls for the whole conversation, across every agent. */
+  /**
+   * Model calls within ONE TURN, across every agent. Per turn, not per session:
+   * the runaway this exists to stop is a turn that will not finish, and a
+   * session-lifetime budget instead bricks the assistant after N questions with
+   * no way back, which is worse than no limit for anyone actually using the site.
+   */
   maxModelCalls: number;
-  /** Agent-to-agent delegations for the whole conversation. */
+  /** Agent-to-agent delegations within one turn. */
   maxAgentCalls: number;
   /** How deep delegation may nest. */
   maxDepth: number;
   /** Tool-call rounds within a single turn. */
   maxRounds: number;
+  /**
+   * Model calls for the whole conversation. A backstop against a page left open
+   * all day, set far above any honest session, and recoverable: reaching it tells
+   * the guest to start a new conversation, and the panel has a control that does.
+   */
+  maxSessionModelCalls: number;
 }
 
-export const DEFAULT_LIMITS: Limits = { maxModelCalls: 16, maxAgentCalls: 12, maxDepth: 3, maxRounds: 6 };
+export const DEFAULT_LIMITS: Limits = {
+  maxModelCalls: 16,
+  maxAgentCalls: 12,
+  maxDepth: 3,
+  maxRounds: 6,
+  maxSessionModelCalls: 300,
+};
 
 /** Thrown when an execution limit is reached. Carries the limit, so the UI can show it. */
-export class BudgetError extends Error {
+export class BudgetError extends RuntimeMessage {
   constructor(
     readonly budget: keyof Limits,
     readonly limit: number,
   ) {
-    super(`Execution limit reached: ${budget} is ${limit}. Nothing further was run, and nothing was left half-done.`);
+    super(
+      `Execution limit reached: ${budget} is ${limit}. Nothing further was run, and nothing was left half-done.` +
+        (budget === "maxSessionModelCalls"
+          ? " Start a new conversation to carry on; the verdict beside each dish is unaffected either way."
+          : " Ask again, more simply, and this turn starts from a fresh budget."),
+    );
     this.name = "BudgetError";
   }
 }
 
 /** Thrown when an agent appears in its own delegation ancestry. */
-export class CycleError extends Error {
+export class CycleError extends RuntimeMessage {
   constructor(readonly path: string[]) {
     super(`Composition cycle refused: ${path.join(" → ")}. The call was not made.`);
     this.name = "CycleError";
@@ -95,8 +118,11 @@ export class Conversation {
   readonly frontMan: string;
   private readonly limits: Limits;
   private readonly history: ChatMessage[] = [];
+  /** Reset at the start of every turn: these bound a turn, not a lifetime. */
   private modelCalls = 0;
   private agentCalls = 0;
+  /** Never reset. The session backstop. */
+  private sessionModelCalls = 0;
   /** An action whose outcome we could not confirm. Set once; never cleared by us. */
   private unresolvedWrite: Receipt | null = null;
 
@@ -113,8 +139,13 @@ export class Conversation {
   }
 
   /** Model calls used so far, against the budget. For the observability panel. */
-  usage(): { modelCalls: number; agentCalls: number; limits: Limits } {
-    return { modelCalls: this.modelCalls, agentCalls: this.agentCalls, limits: this.limits };
+  usage(): { modelCalls: number; agentCalls: number; sessionModelCalls: number; limits: Limits } {
+    return {
+      modelCalls: this.modelCalls,
+      agentCalls: this.agentCalls,
+      sessionModelCalls: this.sessionModelCalls,
+      limits: this.limits,
+    };
   }
 
   private id(): string {
@@ -129,8 +160,12 @@ export class Conversation {
 
   private spend(budget: "maxModelCalls" | "maxAgentCalls"): void {
     if (budget === "maxModelCalls") {
+      if (this.sessionModelCalls >= this.limits.maxSessionModelCalls) {
+        throw new BudgetError("maxSessionModelCalls", this.limits.maxSessionModelCalls);
+      }
       if (this.modelCalls >= this.limits.maxModelCalls) throw new BudgetError("maxModelCalls", this.limits.maxModelCalls);
       this.modelCalls += 1;
+      this.sessionModelCalls += 1;
     } else {
       if (this.agentCalls >= this.limits.maxAgentCalls) throw new BudgetError("maxAgentCalls", this.limits.maxAgentCalls);
       this.agentCalls += 1;
@@ -182,6 +217,9 @@ export class Conversation {
   /** One turn. Returns the gated text that reached the screen. */
   async send(userText: string): Promise<TurnResult> {
     const invocationId = this.id();
+    // A fresh budget for this turn. See `Limits.maxModelCalls`.
+    this.modelCalls = 0;
+    this.agentCalls = 0;
     this.deps.transcript.showUser(userText);
     this.history.push({ role: "user", content: userText });
     const receipts: Receipt[] = [];
@@ -249,10 +287,13 @@ export class Conversation {
           effect: action.effect,
           commits: action.commits,
           origin: new URL(action.base).origin,
-          // Keys only at proposal time: the values here are still raw model JSON,
-          // and the trace is rendered on the page. The validated values are
-          // recorded below, once the schema has constrained them to published ids.
-          argumentKeys: typeof args === "object" && args !== null ? Object.keys(args) : [],
+          // The KEYS of the raw model JSON are model-chosen strings, and the trace
+          // is rendered on the page, so an argument named
+          // "The Reuben is dairy-free" would put that sentence in the DOM. Record
+          // only keys the schema itself declares, plus a count of the rest. The
+          // validated VALUES are recorded below, once the schema has constrained
+          // them to published ids.
+          ...declaredKeys(args, action.inputSchema),
         },
       });
       try {
@@ -278,7 +319,11 @@ export class Conversation {
         return describeReceipts(name, got);
       } catch (err) {
         const message = String((err as Error)?.message ?? err);
-        this.deps.trace({ at: this.now(), event: "action_refused", detail: { action: name, reason: message } });
+        // `message` goes to the MODEL, which is fine, and must not go to the trace,
+        // which is rendered: the validator interpolates the offending argument name
+        // into "Unexpected arguments.<raw key>.", so the message can carry
+        // model-chosen prose. The trace gets a classification instead.
+        this.deps.trace({ at: this.now(), event: "action_refused", detail: { action: name, kind: refusalKind(message) } });
         return `FAILED: ${name} did not run. ${message}`;
       }
     }
@@ -361,4 +406,26 @@ export function describeReceipts(name: string, receipts: Receipt[]): string {
       return `NOT STARTED: ${name} was not attempted.`;
     })
     .join("\n");
+}
+
+/**
+ * The argument keys a trace may safely show: those the action's own schema
+ * declares, which are our strings, not the model's. Anything else is counted.
+ */
+function declaredKeys(args: unknown, schema: { properties?: Record<string, unknown> }): { argumentKeys: string[]; undeclaredKeyCount: number } {
+  if (typeof args !== "object" || args === null) return { argumentKeys: [], undeclaredKeyCount: 0 };
+  const declared = Object.keys(schema.properties ?? {});
+  const keys = Object.keys(args as Record<string, unknown>);
+  return {
+    argumentKeys: keys.filter((k) => declared.includes(k)),
+    undeclaredKeyCount: keys.filter((k) => !declared.includes(k)).length,
+  };
+}
+
+/** One of a fixed set of words. Never the validator's interpolated message. */
+export function refusalKind(message: string): string {
+  if (/^No registered site action/.test(message)) return "not_registered";
+  if (/no way to ask you first/.test(message)) return "no_confirmation";
+  if (/^(Invalid|Missing|Unexpected|Unsafe object key|Action data exceeds)/.test(message)) return "invalid_arguments";
+  return "handler_error";
 }

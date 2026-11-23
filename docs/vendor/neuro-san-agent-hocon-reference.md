@@ -1,0 +1,1237 @@
+<!-- Source: https://github.com/cognizant-ai-lab/neuro-san/blob/main/docs/agent_hocon_reference.md (raw.githubusercontent.com/.../main/docs/agent_hocon_reference.md), fetched 2026-11-23 -->
+
+# Agent Network HOCON File Reference
+
+This document describes the neuro-san specifications for a single agent network .hocon file
+as used for each [registry](../neuro_san/registries)
+in the [neuro-san](https://github.com/cognizant-ai-lab/neuro-san) and [neuro-san-studio](https://github.com/cognizant-ai-lab/neuro-san-studio)
+repos.
+
+The neuro-san system uses the HOCON (Human-Optimized Config Object Notation) file format
+for its data-driven configuration elements.  Very simply put, you can think of
+.hocon files as JSON files that allow comments, but there is more to the hocon
+format than that which you can explore on your own.
+
+A [JSON Schema](./agent_network_schema.hocon) describing many of the keys in this document is also
+available for scripted validation. It is intentionally permissive and does not catch every
+mis-spelling; see [agent_hocon_schema.md](./agent_hocon_schema.md) for the exact coverage and how to
+use it. For checking an individual file by hand, also see
+[hocon_validator_cli.md](./hocon_validator_cli.md).
+
+Specifications in this document each have header changes for the depth of scope of the dictionary header they pertain to.
+Some key descriptions refer to values that are dictionaries.
+Sub-keys to those dictionaries will be described in the next-level down heading scope from their parent.
+
+Items in ***bold*** are essentials. Try to understand these first.
+
+<!--TOC-->
+
+- [Top-Level Agent Network Specifications](#top-level-agent-network-specifications)
+    - [***llm_config*** - configuration for default LLM to use](#llm_config)
+        - [***model_name*** - specifies the name of the default LLM to use](#model_name)
+        - [class](#class)
+        - [fallbacks](#fallbacks)
+        - [temperature](#temperature)
+        - [Other LLM-specific Parameters](#other-llm-specific-parameters)
+        - [provider_tools](#provider_tools)
+        - [Client-Provided API Keys](#client-provided-api-keys)
+    - [***tools*** - list of agent/tool definitions](#tools)
+    - [commondefs](#commondefs)
+        - [replacement_strings](#replacement_strings)
+        - [replacement_values](#replacement_values)
+    - [error_formatter](#error_formatter)
+    - [error_fragments](#error_fragments)
+    - [llm_info_file](#llm_info_file)
+    - [max_steps](#max_steps)
+    - [max_iterations](#max_iterations)
+    - [max_execution_seconds](#max_execution_seconds)
+    - [max_attempts](#max_attempts)
+    - [metadata](#metadata)
+        - [description](#description)
+        - [tags](#tags)
+    - [request_timeout_seconds](#request_timeout_seconds)
+    - [toolbox_info_file](#toolbox_info_file)
+    - [verbose](#verbose)
+    - [sly_data_schema](#sly_data_schema)
+- [Single Agent Specification](#single-agent-specification)
+    - [***name*** - the name of the agent so that other agents can reference it](#name)
+    - [***function*** - specifies what the agent can do/needs as input to clients or other agents](#function)
+        - [***description*** - description of what the agent can do for both agents and clients](#description-1)
+        - [***parameters*** - schema for agent input](#parameters)
+            - [type](#type)
+            - [properties](#properties)
+            - [required](#required)
+        - [sly_data_schema](#sly_data_schema-1)
+            - [llm_config](#llm_config-1)
+            - [http_headers](#http_headers)
+        - [sly_data_output_schema](#sly_data_output_schema)
+        - [invocation](#invocation)
+    - [description - a shorter way to give the function description](#description-2)
+    - [***instructions*** - main system prompt for the agent](#instructions)
+    - [***tools*** - list of other agents/tools that this agent may access](#tools-agents)
+        - [External Agents](#external-agents)
+        - [MCP Servers](#mcp-servers)
+            - [Authentication](#authentication)
+    - [***class*** - Python class name to invoke for Coded Tools](#class-1)
+    - [llm_config - agent-specific LLM configuration](#llm_config-2)
+    - [command](#command)
+    - [toolbox](#toolbox)
+    - [args](#args)
+        - [tools](#tools-args)
+    - [allow](#allow)
+        - [connectivity](#connectivity)
+        - [to_downstream](#to_downstream)
+            - [sly_data](#sly_data)
+        - [from_downstream](#from_downstream)
+            - [sly_data](#sly_data-1)
+            - [messages](#messages)
+        - [to_upstream](#to_upstream)
+            - [sly_data](#sly_data-2)
+        - [to_tracing](#to_tracing)
+            - [sly_data](#sly_data-3)
+    - [display_as](#display_as)
+    - [max_message_history](#max_message_history)
+    - [verbose](#verbose-1)
+    - [max_steps](#max_steps-1)
+    - [max_iterations](#max_iterations-1)
+    - [max_execution_seconds](#max_execution_seconds-1)
+    - [max_attempts](#max_attempts-1)
+    - [error_formatter](#error_formatter-1)
+    - [error_fragments](#error_fragments-1)
+    - [structure_formats](#structure_formats)
+    - [middleware](#middleware)
+        - [class](#class-2)
+        - [args](#args-1)
+            - [activation_capsule](#activation_capsule)
+            - [chat_history](#chat_history)
+            - [origin](#origin)
+            - [origin_str](#origin_str)
+            - [progress_reporter](#progress_reporter)
+            - [sly_data](#sly_data-4)
+
+<!--TOC-->
+
+## Top-Level Agent Network Specifications
+
+All parameters listed here have global scope (to the agent network) and are listed at the top of the file by convention.
+
+### commondefs
+
+A dictionary describing common definitions to be used throughout the particular agent network spec.
+
+#### replacement_strings
+
+A `commondefs` dictionary where keys are strings to be found within braces within strings
+and the values of the dictionary are to replace those keys anywhere throughout the dictionary where string
+values are to be found.  Example:
+
+```json
+{
+    "commondefs": {
+        "replacement_strings": {
+            "operation": "addition",
+            ...
+        }
+    }
+    ...
+
+        "instructions": "Perform the {operation} operation."
+}
+```
+
+This results in a final interpretation where the `instructions` value is "Perform the addition operation."
+
+Multiple passes are made for string replacements, so you can have string replacement values that also have
+string replacement keys in them.
+
+#### replacement_values
+
+A `commondefs` dictionary where keys are strings to be found as full-values (no braces) and the values
+of the dictionary are to replace those keys anywhere throughout the dictionary with the value defined
+whenever an exact match of the string value is found.
+values are to be found.  Example:
+
+```json
+{
+    "commondefs": {
+        "replacement_values": {
+            "my_dict": {
+                "key1": "my_value",
+                "key2": 1.0
+            }
+            ...
+        }
+    }
+    ...
+
+        "function": "my_dict"
+}
+```
+
+This results in a final interpretation where the `function` value is:
+
+```json
+"function": {
+    "key1": "my_value",
+    "key2": 1.0
+}
+```
+
+Value replacement only happens once, but you can have replacement_strings references within
+your string values within your replacement_values and things will work out as you might expect.
+
+### llm_info_file
+
+The `llm_info_file` key allows you to specify a custom HOCON file that extends the default list of available LLMs used
+by agents in a neuro-san network. This is especially useful if you're using models or providers that are not included in
+the default configuration (e.g., newly released models or organization-specific endpoints).
+
+This file is also the only source of model prices for token-cost reporting: set
+[price_per_1k_input_tokens](./llm_info_hocon_reference.md#price_per_1k_input_tokens) and
+[price_per_1k_output_tokens](./llm_info_hocon_reference.md#price_per_1k_output_tokens) for your models,
+otherwise their reported cost defaults to 0 and a warning is logged.
+
+For more information on selecting and customizing models, see the [model_name](#model_name) and [class](#class) section below.
+
+### toolbox_info_file
+
+The `toolbox_info_file` key lets you define a custom HOCON file that adds to the default set of tools available to agents
+within a neuro-san network. This is particularly helpful when you have tools shared across multiple agent networks.
+
+For further details, refer to the [toolbox](#toolbox) section below.
+
+### llm_config
+
+An optional dictionary describing the default settings for agent LLMs when specifics
+are not available for a given agent.  When this is not present, the model_name for all agents
+is the one in the `default_config` section of
+[default_llm_info.hocon](../neuro_san/internals/run_context/langchain/llms/default_llm_info.hocon)
+(at the time of writing this is gpt-5.2).
+
+#### model_name
+
+The string model name to use for an agent in the network.
+When this is not present, the default is the `model_name` in the `default_config` section of
+[default_llm_info.hocon](../neuro_san/internals/run_context/langchain/llms/default_llm_info.hocon)
+(at the time of writing this is gpt-5.2), a decent all-purpose tool-using model
+which gets the job done but doesn't cost a ton.
+
+You can use any model listed in the [default_llm_info.hocon](../neuro_san/internals/run_context/langchain/llms/default_llm_info.hocon)
+file included with the neuro-san distribution without any further modification.
+
+While you can use any model you like for any agent within a neuro-san agent network,
+you will need to use a model that has been specifically trained for "tool use" for any agent that
+branches off work to any other agent/tool.  You can browse the `capabilities` section of the
+`default_llm_info.hocon` to be sure the llm you choose can use tools.
+
+The most common situation is one where you will need your own access key set as an environment variable in order
+to use LLMs from various providers.
+
+| LLM Provider               | Environment variables                                              |
+|:---------------------------|:-------------------------------------------------------------------|
+| Amazon Bedrock             | AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or AWS_PROFILE        |
+| Anthropic                  | ANTHROPIC_API_KEY                                                  |
+| Anthropic via Bedrock      | AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or AWS_PROFILE        |
+| Azure OpenAI               | AZURE_OPENAI_API_KEY or AZURE_OPENAI_AD_TOKEN, and AZURE_OPENAI_ENDPOINT |
+| Google Gemini              | GOOGLE_API_KEY                                                     |
+| NVidia                     | NVIDIA_API_KEY                                                     |
+| Ollama                     | &lt;None required&gt;                                              |
+| OpenAI                     | OPENAI_API_KEY                                                     |
+| OpenRouter                 | OPENROUTER_API_KEY                                                 |
+
+**Security Best Practice:** _We strongly recommend to **not** set secrets as values within any source file._
+These files tend to creep into source control repos, and it is **very** bad practice
+to expose secrets by checking them in.
+
+If your favorite model, or new hotness is not listed in `default_llm_info.hocon`,
+you can still use it by specifying the [class](#class) key directly, or by extending the list in one of two ways:
+
+(1) Set the absolute path to your extension HOCON file using the [llm_info_file](#llm_info_file)
+key in the agent network HOCON file.
+
+(2) Set the extension HOCON file to the environment variable
+[AGENT_LLM_INFO_FILE](./llm_info_hocon_reference.md#AGENT_LLM_INFO_FILE-environment-variable).
+
+For complete information on adding your own llm models or providers to the default llm info,
+see the [llm_info_hocon_reference](./llm_info_hocon_reference.md).
+
+#### Client-Provided API Keys
+
+It is possible to set any one of the API keys described above as "sly_data" in the llm_config.
+This will cause the system to look at the sly_data's llm_config dictionary for the appropriate
+api key(s) depending on the model provider. Note that key names are all-smalls versions of any
+environment variable names above.
+
+See also: [llm_config](#llm_config-1) in the [sly_data_schema](#sly_data_schema-1) section.
+
+Example networks that advertise that their sly_data_schema needs external API keys:
+
+- [music_nerd_pro_sly_api_key.hocon](../neuro_san/registries/music_nerd_pro_sly_api_key.hocon)
+
+#### temperature
+
+Pretty much any of the LLMs will take a floating-point temperature parameter as an argument.
+Roughly speaking, temperature is a number that indicates a relative amount of randomness in answers provided
+by the LLM; the accepted range depends on the provider (the `gemini` class documents 0.0 to 2.0, for example),
+so check your model's documentation.  Most of the stock classes in
+[default_llm_info.hocon](../neuro_san/internals/run_context/langchain/llms/default_llm_info.hocon)
+leave temperature `null`, which means it is omitted from the request and the provider's own default applies
+(the `gemini` class is the exception and sets 0.7).  Note that some reasoning models reject a custom
+temperature, so only set one if your model supports it.
+
+#### Other LLM-specific Parameters
+
+LLMs all come with various parameters like temperature that can be set on them.
+As long as a parameter is a scalar listed in the args section for your LLM's class in the
+[llm_info hocon file](../neuro_san/internals/run_context/langchain/llms/default_llm_info.hocon)
+file (or the list-valued `provider_tools` key, below), you can set that parameter in any llm_config within its
+own technical limits however you like.
+
+A few of those parameters decide which endpoint a request goes to, how function tools are bound, or are
+rejected by some models. They are described per provider in the
+[Provider-Specific Arguments](./llm_info_hocon_reference.md#provider-specific-arguments) section of the
+llm_info reference: which OpenAI endpoint is used and why the Responses API is now the default, how to switch
+back to Chat Completions (also behind gateways such as LiteLLM), how OpenAI binds function tools (`tool_strict`),
+Anthropic thinking and effort, and Gemini thinking.
+
+Note: _We strongly recommend to **not** set secrets as values within any source file, including hocon files._
+These files tend to creep into source control repos, and it is **very** bad practice
+to expose secrets by checking them in.
+
+#### provider_tools
+
+The optional `provider_tools` key is a list of provider-native tool dictionaries. These tools run on the model
+provider's servers rather than in neuro-san. The dictionaries are passed through unchanged, so their shapes must
+match the provider selected by `model_name` or `class`.
+
+```hocon
+"llm_config": {
+    "model_name": "gpt-5.2",
+    "provider_tools": [
+        {"type": "web_search"},
+        {"type": "code_interpreter", "container": {"type": "auto"}}
+    ]
+}
+```
+
+See [Provider Tools](./provider_tools.md) for the shapes each provider accepts, how an agent-level list combines
+with the network-level one, the fallback rule, and the classes that do not support it.
+
+#### class
+
+You can use the `class` key in two ways:
+
+**1. For supported providers (predefined in `default_llm_info.hocon`)**
+
+Set the `class` key to one of the values listed below, then specify the model using the `model_name` key.
+
+The `model_name` may be one of the aliases in `default_llm_info.hocon`, such as `claude-opus`; it resolves the
+same way as without `class`, and a `model_name` that is not listed there is passed to the provider unchanged.
+See [use_model_name](./llm_info_hocon_reference.md#use_model_name) for the details.
+
+| LLM Provider               | Class Value         |
+|:---------------------------|:--------------------|
+| Anthropic                  | anthropic           |
+| Anthropic via Bedrock      | anthropic-bedrock   |
+| Azure OpenAI               | azure-openai        |
+| Bedrock (non-Anthropic)    | bedrock             |
+| Google Gemini              | gemini              |
+| NVidia                     | nvidia              |
+| Ollama                     | ollama              |
+| OpenAI                     | openai              |
+| OpenRouter                 | openrouter          |
+
+You may only provide parameters that are explicitly defined for that provider's class under the
+`classes.<class>.args` section of
+[`default_llm_info.hocon`](../neuro_san/internals/run_context/langchain/llms/default_llm_info.hocon).
+Unsupported parameters will be ignored.  More precisely, any parameter that the provider's policy does not
+forward to the underlying chat model is silently dropped, with no error or warning.  This differs from the
+custom class route described in section 2 below, where unknown parameters raise an error instead.
+`provider_tools` is an exception: neuro-san consumes it while creating the agent and does not pass it to the
+chat-model constructor.
+
+**2. For custom providers (not in `default_llm_info.hocon`)**
+
+Set the `class` key to the full Python path of the desired LangChain-compatible chat model class in the format:
+
+```hocon
+<langchain_package>.<module>.<ChatModelClass>
+```
+
+Then, provide any constructor arguments supported by that class in `llm_config`.
+Everything, including the model name, is handed to that class exactly as written.
+
+Note that this route bypasses both the provider policy and the model alias table in
+[`default_llm_info.hocon`](../neuro_san/internals/run_context/langchain/llms/default_llm_info.hocon).
+`DefaultLlmFactory` resolves the class path and constructs the class directly, passing the `llm_config`
+(minus `class` and `verbose`) to its constructor as keyword arguments. As a result:
+
+- The model must be given the way the class expects it, and as the provider's own API model name. For example
+  `ChatGoogleGenerativeAI` takes `model` rather than `model_name`, and the value must be `gemini-3-flash-preview`
+  rather than the neuro-san alias `gemini-3-flash`, because the alias and `use_model_name` redirections are never
+  consulted.
+- Settings derived from the llm_info entry are not applied. In particular `max_tokens` is not computed from
+  `max_output_tokens`, and the shared HTTP client (connection pooling, proxy and timeout handling) that the
+  `openai` and `azure-openai` policies set up is not created.
+
+For a full list of available chat model classes and their parameters, refer to:
+[LangChain Chat Integrations Documentation](https://python.langchain.com/docs/integrations/chat/)
+
+> _Note: Neuro-SAN requires models that support **tool-calling** capabilities._
+
+#### fallbacks
+
+Fallbacks is a list of [llm_config](#llm_config) dictionaries to use in priority order.
+When the an llm_config in the list fails for any reason, the next in the list is tried.
+
+An simple example usage is given in [esp_decision_assistant.hocon](../neuro_san/registries/esp_decision_assistant.hocon).
+
+You cannot have fallbacks listed within fallbacks.
+
+### verbose
+
+Controls server-side logging of agent chatter.
+
+By default this is false, indicating no server-side logging is desired.
+When true, basic langchain AgentExecutor verbosity is turned on for the agent.
+There is an `extra` level of logging which enables a lanchain LoggingCallbackHandler for the agent.
+
+Whenever any logging is turned on, it can be quite chatty, so this is not really a setting appropriate
+for a production environment.  It's worth noting that most of the same information obtained by turning
+on verbose can also be obtained by AGENT ChatMessages returned when the client's chat_filter is set to
+MAXIMAL.
+
+### max_steps
+
+An integer that sets the [recursion limit](https://docs.langchain.com/oss/python/langgraph/graph-api#recursion-limit)
+for LangGraph's agent. Despite its name, the recursion limit acts as a
+[super-step](https://docs.langchain.com/oss/python/langgraph/graph-api#graphs) limit
+on the entire graph execution, encompassing all tool and LLM calls.
+Nodes that run in parallel share the same super-step,
+while sequential nodes each occupy a separate super-step. Defaults to 10,000.
+
+### max_iterations
+
+Deprecated. Use [max_steps](#max_steps) instead.
+
+### max_execution_seconds
+
+An integer controlling the maximum amount of wall clock time (in seconds) to spend in the langchain
+[AgentExecutor](https://api.python.langchain.com/en/latest/agents/langchain.agents.agent.AgentExecutor.html)
+used for the agent.  Default is set for 5 minutes.
+
+### max_attempts
+
+A positive integer (i.e. >= 1) indicating the maximum number of times to attempt an agent run given any failures.
+This is different from [max_steps](#max_steps) in that it specifically relates to retryable errors encountered
+during agent execution as opposed to limiting the number of super-steps.
+
+A "retryable" error here includes LLM provider API errors pertaining to rate limits, timeouts,
+and other temporary failures.  Failures which are known to be non-retryable are not re-attempted.
+These include API_KEY errors, ValueErrors from tools, and other unexpected exceptions; the idea
+being: these errors would just happen again anyway so why waste the tokens?
+
+The default setting is to use 3 attempts.
+
+### request_timeout_seconds
+
+An integer controlling the maximum amount of wall clock time (in seconds) to wait for any single
+client-side chat request to finish. When this time is exceeded, the request is aborted and a timeout error
+is reported back to the client.  Default is set for 0 seconds, which indicates no timeout.
+
+### error_formatter
+
+String value which describes which error formatter to use by default for any agent in the network.
+
+The default value is `string` which indicates that when errors occur, they are reported upstream
+in their original string format.
+
+An alternative value here is `json`, which formats the error output into a predictable json dictionary
+which contains the following keys:
+
+| Error Dictionary Key | Description |
+|:---------------------|:------------|
+| error     | The error message itself, usually from a Python exception |
+| tool      | The name of the tool within the agent network that generated the error |
+| details   | Optional string descibing details of the error. Could include a Traceback, for instance|
+
+### error_fragments
+
+A list of strings where if any one of the strings appears in agent output,
+it is considered an error and reported as such per the [error_formatter](#error_formatter).
+
+#### sly_data_schema
+
+The optional [JSON Schema](https://json-schema.org) dictionary describing what
+specific information the agent needs as input arguments over the private sly_data dictionary
+channel when it is called.  The sly_data itself is generally considered to be private information
+that does not belong in the chat stream, for example: credential information.
+
+This is a "global" definition of sly_data_schema that will be merged with any tool-specific definition.
+While this is intended only for use with a front-man agent only, it can sometimes be useful to
+have partial definitions for sly_data_schema that pertain to all agent networks in the manifest
+defined globally with this key while network-specific definitions can be defined with the `sly_data_schema`
+key within the front-man tool.
+The same merge is applied to networks deployed at runtime through the Reservations API
+(temporary networks), so a global definition reaches their front man as well.
+
+For more details, see the [sly_data_schema](#sly_data_schema-1) key below.
+
+### tools
+
+A list/array of [single agent specifications](#single-agent-specification) that make up the agent network.
+
+The first of these in the list is called the "Front Man".
+He handles all the dealings with any client of the agent network.
+
+Other agents listed can be in any order and can reference each other, forming trees or graphs.
+
+Typically any agent that is not the front-man is considered an implementation detail private
+to the agent network definition. It is not possible to call these internal agents except from within
+the agent network that defines them.  If you find your agent networks have some shared functionality
+between them, consider elevating sub-networks to [external agent](./external_agents.md) status.
+
+### metadata
+
+An optional dictionary containing metadata about the agent network.
+Any metadata is by definition merely informational and non-functional.
+At least some of the keys mentioned below can be transmitted back to a Concierge service client
+
+#### description
+
+A string description of the agent network.
+
+#### tags
+
+A list of strings that describe grouping attributes of the agent network.
+The idea here is that any given server can describe groupings of agent networks
+however it wants to.
+
+#### sample_queries
+
+A list of sample query strings that can be asked of the agent network.
+These queries serve as examples to help users understand what kinds of questions or requests
+are appropriate for the agent network.
+
+## Single Agent Specification
+
+Settings for individual agents are specified by their own dictionary within the list of [tools](#tools) for the network.
+
+There are a few settings that only apply to the front man.
+
+### name
+
+Every agent _must_ have a name.
+
+Names can contain alphanumeric characters with "-" or "_" as word separators.
+No spaces or other punctuation is allowed.
+This allows for snake_case, camelCase, kebab-case, PascalCase, or SCREAMING_SNAKE_CASE
+human-readable names, however you like them.
+
+Any agent can refer to any other agent definition within the same agent network hocon file
+by using its name in its [tools](#tools-agents) list.
+
+### function
+
+A dictionary which describes what an agent can do and how it wishes to be invoked for the
+benefit of its upstream caller's planning.
+
+Neuro-san largely follows the
+[OpenAI function spec](https://platform.openai.com/docs/guides/function-calling?api-mode=responses#defining-functions),
+however we do not require redefining the `name` (that is already given [above](#name))
+and we also do not require redefining the `type` as this is always the same for every agent.
+
+What is defined in this dictionary is what is returned for the agent's Function() neuro-san web API call.
+
+An agent can also give its description at its top level, as a [description](#description-2).
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+#### description
+
+Every agent other than a [toolbox](#toolbox) agent _must_ have its function description filled out, here or as a
+top-level [description](#description-2).
+This is a single string value which informs anything upstream as to what _this_ agent can do for it.
+
+For a user-facing front-man, what is contained in this description often suffices as a prompt for the user.
+
+#### parameters
+
+Parameters contains an optional [JSON Schema](https://json-schema.org) dictionary describing what
+specific information the agent needs as input arguments when it is called.
+Only the `type: object` + `properties` form described below is supported.
+JSON Schema constructs outside this form (such as `additionalProperties`,
+`anyOf`, or `$ref`) are not honored: a schema that uses them without a
+`properties` dictionary is rejected as invalid when the agent is called as a
+tool, and unsupported constructs appearing alongside a `properties` dictionary
+are ignored.
+
+An LLM-enabled agent other than the front-man whose function has no `parameters`, or a null one, gets one
+required `inquiry` string parameter, because its input prompt is built from the arguments of the call. This is
+the same as declaring these parameters:
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "inquiry": {
+            "type": "string",
+            "description": "The request to send to this agent."
+        }
+    },
+    "required": ["inquiry"]
+}
+```
+
+An LLM sub-agent with these default parameters gets only `inquiry`, so a [coded tool](#class-1) that calls one
+sends `inquiry`. Coded tools and [toolbox](#toolbox) agents get no default parameters. A `parameters` key outside
+the function dictionary is a misconfiguration: it is not used when the agent is called, and a sub-agent with one
+gets no default parameters.
+
+A front-man typically does not need parameters defined when its agent network is only
+ever talked to directly by a user.
+
+When the agent network is anticipated as being called from other agent networks
+(that is, referenced as an external tool), the front-man's parameters are how a
+calling agent passes its request along — the tool-call arguments are the only message
+channel through which a caller's request reaches the external network.
+(Private data can separately flow through the opt-in `sly_data` channel —
+see [to_downstream](#to_downstream).) Declare at least one parameter
+(for example, a single required `inquiry` string) for any network intended to be
+referenced externally. If no parameters are declared, neuro-san synthesizes a default
+required `inquiry` string parameter on the calling side (and logs a warning) so the
+caller's request still gets through.
+
+##### type
+
+The type of the parameters dictionary is always `object`.
+This lets the parsing system know that the [properties](#properties) will be described as a dictionary.
+
+##### properties
+
+A dictionary whose keys each describe the name of a single argument to be used as input to an agent.
+Each key's value is a dictionary describing the single argument value itself.
+This dictionary has the following keys:
+
+| Property Key | Description |
+|:-------------|:------------|
+| description  | A string which describes the particular argument |
+| type         | A string describing the type of the property. (See below) |
+| default      | An optional default value for the property |
+
+Scalar types here can be "int" or "integer", "float", "number" (accepts both
+integers and floats), "string", and "bool" or "boolean".
+These include the standard JSON Schema spellings, so function specs copied from
+OpenAI- or MCP-style tool definitions work as-is.
+It is possible that a properties' type can be "array"s for lists or "object"s for nested dictionaries.
+An "array" property must also carry an "items" dictionary describing the type of its elements.
+
+Any sample agent hocon with more than one agent will have some example of a simple properties dictionary.
+For a concrete, more complex properties definition, with nested objects and arrays,
+See the definition of [cao_item in the esp_descision_assistant.hocon](../neuro_san/registries/esp_decision_assistant.hocon).
+
+##### required
+
+This is an optional list of string keys in the [properties](#properties) dictionary that are considered
+to be required whenever an upstream agent calls the one being described.
+Note that it's possible to specify a default value for any property that is not listed as required.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+#### sly_data_schema
+
+The optional [JSON Schema](https://json-schema.org) dictionary describing what
+specific information the agent needs as input arguments over the private sly_data dictionary
+channel when it is called.  The sly_data itself is generally considered to be private information
+that does not belong in the chat stream, for example: credential information.
+
+The sly_data_schema specification here has the same format as the [parameters](#parameters)
+schema definition above.  Ideally there should be one [properties](#properties) entry per
+sly_data dictionary input key, and any absolutely necessary keys should be listed in the [required](#required)
+list.
+
+Note that it is not always strictly necessary to advertise to the outside world the sly_data_schema that
+your agent network requires, but doing so does allow generic clients to prompt for this extra
+information before sending any chat input.
+
+The front-man is the only agent node that ever needs to specify this aspect of the [function](#function)
+definition, as sly_data itself is already visible to all other internal agents of the network.
+
+Example networks that advertise their sly_data_schema:
+
+- [math_guy.hocon](../neuro_san/registries/math_guy.hocon)
+- [music_nerd_pro_sly_api_key.hocon](../neuro_san/registries/music_nerd_pro_sly_api_key.hocon)
+
+There are select few tacit conventions supported for certain sly_data values that need to come from the client:
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+##### llm_config
+
+The sly_data dictionary can contain an optional `llm_config` key whose value is a dictionary
+containing per-user API keys to be filled in when an agent's llm_config has certain values
+specified as "sly_data" for its values.
+
+This enables any or all agent networks to potentially offload the costs operation onto the user
+by having the user fill in their own API keys. We call this "Bring Your Own Key" or BYOK.
+
+The front man's `sly_data_schema` tells a client how these keys will be accepted by any node's `llm_config`:
+
+- **Alternatives** (`anyOf`/`oneOf`): send every key of at least one alternative. LLMs that need keys
+  you did not send are skipped in favor of their fallbacks. Sending more than one alternative is fine.
+  The canonical example here is the keys themselves: openai_api_key, anthropic_api_key, google_api_key.
+- **Optional** (under `llm_config.properties` but in no `required` list): when omitted, the server's own
+  key or default is used. For this reason, network authors should not declare API keys as optional.
+  The canonical examples here are optional endpoints: openai_api_base, anthropic_api_url.
+  A `model_name` from sly_data also needs a `class` in the llm_config, and it cannot be optional.
+
+If no LLM can be used, the error lists the keys that are always required and the alternatives to choose from.
+
+Example networks that advertise that their sly_data_schema needs external API keys:
+
+- [music_nerd_pro_sly_api_key.hocon](../neuro_san/registries/music_nerd_pro_sly_api_key.hocon)
+
+##### http_headers
+
+The sly_data dictionary can contain an optional `http_headers` key: a mapping from
+[MCP server](./mcp_tools.md) URL to a dictionary of HTTP header names/values (for example
+`{"Authorization": "Bearer <token>"}`) that neuro-san sends when it calls that server.
+See [Authentication](./mcp_tools.md#authentication) for the header format.
+
+Advertising `http_headers` in your `sly_data_schema` — with a `properties` entry per MCP URL and a
+`required` list — lets an OAuth-capable client (for example
+[nsflow](https://github.com/cognizant-ai-lab/nsflow)) run the sign-in flow, inject the resulting
+bearer token into sly_data on the user's behalf, and prompt the user to connect any URL listed under
+`http_headers.required` before chatting. neuro-san itself only defines the schema and forwards
+whatever `http_headers` arrive in sly_data; the OAuth flow and the connect prompt are the client's
+responsibility.
+
+#### sly_data_output_schema
+
+Similar optional dictionary to [sly_data_schema](#sly_data_schema-1) above, but this specifies the schema
+for the sly_data being output by the agent network.
+
+Example networks that advertise their sly_data_output_schema:
+
+- [math_guy.hocon](../neuro_san/registries/math_guy.hocon)
+
+#### invocation
+
+_Front Man only_
+A string describing how the agent is to be called.
+
+A value of "chatbot" (the default) indicates that the agent is intended to be called as a chatbot,
+which essentially means the caller will be waiting for the agent network to complete
+the conversation in order to get some kind of response.  If the caller disconnects, the
+work being done for the request will be abandoned.
+
+A value of "event" indicates that the agent is intended to be called as an event handler,
+where the caller will _not_ be waiting for the agent network to complete the conversation.
+Rather, the caller reports information to the agent network, receives a quick acknowledgement
+message that the information has been received and the network's processing continues after
+the caller disconnects.  Events can also be called periodically by configuration in the manifest.
+See the [periodic key in the manifest documentation](./manifest_hocon_reference.md#periodic) for
+more information.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### description
+
+A shorter way to give the [function description](#description-1) of an agent: a single string that
+tells clients and calling agents what _this_ agent can do. It is put into the agent's [function](#function),
+which is made when the agent has none, so a function dictionary is needed only for what else it holds,
+such as [parameters](#parameters). For example, this agent:
+
+```json
+{
+    "name": "fiction_recommender",
+    "description": "Recommends fiction books based on the user's preferences.",
+    "instructions": "Recommend fiction books that match the preferences you are given."
+}
+```
+
+works the same as this one:
+
+```json
+{
+    "name": "fiction_recommender",
+    "function": {
+        "description": "Recommends fiction books based on the user's preferences."
+    },
+    "instructions": "Recommend fiction books that match the preferences you are given."
+}
+```
+
+Neither form declares parameters, so when this agent is a sub-agent, it gets the default `inquiry` parameter
+described under [parameters](#parameters).
+
+The description is not used when the function has a description of its own, for a [toolbox](#toolbox)
+agent, which gets its function from the toolbox, or for an agent that gives `parameters` outside its
+function dictionary. Parameters only work inside the function dictionary.
+
+### instructions
+
+When included, the single (often very long) string value here tells an LLM-enabled agent
+what it needs to do.
+
+This is optional because not every tool listed in the agent network uses an LLM (there exist CodedTools).
+But if you expect an agent to use an LLM, this instructions field is a must.
+
+### command
+
+An optional string to set an LLM-enabled agent in motion.
+
+### tools (agents)
+
+An optional list defining which tools or agents the described agent can access.
+Each entry may be one of the following:
+
+- The name of another agent within the same network definition.
+
+- A string reference to an [external agent](./external_agents.md)
+
+- A string or dictionary reference to an [MCP server](./mcp_tools.md)
+
+Typically the names listed here are other agents within the same agent network definition,
+often forming a tree structure, but overall agent networks are allowed to contain cycles.
+
+It is important to note that just because an agent is listed in the tools does not mean that it will always
+be called by an LLM.  The tools listing is merely a full description of what is _available_ to the agent.
+It is the agent itself that actually decides which tools (if any) to invoke depending on its instructions
+and the context of its query.
+
+#### External Agents
+
+A `/name` entry or a URL entry refers to an agent network outside this one: on the same server, on another
+neuro-san server, or in an agent network file fetched by URL. See [External Agents](./external_agents.md) for the
+reference forms, ports and the https rule.
+
+#### MCP Servers
+
+A string or dictionary entry can refer to a Model Context Protocol (MCP) server whose tools the agent may call.
+See [MCP Servers as Tools](./mcp_tools.md) for how URLs are recognized, the `tools` allow list, and how tool names
+are made provider-safe.
+
+##### Authentication
+
+Credentials for an MCP server come from `http_headers` in `sly_data` or from the `MCP_SERVERS_INFO_FILE`
+environment variable. See [Authentication](./mcp_tools.md#authentication) in MCP Servers as Tools.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### llm_config
+
+It is possible for any LLM-enabled agent description to also have its own [llm_config](#llm_config)
+dictionary.  This allows for agents to use the right agent for the job.
+Some considerations might include:
+
+- Use of lower-cost LLMs for lighter (perhaps non-tool-using) jobs
+- Use of specially trained LLMs when subject matter expertise is required.
+- Use of securely sequestered LLMs when sensitive information is appropos to a single agent's chat stream.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### class
+
+Optional string specifying a Python class which implements the
+[CodedTool](../neuro_san/interfaces/coded_tool.py)
+interface.
+
+<!-- pyml disable no-inline-html -->
+Implementations can be specified as a fully-qualified class name, as long as that is in your PYTHONPATH.
+
+OR, to contribute to hocon brevity, there is a shortcut ...
+
+Implementations must be found in the directory where the class can be resolved by looking
+under the `AGENT_TOOL_PATH` environment variable setting as part of the `PYTHONPATH`.
+By default, neuro-san deployments assume that `PYTHONPATH` is set to contain the
+top-level of your project's repo and that `AGENT_TOOL_PATH` is set to `<top-level>/coded_tools`.
+In that directory each agent has its own folder and the value of the class is resolved
+from there:  `<top-level>/coded_tools/<agent-name>`.  If there is no appropriate class found there,
+then a shared coded tool is looked for one level up in `<top-level>/coded_tools`.
+<!-- pyml enable no-inline-html -->
+
+For example:
+If the agent is called `math_guy` and the class is valued as `calculator.Calculator`,
+The python file math_guy/calculator.py under `AGENT_TOOL_PATH` is expected to have
+a class called Calculator which implements the CodedTool interface.
+
+Like `PYTHONPATH`, `AGENT_TOOL_PATH` can list several roots, searched in order. A root can also be a
+Python module path such as `neuro_san.coded_tools`, for coded tools installed as a package. For example:
+
+```bash
+export AGENT_TOOL_PATH=<top-level>/coded_tools:neuro_san.coded_tools
+```
+
+> [!IMPORTANT]
+> Loading a class imports its module, and importing a module executes the module's top-level code.
+> Because agent network hocon files can name classes to load, hocon files and coded tools are
+> code-equivalent: anyone who can write to the registry directory or an `AGENT_TOOL_PATH` root can
+> effectively run code as the server process. Restrict write access to both locations, review
+> registry changes as you would code changes, and prefer least-privilege deployments.
+>
+> Setting the `AGENT_TOOL_PATH_ONLY` environment variable to `true` (default `false`) hardens the
+> CodedTool `class` path specifically: fully-qualified references are no longer resolved, so a
+> CodedTool `class` resolves only under the `AGENT_TOOL_PATH` roots described above and cannot
+> import an arbitrary module elsewhere on the `PYTHONPATH`. The same flag governs shared coded
+> tools referenced through the [toolbox](#toolbox). It does **not** restrict other class references
+> an agent network can make — `llm_config.class`, middleware classes, and langchain toolbox tool
+> classes are still resolved fully-qualified — so it narrows one vector rather than replacing the
+> trust boundary above. When the flag is off, the server logs a one-time notice at first CodedTool
+> resolution that resolution is unrestricted.
+
+Implementations of the CodedTool interface must have implementations which:
+
+- have a no-args constructor
+- implement either the preferred `async_invoke()` or the discouraged synchronous `invoke()` method.
+
+Agents representing CodedTools have the arguments described their [function parameters](#parameters)
+populated by calling LLMs and passed in via the args dictionary of their async/invoke() method
+when they are invoked.  They are also passed the sly_data dictionary which contains
+private information not accessable to the chat stream.
+
+Note that the CodedTool also has a synchronous invoke() method, but we discourage its use,
+as neuro-san is expected to run in an asynchronous multi-threaded environment.
+Using synchronous I/O calls within CodedTool implementations will result in loss of per-request
+agent parallelism and performance problems at scale.
+
+### toolbox
+
+An optional string that refers to a predefined tool listed in a toolbox configuration file.
+Currently supported tool types include:
+
+- langchain's base tools
+- coded tools.
+
+The default toolbox configuration is located at [toolbox_info.hocon](../neuro_san/internals/run_context/langchain/toolbox/toolbox_info.hocon).
+
+To use your own tools, create a custom toolbox `.hocon` file and reference it in one of the following ways:
+
+- Setting the `toolbox_info_file` key in the agent network `.hocon` file.
+- Defining the `AGENT_TOOLBOX_INFO_FILE` environment variable.
+
+For more details on tool extension, see the [Toolbox Extension Guide](./toolbox_info_hocon_reference.md#extending-toolbox-info).
+
+For more information on tool schema, see the [toolbox_info_hocon_reference](./toolbox_info_hocon_reference.md).
+
+Note that an agent using `toolbox` cannot have a `tools` field. A toolbox agent executes code directly
+rather than calling an LLM, so it cannot invoke other tools as downstream agents.
+
+Example networks using tools from toolbox:
+
+- [date_time_timezone.hocon](../neuro_san/registries/date_time_timezone.hocon) which uses predefined
+coded tools.
+
+### args
+
+Args is an optional dictionary for agents representing CodedTools to pass other
+key/value pairs when the agent is invoked.  This allows for greater code sharing
+for a single CodedTool implementation when it is referenced by multiple agents
+and called in multiple contexts. It can also be used to supply or override arguments of Langchain tools defined in the [toolbox](#toolbox).
+
+#### tools (args)
+
+CodedTools are allowed to call out to other tools/agents in the graph programmatically via the
+[ActivationCapsule](../neuro_san/interfaces/activation_capsule.py) instance passed to them in the `activation_capsule` key
+of their args. Its `use_tool()` method calls a tool or agent by name, and its `use_reservation()` method calls a
+temporary agent network created through a Reservation
+(see [copyist.py](../neuro_san/coded_tools/copy_cat/copyist.py) for a `use_reservation()` example).
+In order to allow for discovery of these connections to other agents by validation processes
+and Connectivity() calls, by convention we expect a tools dictionary to be specified in the args for the tool that
+defines which agents _might_ be called.  The keys can be any string you want, and the values are tools that
+can be called as a result of the CodedTool being invoked.
+
+### allow
+
+An optional dictionary which controls security policy pertaining to agent information flow.
+
+#### connectivity
+
+Boolean value which allows any agent within the network specification to control whether or
+not to report any downstream tools during a Connectivity() API call, which allow for
+pre-rendering of agent networks for demo/light-show purposes.
+
+The default value of true says "sure, report all my downstream tools".
+A false value does not allow such reporting.
+
+Turning this value to false at the front-man prevents any connectivity reporting from happening.
+Mid-level agents can have this be false to hide certain implementation details.
+
+#### to_downstream
+
+Dictionary which specifies security policy for information go _to_ downstream [external agents](./external_agents.md).
+This has no effect on any information flowing between agents internal to the network.
+
+##### sly_data
+
+By default no sly_data goes out to any external agent.
+To transmit sly_data to an external agent, you _must_ specificaly enable it.
+
+A dictionary value whose keys represent keys in the sly_data dictionary.
+Boolean values for each key tell whether or not that data is allowed to go through to external agents.
+A string value in the dictionary represents a translation to a new key.
+
+Example:
+
+```json
+    "allow": {
+        "to_downstream": {
+            "sly_data": {
+                "user_id": true,
+                "user_ssn": false,
+                "my_session": "session_id"
+            }
+        }
+    }
+```
+
+In simple sly_data situations you can simply specify which keys you want to allow
+as a list:
+
+```json
+    "allow": {
+        "to_downstream": {
+            "sly_data": [ "user_id", "session_id" ]
+        }
+    }
+```
+
+#### from_downstream
+
+Dictionary which specifies security policy for information coming _from_ downstream
+[external agents](./external_agents.md).
+This has no effect on any information flowing between agents internal to the network.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+##### sly_data
+
+By default no sly_data is accepted from any external agent.
+To accept sly_data from an external agent, you _must_ specificaly enable it.
+
+A dictionary value whose keys represent keys in the sly_data dictionary.
+Boolean values for each key tell whether or not that data from any external agent
+is allowed to be accepted and merged into this agent's sly_data.
+A string value in the dictionary represents a translation to a new key.
+
+The same dictionary/list specification described in [to_downstream](#sly_data) also applies here.
+
+##### messages
+
+By default, external agent messages coming from downstream are not forwarded
+to the client via the calling agent network. Usually, all an agent really cares about is:
+"What was the answer text/json?" and "What sly_data needs to be integrated?"
+But there are some cases where it's advantageuos to forward messages from downstream
+external networks to the client, and that is what this key is for.
+
+There are several forms this key can take which have varying levels of control:
+
+- boolean - true/false value that controls whether or not to forward messages from
+            any and all downstream external agents.  The default is false.
+- string - a string value that represents a single external agent reference
+           (as it appears in the tool list) whose messages should be forwarded.
+           This is akin to turning on the boolean value to true for a single agent.
+- list of strings - a list of external agent references (as they appear in the tool list)
+           whose messages should be forwarded.  This is akin to turning on the boolean value
+           to true for multiple agents.
+- dictionary - a dictionary whose keys are external agent references (as they
+           appear in the tool list) and whose values are boolean values that control
+           whether or not to forward messages from that agent.
+
+Example networks that pass through their external agent messages:
+
+- [math_guy_passthrough.hocon](../neuro_san/registries/math_guy_passthrough.hocon)
+
+#### to_upstream
+
+_Front Man only_
+Dictionary which specifies security policy for information going back to any calling client.
+
+This has no effect on any information flowing between agents internal to the network.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+##### sly_data
+
+By default no sly_data goes back to the upstream caller from the agent network
+To transmit sly_data to its upstream caller, you _must_ specificaly enable it.
+
+A dictionary value whose keys represent keys in the sly_data dictionary.
+Boolean values for each key tell whether or not that data internal to the agent network
+is allowed to go back to the client in the final message.
+A string value in the dictionary represents a translation to a new key.
+
+The same dictionary/list specification described in [to_downstream](#sly_data) also applies here.
+
+#### to_tracing
+
+_Front Man only_
+Dictionary which specifies security policy for information going to tracing applications.
+
+This has no effect on any information flowing between agents internal to the network.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+##### sly_data
+
+By default sly_data keys appear in messages going to tracing applications, but the values are `<redacted>`.
+To transmit sly_data values to a tracing application, you _must_ specifically enable it.
+
+A dictionary value whose keys represent keys in the sly_data dictionary.
+Boolean values for each key tell whether or not that data internal to the agent network
+is allowed to go to the tracing application in the message that is reported there.
+A string value in the dictionary represents a translation to a new key.
+
+The same dictionary/list specification described in [to_downstream](#sly_data) also applies here.
+
+### display_as
+
+An optional string that describes how the agent node wishes to appear to a client
+that can visualize the network's connectivity.
+
+When not present, the system determines the value given the configuration of the node
+and will return one of the following strings:
+
+- external_agent - for [External Agents](./external_agents.md)
+- coded_tool - for a [CodedTool](../neuro_san/interfaces/coded_tool.py)
+- langchain_tool - for a langchain tool
+- llm_agent - for LLM-powered agents
+
+### max_message_history
+
+<!-- pyml disable-next-line no-emphasis-as-heading -->
+_Front Man only_
+
+An integer which tells the server how many of the most recent chat history messages
+to send back in its chat_context field which allows for continuing a conversation
+on the next client invocation.  By default this value is None, indicating there is no limit.
+A value of 1 or less also means no limit.
+
+This is useful when end-user conversations with agents are expected to be lengthy and/or change
+topics frequently. See [How much history comes back](clients.md#how-much-history-comes-back) for how
+the limit counts messages and why the history can come back empty.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### verbose
+
+Same as top-level [verbose](#verbose), except at single-agent scope.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### max_steps
+
+Same as top-level [max_steps](#max_steps), except at single-agent scope.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### max_iterations
+
+Deprecated. Use [max_steps](#max_steps-1) instead.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### max_execution_seconds
+
+Same as top-level [max_execution_seconds](#max_execution_seconds), except at single-agent scope.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### max_attempts
+
+Same as top-level [max_attempts](#max_attempts), except at single-agent scope.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### error_formatter
+
+Same as top-level [error_formatter above](#error_formatter), except at single-agent scope.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+### error_fragments
+
+Same as top-level [error_fragments above](#error_fragments), except at single-agent scope.
+
+### structure_formats
+
+<!-- pyml disable-next-line no-emphasis-as-heading -->
+_Front Man only_
+
+An optional list of strings describing the formats that the server-side should
+parse into the structure field of the ChatMessage response so clients do not have
+to re-invent this parsing wheel multiple times over.
+
+The first single structure found of the appropriate format(s) from the text of a response
+is what is put into the ChatMessage structure field, and any text which contributed to the
+parsing of that structure is removed from the ChatMessage text field.
+
+Supported values are:
+
+- `json`    Looks for a JSON dictionary in the messages from the LLM and extracts it.
+
+Only the front-man's `structure_formats` is used. It is an agent key, like `tools`, not part of the
+[function](#function).
+
+Example networks that parse their structure_formats:
+
+- [music_nerd_pro.hocon](../neuro_san/registries/music_nerd_pro.hocon)
+
+### middleware
+
+An optional list of dictionaries which describes AgentMiddleware instances to be applied to the agent.
+Note that the order of appearance in the list can matter.
+
+For an overview of middleware, see the [Overview](https://docs.langchain.com/oss/python/langchain/middleware/overview).
+
+Example networks that use middleware:
+
+- [pii_middleware.hocon](../neuro_san/registries/pii_middleware.hocon)
+
+Each middleware dictionary in the list can contain the following keys:
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+#### class
+
+_required_
+The fully-qualified class name of the langchain AgentMiddleware class to be instantiated.
+
+AgentMiddleware allows for calling code to be executed in the following situations:
+- before the agent execution starts (abefore_agent())
+- after the agent execution completes (aafter_agent())
+- before the LLM is called (abefore_model())
+- after the LLM is called (aafter_model())
+- intercept and control async model execution (awrap_model_call())
+- intercept and control async tool execution (awrap_tool_call())
+
+We list the asynchronous methods here as those are preferred in the asynchronous environment of
+a Neuro SAN server.
+
+Note that we only support class-based middleware and not annotations-based middleware.
+See [AgentMiddleware](https://docs.langchain.com/oss/python/langchain/middleware/custom#class-based-middleware)
+for details.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+#### args
+
+A dictionary of keyword arguments to be passed to the specified AgentMiddleware class constructor.
+
+Keys of the dictionary are the argument names and values are the argument values.
+These will depend on the constructor signature of the class you are trying to instantiate.
+
+There are some special args that will be populated with information provided by the agent framework
+if they are specified in both the middleware dictionary and the class constructor signature:
+
+##### activation_capsule
+
+An [ActivationCapsule](../neuro_san/interfaces/activation_capsule.py) instance that the middleware can use
+to call other tools/agents in the graph, call temporary agent networks created through Reservations,
+or create LLM model instances. See [tools (args)](#tools-args).
+
+##### chat_history
+
+A list of langchain BaseMessages that are the full history of the conversation so far for the Middleware's agent.
+We allow this because some middleware may need to inspect and/or modify the history that neuro-san keeps
+as per-agent state (Think: summarization middleware).
+
+##### origin
+
+A list of dictionaries that describe the origin of the middleware instantiation in terms of
+where it is in the hierarchy of the agent network.
+
+##### origin_str
+
+A simpler string representation of the [origin](#origin)
+
+##### progress_reporter
+
+A ProgressReporter instance that can be used to report progress dictionaries via the chat stream.
+
+<!--- pyml disable-next-line no-duplicate-heading -->
+##### sly_data
+
+The agent's sly_data dictionary which is common to all middleware and coded tools for the request.

@@ -1,0 +1,26 @@
+Vouch — a deli website whose agents describe food but never decide whether it is safe.
+
+Copyright 2026 Rizwankhalid675
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License in the LICENSE file at the root of this repository, or at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+-------------------------------------------------------------------------------
+
+This product includes software adapted from projects by Cognizant AI Lab:
+
+  - neuro-san   (https://github.com/cognizant-ai-lab/neuro-san)
+  - nsdeploy    (https://github.com/cognizant-ai-lab/nsdeploy)
+
+Both are licensed under the Apache License, Version 2.0. Exactly which files were
+adapted, from where, and what was changed in each is recorded in
+docs/vendor/PROVENANCE.md. Modified files carry a notice of change in the file
+itself, as Apache 2.0 section 4(b) requires.

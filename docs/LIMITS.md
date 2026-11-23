@@ -84,20 +84,24 @@ refuses any claim no checker finding backs. Three consequences, all observable:
    one to be derivable from menu data. "The verdict shown beside each dish is the
    one to read" passes on its own and is refused after a description.
 
-(3) is in direct tension with what every agent's published instructions tell it to
-say: *"say that the site's checker shows its verdict next to each dish and point
-them to it."* An agent that obeys its instructions will have that sentence
-withheld. This is a **known, unresolved tension between `public/vouch.network.json`
-and `src/gate/`**, recorded here rather than patched around in Task 6.
+**All three are now said by the page instead of by the model**, and (3)'s tension with
+the published instructions has been resolved rather than left open.
 
-**(1) and (2) are now said by the page instead of by the model.** The controller's
-ruling: anything that must *always* be true should not be generated per turn and
-then withheld. So the panel carries a standing note — "The assistant does not decide
-whether food is safe for you, and is not permitted to. The verdict beside each dish
-is this site's own" — which is on screen before anyone types, and is not model
-output. The agents' published instructions still tell them to say it, which is
-harmless but redundant; aligning `public/vouch.network.json` is left open rather
-than done here, because this task was told not to modify the published artifacts.
+The ruling: anything that must *always* be true should not be generated per turn and
+then judged. The panel carries a standing note — "The assistant does not decide whether
+food is safe for you, and is not permitted to. The verdict beside each dish is this
+site's own" — on screen before anyone types, and not model output. Three sentences that
+*instructed* agents to produce a pointer were then removed from
+`public/vouch.network.json`; every prohibition was kept.
+
+**A correction to how that change was first described.** The commit message said the
+gate "withholds exactly that sentence", which overstates it. As (3) says above, the
+pointer passes the gate **standing alone** and is withheld only once a dish has been
+mentioned — and the sentence that replaced it behaves the same way under the gate. So
+the change removed a redundant and occasionally unsatisfiable instruction; it did not
+repair a failure, and the honest value of it is tidiness plus one less way for an agent's
+instructions to contradict what the guest sees. The standing note in the panel, which is
+never gated, is what actually makes the guidance reliable.
 
 All three remain survivable for exactly one reason: **the verdict is rendered beside
 the dish, not through the prose.** The guest learns the Turkey club is unsafe from

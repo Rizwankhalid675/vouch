@@ -272,23 +272,55 @@ A real deployment would need both.
 
 ### 2.6 Execution bounds
 
-**Per turn:** 16 model calls, 12 delegations, depth 3, 6 tool rounds. These reset at
-the start of every turn, because the runaway a limit exists to stop is a turn that
-will not finish. **Per session:** 300 model calls, as a backstop against a page left
-open all day; reaching it says to start a new conversation, and the panel has a
-control that does exactly that.
+All of them live in `src/runtime/limits.ts`.
+
+**Per turn:** 16 model calls, 12 delegations, depth 3, 6 tool rounds, and 60 seconds
+of wall clock. These reset at the start of every turn, because the runaway a limit
+exists to stop is a turn that will not finish. **Per session:** 300 model calls, as a
+backstop against a page left open all day; reaching it says to start a new
+conversation, and the panel has a control that does exactly that. **Per composition:**
+4 network documents.
 
 They were per *session* in the first version, which meant sixteen plain questions
 bricked the assistant with no way back — finite, as §3.1 asks, but on the wrong axis,
 and something any judge using the demo for two minutes would have hit.
 
-An agent appearing in its own delegation ancestry is refused with the path shown; a
-repeated call to the same agent is not treated as a cycle, as §3.1 requires.
+Reaching any of them shows **both** figures — the budget and what had been spent —
+because "over budget" without the numbers is indistinguishable from a bug, which is
+the confusion §6's demonstration exists to rule out.
 
-There is no wall-clock budget and no concurrency limit, because the loop is
-sequential and tab-scoped. §3.1 asks for finite limits on elapsed execution time;
-ours is bounded only indirectly, by the call budget and each action's timeout.
-Assigned to Task 7.
+**The wall clock** (§3.1's "elapsed execution time", the axis Task 6 left open) is
+enforced at two points, and both are needed. At every step boundary, which stops a
+turn making progress too slowly to be worth continuing; and by **aborting the
+in-flight request**, which is the only thing that bounds a router that accepts a POST
+and never answers. With only the first, the limit would be a lie for exactly the case
+it exists for. What it does *not* bound: time spent inside a site action's own
+handler, which is bounded separately by that action's timeout.
+
+**Concurrency** has no numeric limit because it is structurally one: the loop awaits
+every call in sequence and the composition walk is depth first, so there is never
+more than one request in flight.
+
+**Two cycle checks, with different scopes and deliberately different wording.**
+
+- An agent appearing in its own *delegation* ancestry, inside one network, is
+  refused: "Delegation cycle refused: a → b → a." (It said "Composition cycle" until
+  Task 7; that is §6's term for the across-networks case, and two refusals with
+  different scopes should not open with the same phrase.)
+- A *composition* that returns to a network already on its path — network A composing
+  B composing A — is refused with the resolved network URLs shown, before the repeat
+  fetch is made.
+
+Both are checked against the **path**, never against a set of everything seen. §3.1
+is a MUST on this: "repeated invocation of the same agent MUST NOT, by itself, be
+treated as a cycle." A seen-set on agent names refuses the second legitimate call to
+`menu_guide`, which is what a guest asking about two dishes does; a seen-set on
+networks refuses a diamond, where two networks both compose a third. Both
+false-positive cases have their own test, and those tests are the reason a later
+"fix" to either detector cannot quietly reintroduce the violation.
+
+`maxComposedNetworks` is not made redundant by the cycle check: A → B → C → D → … of
+distinct networks is not a cycle and would otherwise walk until the host ran out.
 
 ### 2.7 Replayed replies
 
@@ -305,5 +337,37 @@ test. They are never presented as a live generation.
 - MCP tools: none are declared and none are called.
 - Coded-tool bundles: none are published and none would be executed.
 - Streaming model output: the client is a single non-streaming request.
-- The peer network (Task 8). `fetchPeerArtifact` and the peer-policy check are in
-  place and tested, and `links.json` is loaded, but nothing is bound yet.
+- The peer network (Task 8). `fetchPeerArtifact`, the peer-policy check and the §3.2
+  composition walk are in place and tested, and `links.json` is loaded, but nothing
+  is bound yet. The walk stops at **loaded and validated**: it resolves a reference,
+  reads the peer manifest, selects the exactly-named entry, fetches and validates the
+  definition, and reports what it loaded. It does **not** instantiate a peer's agents
+  into the conversation, and the panel says so where it reports a successful load.
+  Nothing in the code, the UI or the docs may say otherwise.
+
+### 2.9 The refusal demonstration, and what it costs
+
+§6's seventh check — "stop an invalid network, a composition cycle, an over-budget
+request, and a denied origin with visible errors" — plus §3.4's missing-key setup
+error make **five** refusals, each of which must put a string on screen. Three of them
+are properties of *loading* a network rather than of a conversation, so the panel
+carries a "Load a published agent network" control: a judge types a reference and
+watches the refusal, rather than taking it on trust from a console.
+
+Three honest costs:
+
+- The broken fixtures under `public/broken/` **ship to production** in `dist/broken/`.
+  That is deliberate — a judge should be able to fetch them over HTTP exactly as a
+  peer's artifacts are fetched — but it does mean the deployed site serves three
+  networks that no conforming runtime should run. They are invisible to discovery:
+  the published manifest declares one network, `vouch`, and §3.2 requires an exact
+  name match, so nothing reaches them by accident. A test pins that they are not
+  listed.
+- Their external references are **site-root-relative** (`/broken/cycle-b`), which
+  keeps them portable between localhost, a preview host and production but assumes
+  the site is served at the origin root. Served from a subpath, the cycle pair would
+  resolve to the wrong place and fail as a 404 rather than as a cycle.
+- The control adds a surface to the panel. It is a plain fieldset rather than a
+  `<details>`, because a refusal behind a closed disclosure triangle is a refusal
+  nobody sees — the same reasoning that now makes the model-settings disclosure open
+  itself when the router needs a key.

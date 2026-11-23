@@ -168,6 +168,15 @@ describe("the Contains line says something true about each kind of gap", () => {
   });
 });
 
+describe("mustard is tracked, so a hidden mustard is disclosed", () => {
+  test("potato salad (mustard only via potato_salad_mix) names mustard", () => {
+    expect($("[data-item='potato_salad'] [data-contains]")!.textContent!.toLowerCase()).toContain("mustard");
+  });
+  test("pastrami on rye names mustard", () => {
+    expect($("[data-item='pastrami_on_rye'] [data-contains]")!.textContent!.toLowerCase()).toContain("mustard");
+  });
+});
+
 describe("the card and the checker agree (parity)", () => {
   test("for every item and restriction, Contains matches verdictFor", () => {
     for (const item of MENU.items) {

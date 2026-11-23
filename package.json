@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "//engines": "22.18.0, not 22.0: src imports .ts files directly, which needs Node type stripping, on by default from 22.18. Reasoned from documented behaviour, not tested on 22 (only Node 26 was available).",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "test": "vitest run",

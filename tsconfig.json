@@ -10,6 +10,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // Only legal and safe because noEmit is set: tsc must never emit JS while .ts import extensions are used.
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },

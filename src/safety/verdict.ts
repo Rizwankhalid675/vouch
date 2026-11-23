@@ -1,5 +1,5 @@
 import type { Finding, Menu, MenuItem, Restriction } from "../../contracts";
-import { allergensOf, firstGap } from "./derive";
+import { allergensOf, firstGap } from "./derive.ts";
 
 /**
  * The only authority on whether food is safe. Pure: no clock, network, model or I/O.

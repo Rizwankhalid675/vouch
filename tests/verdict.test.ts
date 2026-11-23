@@ -1,10 +1,11 @@
 import { describe, expect, test } from "vitest";
-import raw from "../data/menu.json";
+import raw from "../data/menu.json" with { type: "json" };
 import type { Menu, MenuItem, Restriction } from "../contracts";
 import { loadMenu } from "../src/safety/menu";
 import { allergensOf } from "../src/safety/derive";
 import { verdictFor } from "../src/safety/verdict";
-import { RESTRICTIONS, loadRestrictions } from "../src/safety/restrictions";
+import { loadRestrictions } from "../src/safety/restrictions";
+import { RESTRICTIONS } from "../src/safety/canon";
 
 const menu = loadMenu(raw);
 const item = (id: string): MenuItem => {

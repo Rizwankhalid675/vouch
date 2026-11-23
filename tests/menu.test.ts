@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import raw from "../data/menu.json";
+import raw from "../data/menu.json" with { type: "json" };
 import { loadMenu } from "../src/safety/menu";
 
 describe("menu data", () => {

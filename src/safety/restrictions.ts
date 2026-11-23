@@ -1,7 +1,4 @@
 import type { Menu, Restriction } from "../../contracts";
-import rawMenu from "../../data/menu.json";
-import rawRestrictions from "../../data/restrictions.json";
-import { loadMenu } from "./menu";
 
 function fail(msg: string): never {
   throw new Error(`Malformed restrictions: ${msg}`);
@@ -32,7 +29,3 @@ export function loadRestrictions(json: unknown, menu: Menu): Restriction[] {
     return { id: r.id, name: r.name, avoid };
   });
 }
-
-/** The one canonical menu and restriction set. Tasks 4, 6 and 8 import these. */
-export const MENU: Menu = loadMenu(rawMenu);
-export const RESTRICTIONS: Restriction[] = loadRestrictions(rawRestrictions, MENU);

@@ -311,6 +311,7 @@ const FN = new Set(
     "containing includes include including made with from of on in at for to served serve serves offer offers " +
     "priced costs cost price menu item items ingredient ingredients listed there their").split(" "),
 );
+const ANAPHORA = new Set("it its they them their this that these those both either neither each one ones all everything which".split(" "));
 /** Extra words allowed only in a (backed) safety-claim sentence. */
 const CLAIM_WORDS = new Set(
   ["free", "no", "not", "without", "from", "of", ...STATIC_VOCAB.flatMap((w) => w.split(" "))],
@@ -343,6 +344,8 @@ export interface Derivation {
   mentions: boolean;
   /** Content tokens present at all (anything outside the closed structural set). */
   hasContent: boolean;
+  /** Refers back to something earlier (it, they, this, both...). */
+  anaphoric: boolean;
   /**
    * First token NOT derivable from menu data (item names, the mentioned items'
    * ingredient names, their prices, the closed structural set), or undefined.
@@ -362,6 +365,7 @@ export function derivation(core: string, menu: Menu = MENU): Derivation {
     items,
     mentions,
     hasContent,
+    anaphoric: toks.some((t) => ANAPHORA.has(t)),
     offending({ claim, carried }) {
       const ids = new Set([...items, ...carried]);
       const prices: number[] = [];

@@ -215,6 +215,29 @@ describe("the gate: no unbacked safety claim reaches the screen", () => {
     expect(gate("The soup is dairy-free. Yes. Definitely so.", []).refusals.length).toBe(3);
   });
 
+  test("a derivable continuation does not break the chain (round 2 defect)", () => {
+    const unsafe: Finding = {
+      item: "fruit_cup", verdict: "unsafe", covered: ["dairy"], because: { ingredient: "x", allergen: "dairy", via: ["x", "dairy"] },
+    };
+    for (const s of [
+      "The fruit cup is on the menu. It costs $5. It is clean.",
+      "The fruit cup is on the menu. It costs $5. It ticks every box.",
+      "The fruit cup is on the menu. It costs $5. I'd recommend it.",
+      "The fruit cup is on the menu. It costs $5. Nothing on your list shows up in it.",
+      "Fruit cup. It costs $5. It is clean.",
+    ]) {
+      const g = gate(s, [unsafe]);
+      expect(g.refusals.length, s).toBe(1);
+      expect(g.shown.endsWith(REFUSAL_MARKER), s).toBe(true);
+    }
+  });
+
+  test("the chain ends on a genuinely new topic", () => {
+    const g = gate("The fruit cup is on the menu. It costs $5. Welcome to the deli!", []);
+    expect(g.refusals).toEqual([]);
+    expect(g.shown).toBe("The fruit cup is on the menu. It costs $5. Welcome to the deli!");
+  });
+
   test("a continuation sentence that restates derivable facts passes", () => {
     expect(gate("The Reuben is on the menu. It costs $11.50.", []).refusals).toEqual([]);
   });

@@ -52,14 +52,16 @@ export function gate(
   const refusals: Refusal[] = [];
   let shown = "";
   // Allow-list state: did the previous segment mention the menu or get withheld?
-  let ctx = false;
+  // 0 none; 1 anaphoric (only sentences that say it/they/this... are held to the allow-list);
+  // 2 strict (previous sentence mentioned the menu or was withheld: the next must be derivable).
+  let level = 0;
   let carried: string[] = [];
 
   const parts = prose.split(REFUSAL_MARKER);
   parts.forEach((part, pi) => {
     if (pi > 0) {
       shown += REFUSAL_MARKER; // our own earlier output; a withheld sentence sits here
-      ctx = true;
+      level = 2;
       carried = [];
     }
     for (const seg of segments(part)) {
@@ -83,7 +85,7 @@ export function gate(
             claimed = bad;
           }
         }
-      } else if (d.mentions || ctx) {
+      } else if (d.mentions || level === 2 || (level === 1 && d.anaphoric)) {
         // Default-deny: an item-mentioning sentence passes only if derivable from menu data.
         const bad = d.offending({ claim: false, carried });
         if (bad !== undefined) {
@@ -94,8 +96,10 @@ export function gate(
           claimed = seg.core;
         }
       }
-      ctx = reason !== undefined || d.mentions;
-      carried = ctx ? (d.items.length ? d.items : carried) : [];
+      if (reason !== undefined || d.mentions) level = 2;
+      else if (level >= 1 && d.anaphoric && d.hasContent) level = 1; // derivable continuation keeps the chain alive
+      else level = 0;
+      carried = level > 0 ? (d.items.length ? d.items : carried) : [];
       if (!reason) {
         shown += seg.raw;
         continue;

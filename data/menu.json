@@ -1,0 +1,1004 @@
+{
+  "items": [
+    {
+      "id": "reuben",
+      "name": "Reuben",
+      "price": 11.5,
+      "ingredients": [
+        "rye_bread",
+        "corned_beef",
+        "swiss_cheese",
+        "sauerkraut",
+        "russian_dressing"
+      ]
+    },
+    {
+      "id": "pastrami_on_rye",
+      "name": "Pastrami on rye",
+      "price": 12.5,
+      "ingredients": [
+        "rye_bread",
+        "pastrami",
+        "yellow_mustard",
+        "pickles"
+      ]
+    },
+    {
+      "id": "turkey_club",
+      "name": "Turkey club",
+      "price": 11,
+      "ingredients": [
+        "brioche_bun",
+        "turkey_breast",
+        "bacon",
+        "lettuce",
+        "tomato",
+        "mayo"
+      ]
+    },
+    {
+      "id": "egg_and_cheddar_brioche",
+      "name": "Egg and cheddar brioche",
+      "price": 8.5,
+      "ingredients": [
+        "brioche_bun",
+        "fried_egg",
+        "cheddar",
+        "bacon"
+      ]
+    },
+    {
+      "id": "lox_bagel",
+      "name": "Lox bagel",
+      "price": 13,
+      "ingredients": [
+        "sesame_bagel",
+        "smoked_salmon",
+        "cream_cheese",
+        "onion",
+        "tomato"
+      ]
+    },
+    {
+      "id": "bagel_with_butter",
+      "name": "Bagel with butter",
+      "price": 4,
+      "ingredients": [
+        "plain_bagel",
+        "butter"
+      ]
+    },
+    {
+      "id": "italian_sub",
+      "name": "Italian sub",
+      "price": 11.5,
+      "ingredients": [
+        "ciabatta",
+        "salami",
+        "ham",
+        "provolone",
+        "lettuce",
+        "tomato",
+        "onion",
+        "olive_oil"
+      ]
+    },
+    {
+      "id": "caprese_ciabatta",
+      "name": "Caprese ciabatta",
+      "price": 10,
+      "ingredients": [
+        "ciabatta",
+        "mozzarella",
+        "tomato",
+        "pesto"
+      ]
+    },
+    {
+      "id": "hummus_veggie_pita",
+      "name": "Hummus veggie pita",
+      "price": 9.5,
+      "ingredients": [
+        "pita",
+        "hummus",
+        "cucumber",
+        "tomato",
+        "sprouts",
+        "avocado"
+      ]
+    },
+    {
+      "id": "falafel_wrap",
+      "name": "Falafel wrap",
+      "price": 10,
+      "ingredients": [
+        "pita",
+        "falafel",
+        "tahini",
+        "cucumber",
+        "tomato"
+      ]
+    },
+    {
+      "id": "egg_salad_sandwich",
+      "name": "Egg salad sandwich",
+      "price": 8,
+      "ingredients": [
+        "white_bread",
+        "egg_salad",
+        "lettuce"
+      ]
+    },
+    {
+      "id": "tuna_melt",
+      "name": "Tuna melt",
+      "price": 11,
+      "ingredients": [
+        "rye_bread",
+        "tuna_salad",
+        "cheddar"
+      ]
+    },
+    {
+      "id": "chicken_salad_sandwich",
+      "name": "Chicken salad sandwich",
+      "price": 9.5,
+      "ingredients": [
+        "white_bread",
+        "chicken_salad",
+        "lettuce",
+        "tomato"
+      ]
+    },
+    {
+      "id": "roast_beef_sandwich",
+      "name": "Roast beef sandwich",
+      "price": 12,
+      "ingredients": [
+        "ciabatta",
+        "roast_beef",
+        "swiss_cheese",
+        "horseradish"
+      ]
+    },
+    {
+      "id": "chicken_parm_hero",
+      "name": "Chicken parm hero",
+      "price": 12.5,
+      "ingredients": [
+        "ciabatta",
+        "chicken_cutlet",
+        "marinara",
+        "mozzarella"
+      ]
+    },
+    {
+      "id": "meatball_sub",
+      "name": "Meatball sub",
+      "price": 11.5,
+      "ingredients": [
+        "ciabatta",
+        "meatball",
+        "marinara",
+        "provolone"
+      ]
+    },
+    {
+      "id": "blt",
+      "name": "Blt",
+      "price": 9,
+      "ingredients": [
+        "white_bread",
+        "bacon",
+        "lettuce",
+        "tomato",
+        "mayo"
+      ]
+    },
+    {
+      "id": "gluten_free_turkey_plate",
+      "name": "Gluten free turkey plate",
+      "price": 12,
+      "ingredients": [
+        "gf_bread",
+        "turkey_breast",
+        "lettuce",
+        "tomato",
+        "avocado"
+      ]
+    },
+    {
+      "id": "matzo_ball_soup",
+      "name": "Matzo ball soup",
+      "price": 8,
+      "ingredients": [
+        "matzo_ball",
+        "chicken_broth",
+        "carrot",
+        "celery"
+      ]
+    },
+    {
+      "id": "tomato_soup",
+      "name": "Tomato soup",
+      "price": 6.5,
+      "ingredients": [
+        "tomato_soup_base",
+        "basil"
+      ]
+    },
+    {
+      "id": "chicken_noodle_soup",
+      "name": "Chicken noodle soup",
+      "price": 7.5,
+      "ingredients": [
+        "noodles",
+        "chicken_broth",
+        "chicken",
+        "carrot",
+        "celery"
+      ]
+    },
+    {
+      "id": "potato_salad",
+      "name": "Potato salad",
+      "price": 4.5,
+      "ingredients": [
+        "potato_salad_mix"
+      ]
+    },
+    {
+      "id": "coleslaw",
+      "name": "Coleslaw",
+      "price": 4,
+      "ingredients": [
+        "coleslaw_mix"
+      ]
+    },
+    {
+      "id": "kettle_chips",
+      "name": "Kettle chips",
+      "price": 2.5,
+      "ingredients": [
+        "chips_fried"
+      ]
+    },
+    {
+      "id": "pickle_spear",
+      "name": "Pickle spear",
+      "price": 1.5,
+      "ingredients": [
+        "pickles"
+      ]
+    },
+    {
+      "id": "chocolate_chip_cookie",
+      "name": "Chocolate chip cookie",
+      "price": 3,
+      "ingredients": [
+        "wheat_flour",
+        "butter",
+        "egg",
+        "chocolate"
+      ]
+    },
+    {
+      "id": "walnut_brownie",
+      "name": "Walnut brownie",
+      "price": 4,
+      "ingredients": [
+        "chocolate",
+        "butter",
+        "egg",
+        "wheat_flour",
+        "walnut"
+      ]
+    },
+    {
+      "id": "cheesecake_slice",
+      "name": "Cheesecake slice",
+      "price": 6.5,
+      "ingredients": [
+        "cream_cheese",
+        "egg",
+        "graham_crust",
+        "sugar"
+      ]
+    },
+    {
+      "id": "peanut_butter_cookie",
+      "name": "Peanut butter cookie",
+      "price": 3,
+      "ingredients": [
+        "peanut_butter",
+        "wheat_flour",
+        "egg",
+        "sugar"
+      ]
+    },
+    {
+      "id": "fruit_cup",
+      "name": "Fruit cup",
+      "price": 5,
+      "ingredients": [
+        "melon",
+        "berries"
+      ]
+    },
+    {
+      "id": "lemonade",
+      "name": "Lemonade",
+      "price": 3.5,
+      "ingredients": [
+        "lemon",
+        "sugar"
+      ]
+    },
+    {
+      "id": "daily_special",
+      "name": "Daily special",
+      "price": 9,
+      "ingredients": []
+    }
+  ],
+  "ingredients": {
+    "dairy": {
+      "id": "dairy",
+      "name": "Dairy",
+      "contains": []
+    },
+    "gluten": {
+      "id": "gluten",
+      "name": "Gluten",
+      "contains": []
+    },
+    "egg": {
+      "id": "egg",
+      "name": "Egg",
+      "contains": []
+    },
+    "fish": {
+      "id": "fish",
+      "name": "Fish",
+      "contains": []
+    },
+    "shellfish": {
+      "id": "shellfish",
+      "name": "Shellfish",
+      "contains": []
+    },
+    "soy": {
+      "id": "soy",
+      "name": "Soy",
+      "contains": []
+    },
+    "sesame": {
+      "id": "sesame",
+      "name": "Sesame",
+      "contains": []
+    },
+    "peanut": {
+      "id": "peanut",
+      "name": "Peanut",
+      "contains": []
+    },
+    "tree_nut": {
+      "id": "tree_nut",
+      "name": "Tree nut",
+      "contains": []
+    },
+    "pork": {
+      "id": "pork",
+      "name": "Pork",
+      "contains": []
+    },
+    "mustard": {
+      "id": "mustard",
+      "name": "Mustard",
+      "contains": []
+    },
+    "butter": {
+      "id": "butter",
+      "name": "Butter",
+      "contains": [
+        "dairy"
+      ]
+    },
+    "cream": {
+      "id": "cream",
+      "name": "Cream",
+      "contains": [
+        "dairy"
+      ]
+    },
+    "cream_cheese": {
+      "id": "cream_cheese",
+      "name": "Cream cheese",
+      "contains": [
+        "dairy"
+      ]
+    },
+    "swiss_cheese": {
+      "id": "swiss_cheese",
+      "name": "Swiss cheese",
+      "contains": [
+        "dairy"
+      ]
+    },
+    "provolone": {
+      "id": "provolone",
+      "name": "Provolone",
+      "contains": [
+        "dairy"
+      ]
+    },
+    "cheddar": {
+      "id": "cheddar",
+      "name": "Cheddar",
+      "contains": [
+        "dairy"
+      ]
+    },
+    "mozzarella": {
+      "id": "mozzarella",
+      "name": "Mozzarella",
+      "contains": [
+        "dairy"
+      ]
+    },
+    "parmesan": {
+      "id": "parmesan",
+      "name": "Parmesan",
+      "contains": [
+        "dairy"
+      ]
+    },
+    "wheat_flour": {
+      "id": "wheat_flour",
+      "name": "Wheat flour",
+      "contains": [
+        "gluten"
+      ]
+    },
+    "brioche": {
+      "id": "brioche",
+      "name": "Brioche",
+      "contains": [
+        "butter",
+        "egg",
+        "wheat_flour"
+      ]
+    },
+    "brioche_bun": {
+      "id": "brioche_bun",
+      "name": "Brioche bun",
+      "contains": [
+        "brioche"
+      ]
+    },
+    "rye_bread": {
+      "id": "rye_bread",
+      "name": "Rye bread",
+      "contains": [
+        "wheat_flour",
+        "rye_flour"
+      ]
+    },
+    "rye_flour": {
+      "id": "rye_flour",
+      "name": "Rye flour",
+      "contains": [
+        "gluten"
+      ]
+    },
+    "sesame_bagel": {
+      "id": "sesame_bagel",
+      "name": "Sesame bagel",
+      "contains": [
+        "wheat_flour",
+        "sesame"
+      ]
+    },
+    "plain_bagel": {
+      "id": "plain_bagel",
+      "name": "Plain bagel",
+      "contains": [
+        "wheat_flour"
+      ]
+    },
+    "white_bread": {
+      "id": "white_bread",
+      "name": "White bread",
+      "contains": [
+        "wheat_flour"
+      ]
+    },
+    "ciabatta": {
+      "id": "ciabatta",
+      "name": "Ciabatta",
+      "contains": [
+        "wheat_flour"
+      ]
+    },
+    "pita": {
+      "id": "pita",
+      "name": "Pita",
+      "contains": [
+        "wheat_flour"
+      ]
+    },
+    "gf_bread": {
+      "id": "gf_bread",
+      "name": "Gf bread",
+      "contains": [
+        "rice_flour",
+        "tapioca_starch"
+      ]
+    },
+    "rice_flour": {
+      "id": "rice_flour",
+      "name": "Rice flour",
+      "contains": []
+    },
+    "tapioca_starch": {
+      "id": "tapioca_starch",
+      "name": "Tapioca starch",
+      "contains": []
+    },
+    "beef": {
+      "id": "beef",
+      "name": "Beef",
+      "contains": []
+    },
+    "spice_rub": {
+      "id": "spice_rub",
+      "name": "Spice rub",
+      "contains": [
+        "mustard"
+      ]
+    },
+    "pastrami": {
+      "id": "pastrami",
+      "name": "Pastrami",
+      "contains": [
+        "beef",
+        "spice_rub"
+      ]
+    },
+    "corned_beef": {
+      "id": "corned_beef",
+      "name": "Corned beef",
+      "contains": [
+        "beef"
+      ]
+    },
+    "roast_beef": {
+      "id": "roast_beef",
+      "name": "Roast beef",
+      "contains": [
+        "beef"
+      ]
+    },
+    "turkey_breast": {
+      "id": "turkey_breast",
+      "name": "Turkey breast",
+      "contains": []
+    },
+    "chicken": {
+      "id": "chicken",
+      "name": "Chicken",
+      "contains": []
+    },
+    "ham": {
+      "id": "ham",
+      "name": "Ham",
+      "contains": [
+        "pork"
+      ]
+    },
+    "salami": {
+      "id": "salami",
+      "name": "Salami",
+      "contains": [
+        "pork"
+      ]
+    },
+    "bacon": {
+      "id": "bacon",
+      "name": "Bacon",
+      "contains": [
+        "pork"
+      ]
+    },
+    "tuna": {
+      "id": "tuna",
+      "name": "Tuna",
+      "contains": [
+        "fish"
+      ]
+    },
+    "smoked_salmon": {
+      "id": "smoked_salmon",
+      "name": "Smoked salmon",
+      "contains": [
+        "fish"
+      ]
+    },
+    "vegetable_oil": {
+      "id": "vegetable_oil",
+      "name": "Vegetable oil",
+      "contains": [
+        "soy"
+      ]
+    },
+    "mayo": {
+      "id": "mayo",
+      "name": "Mayo",
+      "contains": [
+        "egg",
+        "vegetable_oil"
+      ]
+    },
+    "yellow_mustard": {
+      "id": "yellow_mustard",
+      "name": "Yellow mustard",
+      "contains": [
+        "mustard"
+      ]
+    },
+    "ketchup": {
+      "id": "ketchup",
+      "name": "Ketchup",
+      "contains": []
+    },
+    "chili_sauce": {
+      "id": "chili_sauce",
+      "name": "Chili sauce",
+      "contains": []
+    },
+    "russian_dressing": {
+      "id": "russian_dressing",
+      "name": "Russian dressing",
+      "contains": [
+        "mayo",
+        "chili_sauce"
+      ]
+    },
+    "horseradish": {
+      "id": "horseradish",
+      "name": "Horseradish",
+      "contains": []
+    },
+    "olive_oil": {
+      "id": "olive_oil",
+      "name": "Olive oil",
+      "contains": []
+    },
+    "sauerkraut": {
+      "id": "sauerkraut",
+      "name": "Sauerkraut",
+      "contains": []
+    },
+    "pickles": {
+      "id": "pickles",
+      "name": "Pickles",
+      "contains": []
+    },
+    "lettuce": {
+      "id": "lettuce",
+      "name": "Lettuce",
+      "contains": []
+    },
+    "tomato": {
+      "id": "tomato",
+      "name": "Tomato",
+      "contains": []
+    },
+    "onion": {
+      "id": "onion",
+      "name": "Onion",
+      "contains": []
+    },
+    "avocado": {
+      "id": "avocado",
+      "name": "Avocado",
+      "contains": []
+    },
+    "cucumber": {
+      "id": "cucumber",
+      "name": "Cucumber",
+      "contains": []
+    },
+    "sprouts": {
+      "id": "sprouts",
+      "name": "Sprouts",
+      "contains": []
+    },
+    "cabbage": {
+      "id": "cabbage",
+      "name": "Cabbage",
+      "contains": []
+    },
+    "carrot": {
+      "id": "carrot",
+      "name": "Carrot",
+      "contains": []
+    },
+    "celery": {
+      "id": "celery",
+      "name": "Celery",
+      "contains": []
+    },
+    "garlic": {
+      "id": "garlic",
+      "name": "Garlic",
+      "contains": []
+    },
+    "basil": {
+      "id": "basil",
+      "name": "Basil",
+      "contains": []
+    },
+    "parsley": {
+      "id": "parsley",
+      "name": "Parsley",
+      "contains": []
+    },
+    "potato": {
+      "id": "potato",
+      "name": "Potato",
+      "contains": []
+    },
+    "chickpeas": {
+      "id": "chickpeas",
+      "name": "Chickpeas",
+      "contains": []
+    },
+    "lemon": {
+      "id": "lemon",
+      "name": "Lemon",
+      "contains": []
+    },
+    "sugar": {
+      "id": "sugar",
+      "name": "Sugar",
+      "contains": []
+    },
+    "melon": {
+      "id": "melon",
+      "name": "Melon",
+      "contains": []
+    },
+    "berries": {
+      "id": "berries",
+      "name": "Berries",
+      "contains": []
+    },
+    "tahini": {
+      "id": "tahini",
+      "name": "Tahini",
+      "contains": [
+        "sesame"
+      ]
+    },
+    "hummus": {
+      "id": "hummus",
+      "name": "Hummus",
+      "contains": [
+        "chickpeas",
+        "tahini"
+      ]
+    },
+    "pine_nut": {
+      "id": "pine_nut",
+      "name": "Pine nut",
+      "contains": [
+        "tree_nut"
+      ]
+    },
+    "pesto": {
+      "id": "pesto",
+      "name": "Pesto",
+      "contains": [
+        "basil",
+        "pine_nut",
+        "parmesan",
+        "olive_oil"
+      ]
+    },
+    "egg_salad": {
+      "id": "egg_salad",
+      "name": "Egg salad",
+      "contains": [
+        "egg",
+        "mayo"
+      ]
+    },
+    "tuna_salad": {
+      "id": "tuna_salad",
+      "name": "Tuna salad",
+      "contains": [
+        "tuna",
+        "mayo"
+      ]
+    },
+    "chicken_salad": {
+      "id": "chicken_salad",
+      "name": "Chicken salad",
+      "contains": [
+        "chicken",
+        "mayo",
+        "celery"
+      ]
+    },
+    "fried_egg": {
+      "id": "fried_egg",
+      "name": "Fried egg",
+      "contains": [
+        "egg",
+        "butter"
+      ]
+    },
+    "marinara": {
+      "id": "marinara",
+      "name": "Marinara",
+      "contains": [
+        "tomato",
+        "olive_oil",
+        "garlic"
+      ]
+    },
+    "breading": {
+      "id": "breading",
+      "name": "Breading",
+      "contains": [
+        "wheat_flour",
+        "egg"
+      ]
+    },
+    "chicken_cutlet": {
+      "id": "chicken_cutlet",
+      "name": "Chicken cutlet",
+      "contains": [
+        "chicken",
+        "breading"
+      ]
+    },
+    "breadcrumbs": {
+      "id": "breadcrumbs",
+      "name": "Breadcrumbs",
+      "contains": [
+        "wheat_flour"
+      ]
+    },
+    "meatball": {
+      "id": "meatball",
+      "name": "Meatball",
+      "contains": [
+        "beef",
+        "breadcrumbs",
+        "egg",
+        "parmesan"
+      ]
+    },
+    "falafel": {
+      "id": "falafel",
+      "name": "Falafel",
+      "contains": [
+        "chickpeas",
+        "vegetable_oil",
+        "parsley"
+      ]
+    },
+    "matzo_meal": {
+      "id": "matzo_meal",
+      "name": "Matzo meal",
+      "contains": [
+        "gluten"
+      ]
+    },
+    "chicken_fat": {
+      "id": "chicken_fat",
+      "name": "Chicken fat",
+      "contains": []
+    },
+    "matzo_ball": {
+      "id": "matzo_ball",
+      "name": "Matzo ball",
+      "contains": [
+        "matzo_meal",
+        "egg",
+        "chicken_fat"
+      ]
+    },
+    "chicken_broth": {
+      "id": "chicken_broth",
+      "name": "Chicken broth",
+      "contains": []
+    },
+    "noodles": {
+      "id": "noodles",
+      "name": "Noodles",
+      "contains": [
+        "wheat_flour",
+        "egg"
+      ]
+    },
+    "tomato_soup_base": {
+      "id": "tomato_soup_base",
+      "name": "Tomato soup base",
+      "contains": [
+        "tomato",
+        "cream"
+      ]
+    },
+    "potato_salad_mix": {
+      "id": "potato_salad_mix",
+      "name": "Potato salad mix",
+      "contains": [
+        "potato",
+        "mayo",
+        "yellow_mustard"
+      ]
+    },
+    "coleslaw_mix": {
+      "id": "coleslaw_mix",
+      "name": "Coleslaw mix",
+      "contains": [
+        "cabbage",
+        "mayo"
+      ]
+    },
+    "chips_fried": {
+      "id": "chips_fried",
+      "name": "Chips fried",
+      "contains": [
+        "potato",
+        "vegetable_oil"
+      ]
+    },
+    "cocoa": {
+      "id": "cocoa",
+      "name": "Cocoa",
+      "contains": []
+    },
+    "soy_lecithin": {
+      "id": "soy_lecithin",
+      "name": "Soy lecithin",
+      "contains": [
+        "soy"
+      ]
+    },
+    "chocolate": {
+      "id": "chocolate",
+      "name": "Chocolate",
+      "contains": [
+        "cocoa",
+        "soy_lecithin",
+        "sugar"
+      ]
+    },
+    "walnut": {
+      "id": "walnut",
+      "name": "Walnut",
+      "contains": [
+        "tree_nut"
+      ]
+    },
+    "peanut_butter": {
+      "id": "peanut_butter",
+      "name": "Peanut butter",
+      "contains": [
+        "peanut"
+      ]
+    },
+    "graham_crust": {
+      "id": "graham_crust",
+      "name": "Graham crust",
+      "contains": [
+        "wheat_flour",
+        "butter"
+      ]
+    }
+  }
+}

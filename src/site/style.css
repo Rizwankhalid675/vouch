@@ -131,3 +131,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
 .ask input:disabled, .ask button:disabled { background: var(--rule); color: #5a4d3f; }
 .trace summary { font-size: .85rem; color: var(--muted); cursor: pointer; }
 .trace ol { margin: .5rem 0 0; padding-left: 1.4rem; font-size: .75rem; color: var(--muted); overflow-wrap: anywhere; }
+.refusal-verdicts { display: grid; gap: .6rem; margin-top: .75rem; }
+.refusal-verdict-name { margin: 0 0 .2rem; font: 700 .95rem/1.2 var(--serif); }
+.refusal-verdicts .verdict { background: var(--card); }
+.refusal-verdicts .verdict-unsafe { background: #fbeae7; }
+.refusal-verdicts .verdict-unknown { background: #fdf3df; }

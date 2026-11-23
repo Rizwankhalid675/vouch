@@ -308,6 +308,32 @@ describe("a model giving a false all-clear, beside the card that contradicts it"
     expect(card("reuben")!.getAttribute("data-verdict")).toBe("unsafe");
     expect(s.$("[data-refusal-panel]")!.hasAttribute("hidden")).toBe(false);
     expect(s.$$("[data-refusal-reason]").length).toBeGreaterThan(0);
+
+    // The contradicting verdict sits with the refusal, so the withheld claim and
+    // the answer to it are read together rather than a page apart.
+    const beside = s.$("[data-refusal-verdicts]")!;
+    expect(beside).not.toBeNull();
+    expect(beside.querySelector("[data-verdict-item='turkey_club']")!.getAttribute("data-verdict")).toBe("unsafe");
+    expect(beside.textContent).toContain("Turkey club");
+    expect(beside.textContent!.toLowerCase()).toContain("butter");
+    // The card in the dish's own slot is still there and is still the authority.
+    expect(slot("turkey_club").querySelector("[data-verdict]")!.getAttribute("data-verdict")).toBe("unsafe");
+  });
+
+  /**
+   * The copy beside the refusal is rendered from the checker's Finding by the same
+   * renderer, never from the model. Breaks if it is ever sourced from gated prose:
+   * here the finding set is empty, so there is nothing to copy, and nothing is
+   * invented to fill the space.
+   */
+  test("a refusal with no finding to show invents no verdict to put beside it", async () => {
+    const raw = "The Reuben is dairy-free.";
+    const s = await session({ key: SENTINEL, h: harness({ replies: [say(raw)] }) });
+    expect(s.runtime.findings()).toEqual([]); // nothing ticked, so the checker has produced nothing
+    await s.runtime.ask("reuben?");
+    expect(s.$("[data-refusal-panel]")!.hasAttribute("hidden")).toBe(false);
+    expect(s.$("[data-refusal-verdicts]")).toBeNull();
+    expect(s.panelText()).not.toContain("No conflict found");
   });
 
   /** It is labelled. A replayed reply dressed up as a live one would be the exact dishonesty this project is about. */

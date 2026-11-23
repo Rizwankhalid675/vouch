@@ -10,9 +10,10 @@
  * prose, or anything else, fails loudly.
  */
 
-import type { Finding, Menu } from "../../contracts.ts";
-import { MENU } from "../safety/canon.ts";
+import type { Finding, Menu, Restriction } from "../../contracts.ts";
+import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { gate, REFUSAL_MARKER, type Refusal } from "../gate/gate.ts";
+import { verdictCard } from "./verdict-cards.ts";
 
 /**
  * A `Refusal.claimed` is sometimes a meaningless token — "0", "i" — because of a
@@ -49,6 +50,7 @@ export class Transcript {
     private readonly log: HTMLElement,
     private readonly refusalPanel: HTMLElement,
     private readonly menu: Menu = MENU,
+    private readonly restrictions: Restriction[] = RESTRICTIONS,
   ) {}
 
   /** The guest's own words. Not model output; no gate applies. */
@@ -84,11 +86,23 @@ export class Transcript {
       tag.textContent = `Replayed reply, not a live model call${meta.scriptLabel ? `: ${meta.scriptLabel}` : ""}.`;
       row.prepend(tag);
     }
-    this.showRefusals(result.refusals);
+    this.showRefusals(result.refusals, findings);
     return result;
   }
 
-  showRefusals(refusals: Refusal[]): void {
+  /**
+   * A refusal says "read the verdict beside the dish". Showing that verdict right
+   * here as well is strictly better than telling the guest to go and look: the
+   * card is built by the same renderer, from the same `Finding`, and the card in
+   * the dish's own slot remains the authoritative one. Nothing about the verdict
+   * passes through the model or the gate to get here — the findings arrive from
+   * the checker, exactly as they do for the slot.
+   *
+   * It also means the withheld sentence and the verdict that contradicts it are
+   * in one place, which is how a reader meets them: a refusal the guest has to
+   * go hunting to resolve is a refusal that teaches them nothing.
+   */
+  showRefusals(refusals: Refusal[], findings: Finding[] = []): void {
     if (refusals.length === 0) return;
     const block = this.doc.createElement("div");
     block.className = "refusal-block";
@@ -107,6 +121,24 @@ export class Transcript {
       ul.append(li);
     }
     block.append(h, ul);
+
+    const items = [...new Set(refusals.flatMap((r) => r.items))];
+    const cards = this.doc.createElement("div");
+    cards.className = "refusal-verdicts";
+    cards.setAttribute("data-refusal-verdicts", "");
+    for (const id of items) {
+      const f = findings.find((x) => x.item === id);
+      if (!f) continue;
+      const wrap = this.doc.createElement("div");
+      wrap.className = "refusal-verdict";
+      const name = this.doc.createElement("p");
+      name.className = "refusal-verdict-name";
+      name.textContent = this.menu.items.find((i) => i.id === id)?.name ?? id;
+      wrap.append(name, verdictCard(this.doc, f, this.menu, this.restrictions));
+      cards.append(wrap);
+    }
+    if (cards.children.length > 0) block.append(cards);
+
     this.refusalPanel.append(block);
     this.refusalPanel.removeAttribute("hidden");
   }

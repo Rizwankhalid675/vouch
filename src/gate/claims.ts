@@ -1,4 +1,4 @@
-import type { Menu } from "../../contracts";
+import type { Menu } from "../../contracts.ts";
 import { MENU } from "../safety/canon.ts";
 
 /**
@@ -301,4 +301,87 @@ export function detectClaims(prose: string, menu: Menu = MENU): Claim[] {
 /** Internal: same as detectClaims but aligned to segments, for gate(). */
 export function classifySegment(core: string, menu: Menu): Claim | undefined {
   return classify(core, menu);
+}
+
+/* ---------- allow-list support (see gate.ts) ---------- */
+
+/** Closed set of structural words that assert nothing about the food. */
+const FN = new Set(
+  ("the a an and or is are it its it s this that these those our we has have comes come contains contain " +
+    "containing includes include including made with from of on in at for to served serve serves offer offers " +
+    "priced costs cost price menu item items ingredient ingredients listed there their").split(" "),
+);
+/** Extra words allowed only in a (backed) safety-claim sentence. */
+const CLAIM_WORDS = new Set(
+  ["free", "no", "not", "without", "from", "of", ...STATIC_VOCAB.flatMap((w) => w.split(" "))],
+);
+
+const WORDS_CACHE = new WeakMap<Menu, Set<string>>();
+function menuWords(menu: Menu): Set<string> {
+  let w = WORDS_CACHE.get(menu);
+  if (!w) {
+    w = new Set();
+    for (const it of menu.items) for (const x of wordsOf(norm(it.name))) w.add(x);
+    for (const [id, ing] of Object.entries(menu.ingredients)) {
+      for (const x of wordsOf(norm(id))) w.add(x);
+      for (const x of wordsOf(norm(ing.name))) w.add(x);
+    }
+    for (const f of FN) w.delete(f);
+    for (const x of [...w]) if (x.length < 3) w.delete(x);
+    WORDS_CACHE.set(menu, w);
+  }
+  return w;
+}
+const wordsOf = (s: string): string[] => s.match(/[a-z]+/g) ?? [];
+const inSet = (set: Set<string>, w: string) =>
+  set.has(w) || (w.endsWith("es") && set.has(w.slice(0, -2))) || (w.endsWith("s") && set.has(w.slice(0, -1)));
+
+export interface Derivation {
+  /** Resolved item ids named in the sentence. */
+  items: string[];
+  /** True when the sentence refers to the menu at all (full item name or any menu word). */
+  mentions: boolean;
+  /** Content tokens present at all (anything outside the closed structural set). */
+  hasContent: boolean;
+  /**
+   * First token NOT derivable from menu data (item names, the mentioned items'
+   * ingredient names, their prices, the closed structural set), or undefined.
+   * `claim` additionally allows the vocabulary of a backed safety claim.
+   */
+  offending(opts: { claim: boolean; carried: string[] }): string | undefined;
+}
+
+export function derivation(core: string, menu: Menu = MENU): Derivation {
+  const s = norm(core);
+  const { items, masked } = resolveItems(s, menu);
+  const mw = menuWords(menu);
+  const toks = masked.match(/\d+(?:\.\d+)?|[a-z]+/g) ?? [];
+  const mentions = items.length > 0 || toks.some((t) => inSet(mw, t));
+  const hasContent = items.length > 0 || toks.some((t) => !FN.has(t));
+  return {
+    items,
+    mentions,
+    hasContent,
+    offending({ claim, carried }) {
+      const ids = new Set([...items, ...carried]);
+      const prices: number[] = [];
+      const allowed = new Set<string>();
+      if (ids.size === 0) mw.forEach((w) => allowed.add(w));
+      for (const id of ids) {
+        const it = menu.items.find((i) => i.id === id);
+        if (!it) continue;
+        prices.push(it.price);
+        for (const w of wordsOf(norm(it.name))) allowed.add(w);
+        for (const ing of it.ingredients) {
+          for (const w of wordsOf(norm(menu.ingredients[ing]?.name ?? ing))) allowed.add(w);
+        }
+      }
+      for (const t of toks) {
+        if (/^\d/.test(t)) {
+          if (!prices.some((p) => Math.abs(p - parseFloat(t)) < 1e-9)) return t;
+        } else if (!(FN.has(t) || inSet(allowed, t) || (claim && CLAIM_WORDS.has(t)))) return t;
+      }
+      return undefined;
+    },
+  };
 }

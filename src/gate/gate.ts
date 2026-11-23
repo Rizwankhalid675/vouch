@@ -1,7 +1,7 @@
-import type { Finding, Menu } from "../../contracts";
+import type { Finding, Menu } from "../../contracts.ts";
 import { MENU } from "../safety/canon.ts";
 import type { Claim } from "./claims.ts";
-import { classifySegment, segments } from "./claims.ts";
+import { classifySegment, derivation, segments } from "./claims.ts";
 
 /**
  * Shown in place of a withheld sentence. Must never itself read as a claim
@@ -10,7 +10,7 @@ import { classifySegment, segments } from "./claims.ts";
  */
 export const REFUSAL_MARKER = "[A claim here was withheld; see the ingredient list.]";
 
-export type RefusalReason = "no_finding" | "unknown" | "unsafe" | "item_unresolved" | "ingredient_subject" | "not_checked";
+export type RefusalReason = "no_finding" | "unknown" | "unsafe" | "item_unresolved" | "ingredient_subject" | "not_checked" | "not_derivable";
 
 export interface Refusal {
   /** The phrase that made the sentence a safety claim, e.g. "dairy-free". */
@@ -31,6 +31,8 @@ const WHY: Record<RefusalReason, string> = {
   unsafe: "The checker found a conflict for this item.",
   item_unresolved: "The claim does not clearly name a menu item, so no finding can back it.",
   not_checked: "This claim was not checked: the checker's verdict does not cover what it asserts. That does not mean it is false.",
+  not_derivable:
+    "This sentence could not be derived from the menu (item names, prices, ingredients) or backed by a checker finding. That does not mean it is false.",
   ingredient_subject: "The claim is about an ingredient, not a checked item.",
 };
 
@@ -49,30 +51,63 @@ export function gate(
 ): { shown: string; refusals: Refusal[] } {
   const refusals: Refusal[] = [];
   let shown = "";
-  for (const seg of segments(prose)) {
-    const claim = classifySegment(seg.core, menu);
-    if (!claim) {
-      shown += seg.raw;
-      continue;
+  // Allow-list state: did the previous segment mention the menu or get withheld?
+  let ctx = false;
+  let carried: string[] = [];
+
+  const parts = prose.split(REFUSAL_MARKER);
+  parts.forEach((part, pi) => {
+    if (pi > 0) {
+      shown += REFUSAL_MARKER; // our own earlier output; a withheld sentence sits here
+      ctx = true;
+      carried = [];
     }
-    const reason = refusalReason(claim, findings);
-    if (!reason) {
-      shown += seg.raw;
-      continue;
+    for (const seg of segments(part)) {
+      if (seg.core === "") {
+        shown += seg.raw;
+        continue;
+      }
+      const claim = classifySegment(seg.core, menu);
+      const d = derivation(seg.core, menu);
+      let reason: RefusalReason | undefined;
+      let claimed = "";
+      let items = d.items;
+      if (claim) {
+        claimed = claim.claimed;
+        items = claim.items;
+        reason = refusalReason(claim, findings);
+        if (!reason) {
+          const bad = d.offending({ claim: true, carried: [] });
+          if (bad !== undefined) {
+            reason = "not_derivable";
+            claimed = bad;
+          }
+        }
+      } else if (d.mentions || ctx) {
+        // Default-deny: an item-mentioning sentence passes only if derivable from menu data.
+        const bad = d.offending({ claim: false, carried });
+        if (bad !== undefined) {
+          reason = "not_derivable";
+          claimed = bad;
+        } else if (!d.mentions && !d.hasContent) {
+          reason = "not_derivable"; // a bare "It is." after an item or refusal is an affirmation
+          claimed = seg.core;
+        }
+      }
+      ctx = reason !== undefined || d.mentions;
+      carried = ctx ? (d.items.length ? d.items : carried) : [];
+      if (!reason) {
+        shown += seg.raw;
+        continue;
+      }
+      const r: Refusal = { claimed, items, sentence: seg.core, reason, why: WHY[reason] };
+      if (items[0] !== undefined) r.item = items[0];
+      refusals.push(r);
+      const lead = seg.raw.slice(0, seg.raw.indexOf(seg.core));
+      const trail = seg.raw.slice(lead.length + seg.core.length);
+      shown += lead + REFUSAL_MARKER + trail;
     }
-    const r: Refusal = {
-      claimed: claim.claimed,
-      items: claim.items,
-      sentence: claim.text,
-      reason,
-      why: WHY[reason],
-    };
-    if (claim.item !== undefined) r.item = claim.item;
-    refusals.push(r);
-    const lead = seg.raw.slice(0, seg.raw.indexOf(seg.core));
-    const trail = seg.raw.slice(lead.length + seg.core.length);
-    shown += lead + REFUSAL_MARKER + trail;
-  }
+  });
   return { shown, refusals };
 }
 

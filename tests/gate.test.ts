@@ -134,9 +134,9 @@ describe("the gate: no unbacked safety claim reaches the screen", () => {
     const r = gate("Everything here is dairy-free.", [safe("fruit_cup")]).refusals[0]!;
     expect(r.reason).toBe("item_unresolved");
     // pronoun in a later sentence does not inherit the earlier sentence's item
-    const g = gate("Try the fruit cup. It is dairy-free.", [safe("fruit_cup")]);
+    const g = gate("The fruit cup is on the menu. It is dairy-free.", [safe("fruit_cup")]);
     expect(g.refusals.length).toBe(1);
-    expect(g.shown).toMatch(/^Try the fruit cup\./);
+    expect(g.shown).toMatch(/^The fruit cup is on the menu\./);
   });
 
   test("a backed item name cannot launder a claim about an ingredient", () => {
@@ -161,18 +161,71 @@ describe("the gate: no unbacked safety claim reaches the screen", () => {
     expect(gate("The soup is d a i r y free.", []).refusals.length).toBe(1);
   });
 
-  test("descriptive prose with no safety claim passes untouched", () => {
-    const prose = "The Reuben is stacked with corned beef and swiss on grilled rye. It costs $11.50 and is our most popular sandwich!\nOrder at the counter, and ask for extra pickles.";
+  test("descriptive prose derivable from menu data passes untouched", () => {
+    const prose = "The Reuben is made with rye bread, corned beef, swiss cheese, sauerkraut and russian dressing. It costs $11.50.\nOrder at the counter, and ask for extra napkins.";
     const g = gate(prose, [find("reuben")]);
     expect(g.shown).toBe(prose);
     expect(g.refusals).toEqual([]);
     expect(detectClaims(prose)).toEqual([]);
   });
 
+  test("allow-list cost: ordinary marketing prose about an item is withheld, not derivable", () => {
+    const prose = "The Reuben is stacked with corned beef and swiss on grilled rye. It costs $11.50 and is our most popular sandwich!";
+    const g = gate(prose, [find("reuben")]);
+    expect(g.refusals.map((r) => r.reason)).toEqual(["not_derivable", "not_derivable"]);
+    expect(detectClaims(prose)).toEqual([]); // not a safety claim; withheld by the allow-list
+  });
+
+  test("a wrong price or an ingredient the item lacks is not derivable", () => {
+    expect(gate("The Reuben costs $4.", []).refusals[0]!.reason).toBe("not_derivable");
+    expect(gate("The fruit cup contains peanut butter.", []).refusals[0]!.reason).toBe("not_derivable");
+  });
+
+  test("C1: every register of reassurance about an item is withheld, even with an unsafe finding", () => {
+    const unsafe = (item: string): Finding => ({
+      item, verdict: "unsafe", covered: ["dairy"], because: { ingredient: "x", allergen: "dairy", via: ["x", "dairy"] },
+    });
+    const fx = [unsafe("reuben"), unsafe("chili_chicken_plate"), unsafe("fruit_cup")];
+    for (const s of [
+      "The Reuben is 0% dairy.",
+      "I'd go with the Reuben if you're avoiding dairy.",
+      "I'd recommend the chili chicken plate.",
+      "The chili chicken plate meets your needs.",
+      "The chili chicken plate qualifies.",
+      "The chili chicken plate ticks every box.",
+      "The chili chicken plate is within your limits.",
+      "Nothing on your list shows up in the fruit cup.",
+      "The fruit cup is clean.",
+    ]) {
+      const g = gate(s, fx);
+      expect(g.refusals.length, s).toBe(1);
+      expect(g.shown, s).toBe(REFUSAL_MARKER);
+    }
+  });
+
+  test("C2: an affirmation after a refused question is withheld too", () => {
+    const g = gate("Is the chili chicken plate dairy-free? Of course it is.", [find("chili_chicken_plate")]);
+    expect(g.refusals.length).toBe(2);
+    expect(g.shown).toBe(`${REFUSAL_MARKER} ${REFUSAL_MARKER}`);
+    expect(g.shown).not.toMatch(/course/);
+    const list = gate("- fruit cup\n- lemonade\nBoth work.", []);
+    expect(list.shown).not.toMatch(/work/);
+    expect(list.refusals.length).toBe(1);
+    expect(gate("The fruit cup is on the menu. It is.", []).refusals.length).toBe(1);
+    expect(gate("The soup is dairy-free. Yes. Definitely so.", []).refusals.length).toBe(3);
+  });
+
+  test("a continuation sentence that restates derivable facts passes", () => {
+    expect(gate("The Reuben is on the menu. It costs $11.50.", []).refusals).toEqual([]);
+  });
+
   test("only the offending sentence is replaced, whitespace preserved", () => {
-    const g = gate("Try the soup. The soup is dairy-free. Soups are $5.", []);
-    expect(g.shown).toBe(`Try the soup. ${REFUSAL_MARKER} Soups are $5.`);
-    expect(g.refusals.length).toBe(1);
+    const g = gate("Welcome to the deli. The fruit cup is dairy-free. Order at the counter.", []);
+    // the sentence right after a refusal is withheld too (it may be an answer to it)
+    expect(g.shown).toBe(`Welcome to the deli. ${REFUSAL_MARKER} ${REFUSAL_MARKER}`);
+    const h = gate("Welcome to the deli. The fruit cup is dairy-free.", []);
+    expect(h.shown).toBe(`Welcome to the deli. ${REFUSAL_MARKER}`);
+    expect(h.refusals.length).toBe(1);
   });
 
   test("the gate is idempotent: its own refusal marker is not a claim", () => {

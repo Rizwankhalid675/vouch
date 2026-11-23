@@ -2,8 +2,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, test } from "vitest";
-import { MENU } from "../src/safety/canon.ts";
-import { mountShop } from "../src/site/shop.ts";
+import type { Menu } from "../contracts.ts";
+import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
+import { verdictFor } from "../src/safety/verdict.ts";
+import { containsLine, mountShop } from "../src/site/shop.ts";
+import { prerender } from "../src/site/prerender.ts";
 
 const html = readFileSync(resolve(process.cwd(), "src/site/index.html"), "utf8");
 const $ = (s: string) => document.querySelector<HTMLElement>(s);
@@ -109,5 +112,75 @@ describe("the prerendered page (what a no-script reader gets)", () => {
     expect(doc.querySelector("[data-item='lemonade'] .price")!.textContent).toBe("$3.50");
     expect(doc.querySelector("[data-item='turkey_club'] [data-contains]")!.textContent!.toLowerCase()).toContain("dairy");
     expect(doc.querySelector("aside.cart")).not.toBeNull();
+  });
+});
+
+describe("hydration keeps what is already on the page", () => {
+  test("content placed in a verdict slot survives a later mountShop call", () => {
+    const slot = document.querySelector("[data-verdict-slot='reuben']")!;
+    const mark = document.createElement("div");
+    mark.setAttribute("data-test-verdict", "x");
+    slot.appendChild(mark);
+    mountShop(document);
+    expect(document.querySelector("[data-verdict-slot='reuben'] [data-test-verdict]")).toBe(mark);
+  });
+
+  test("a first mount over a prerendered page keeps content already in a slot", () => {
+    document.documentElement.innerHTML = prerender(html, MENU);
+    const mark = document.createElement("div");
+    document.querySelector("[data-verdict-slot='lemonade']")!.appendChild(mark);
+    mountShop(document);
+    expect(document.querySelector("[data-verdict-slot='lemonade']")!.firstChild).toBe(mark);
+  });
+
+  test("a second mount does not double-bind the cart", () => {
+    mountShop(document);
+    click($("[data-item='lemonade'] [data-add]"));
+    expect($("[data-cart-line='lemonade'] [data-qty]")!.textContent).toBe("1");
+  });
+});
+
+describe("prerender refuses to ship a broken menu", () => {
+  test("throws when the grid markup is not found", () => {
+    expect(() => prerender("<html><body><div class='grid'></div></body></html>", MENU)).toThrow(/not found/);
+  });
+  test("throws when the menu renders zero items", () => {
+    expect(() => prerender(html, { items: [], ingredients: MENU.ingredients })).toThrow(/0 items/);
+  });
+});
+
+describe("the Contains line says something true about each kind of gap", () => {
+  const menu: Menu = {
+    items: [
+      { id: "a", name: "A", price: 1, ingredients: ["sauce"] },
+      { id: "b", name: "B", price: 1, ingredients: ["ghost"] },
+    ],
+    ingredients: { sauce: { id: "sauce", name: "Sauce", contains: [], contentsUnknown: true } },
+  };
+  test("a contentsUnknown ingredient keeps the supplier wording", () => {
+    expect(containsLine(menu.items[0]!, menu)).toContain("sauce has no published ingredient list");
+  });
+  test("an id absent from the table is not blamed on a supplier and shows no raw id", () => {
+    const t = containsLine(menu.items[1]!, menu);
+    expect(t).toContain("an ingredient we have no record of");
+    expect(t).not.toContain("published");
+    expect(t).not.toContain("ghost");
+  });
+});
+
+describe("the card and the checker agree (parity)", () => {
+  test("for every item and restriction, Contains matches verdictFor", () => {
+    for (const item of MENU.items) {
+      const text = containsLine(item, MENU).toLowerCase();
+      for (const r of RESTRICTIONS) {
+        const f = verdictFor(item, [r], MENU);
+        if (f.verdict === "unsafe") {
+          const name = (MENU.ingredients[f.because!.allergen]?.name ?? f.because!.allergen).toLowerCase();
+          expect(text, `${item.id} / ${r.id}`).toContain(name);
+        } else if (f.verdict === "unknown") {
+          expect(text, `${item.id} / ${r.id}`).toContain("unknown");
+        }
+      }
+    }
   });
 });

@@ -1,6 +1,7 @@
 import type { Menu, MenuItem } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { allergensOf, firstGap } from "../safety/derive.ts";
+import { trackedAllergens } from "../safety/allergens.ts";
 
 /** Money is handled in integer cents so totals never drift. */
 const cents = (price: number): number => Math.round(price * 100);
@@ -14,8 +15,8 @@ export function ingredientNames(item: MenuItem, menu: Menu): string[] {
   return item.ingredients.map((id) => menu.ingredients[id]?.name ?? id);
 }
 
-/** Ids worth naming in "Contains": everything a restriction avoids, plus mustard (named in the data, no restriction yet). */
-const ALLERGEN_IDS = new Set<string>([...RESTRICTIONS.flatMap((r) => r.avoid), "mustard"]);
+/** Ids worth naming in "Contains": exactly the vocabulary the checker covers. */
+const ALLERGEN_IDS = trackedAllergens(RESTRICTIONS);
 
 /**
  * The derived allergens of an item, in plain words, and where the data runs out.
@@ -24,22 +25,27 @@ const ALLERGEN_IDS = new Set<string>([...RESTRICTIONS.flatMap((r) => r.avoid), "
 export function containsLine(item: MenuItem, menu: Menu): string {
   const found = new Set<string>();
   const gaps: string[] = [];
+  let missing = false;
   for (const ing of item.ingredients) {
     for (const r of allergensOf(ing, menu)) {
       if (ALLERGEN_IDS.has(r.allergen)) found.add(menu.ingredients[r.allergen]?.name ?? r.allergen);
     }
     const gap = firstGap(ing, menu);
-    if (gap) gaps.push(menu.ingredients[gap.allergen]?.name ?? gap.allergen);
+    if (gap) {
+      if (Object.hasOwn(menu.ingredients, gap.allergen)) gaps.push(menu.ingredients[gap.allergen]!.name);
+      else missing = true;
+    }
   }
   if (item.ingredients.length === 0) return "unknown. No ingredient information has been recorded for this item.";
   const known = [...found].map((n) => n.toLowerCase());
   const parts: string[] = [];
   if (known.length > 0) parts.push(known.join(", "));
-  else if (gaps.length === 0) parts.push("none of the allergens we track");
+  else if (gaps.length === 0 && !missing) parts.push("none of the allergens we track");
   if (gaps.length > 0) {
     const list = [...new Set(gaps)].map((g) => g.toLowerCase()).join(" and ");
     parts.push(`unknown: ${list} has no published ingredient list`);
   }
+  if (missing) parts.push("unknown: an ingredient we have no record of");
   return parts.join("; ");
 }
 
@@ -73,7 +79,11 @@ export interface Shop {
 }
 
 /** Wire the menu and cart into a document that carries the markup of index.html. */
+const mounted = new WeakMap<Element, Shop>();
+
 export function mountShop(doc: Document, menu: Menu = MENU): Shop {
+  const already = mounted.get(doc.querySelector("[data-menu]") ?? doc.documentElement);
+  if (already) return already;
   const q = (sel: string): HTMLElement => {
     const el = doc.querySelector<HTMLElement>(sel);
     if (!el) throw new Error(`index.html is missing ${sel}`);
@@ -91,7 +101,13 @@ export function mountShop(doc: Document, menu: Menu = MENU): Shop {
   const cart = new Map<string, number>();
   let orderNo = 0;
 
-  menuEl.innerHTML = menuHtml(menu);
+  // Hydrate, don't replace: a prerendered grid that already matches the menu is kept as is, so anything
+  // attached to a [data-verdict-slot] before (or between) mounts survives.
+  const present = [...menuEl.querySelectorAll<HTMLElement>("[data-item]")].map((e) => e.dataset["item"]);
+  const wanted = menu.items.map((i) => i.id);
+  if (present.length !== wanted.length || present.some((id, n) => id !== wanted[n])) {
+    menuEl.innerHTML = menuHtml(menu);
+  }
 
   function render(): void {
     let total = 0;
@@ -164,7 +180,9 @@ export function mountShop(doc: Document, menu: Menu = MENU): Shop {
   });
 
   render();
-  return { cart: () => cart };
+  const shop: Shop = { cart: () => cart };
+  mounted.set(menuEl, shop);
+  return shop;
 }
 
 // Browser entry: index.html carries [data-menu]; tests mount explicitly instead.

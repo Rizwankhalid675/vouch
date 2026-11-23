@@ -14,5 +14,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["contracts.ts", "src", "tests", "data", "vitest.config.ts"]
+  "include": ["contracts.ts", "src", "tests", "data", "vitest.config.ts", "vite.config.ts"]
 }

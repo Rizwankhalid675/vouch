@@ -1,0 +1,11 @@
+[
+  { "id": "dairy_free", "name": "Dairy-free", "avoid": ["dairy"] },
+  { "id": "gluten_free", "name": "Gluten-free", "avoid": ["gluten"] },
+  { "id": "egg_free", "name": "Egg-free", "avoid": ["egg"] },
+  { "id": "nut_free", "name": "Nut-free", "avoid": ["peanut", "tree_nut"] },
+  { "id": "shellfish_free", "name": "Shellfish-free", "avoid": ["shellfish"] },
+  { "id": "fish_free", "name": "Fish-free", "avoid": ["fish"] },
+  { "id": "pork_free", "name": "No pork", "avoid": ["pork"] },
+  { "id": "soy_free", "name": "Soy-free", "avoid": ["soy"] },
+  { "id": "sesame_free", "name": "Sesame-free", "avoid": ["sesame"] }
+]

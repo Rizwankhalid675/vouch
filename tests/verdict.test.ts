@@ -4,6 +4,7 @@ import type { Menu, MenuItem, Restriction } from "../contracts";
 import { loadMenu } from "../src/safety/menu";
 import { allergensOf } from "../src/safety/derive";
 import { verdictFor } from "../src/safety/verdict";
+import { RESTRICTIONS, loadRestrictions } from "../src/safety/restrictions";
 
 const menu = loadMenu(raw);
 const item = (id: string): MenuItem => {
@@ -11,23 +12,16 @@ const item = (id: string): MenuItem => {
   if (!i) throw new Error(`no item ${id}`);
   return i;
 };
+const byId = (id: string): Restriction => {
+  const x = RESTRICTIONS.find((q) => q.id === id);
+  if (!x) throw new Error(`no restriction ${id}`);
+  return x;
+};
+const dairyFree = byId("dairy_free");
+const sesameFree = byId("sesame_free");
 const r = (id: string, ...avoid: string[]): Restriction => ({ id, name: id, avoid });
 
-const dairyFree = r("dairy_free", "dairy");
-const sesameFree = r("sesame_free", "sesame");
 
-// Nine restrictions, matching SPEC 4.3.
-const RESTRICTIONS: Restriction[] = [
-  dairyFree,
-  r("gluten_free", "gluten"),
-  r("egg_free", "egg"),
-  r("nut_free", "peanut", "tree_nut"),
-  r("shellfish_free", "shellfish"),
-  r("fish_free", "fish"),
-  r("pork_free", "pork"),
-  r("soy_free", "soy"),
-  sesameFree,
-];
 
 describe("verdictFor", () => {
   test("an item with no ingredient data is unknown, never safe", () => {
@@ -194,5 +188,33 @@ describe("allergensOf", () => {
 
   test("an id absent from the table is reported as itself, not expanded, and does not throw", () => {
     expect(allergensOf("ghost", menu)).toEqual([{ allergen: "ghost", via: ["ghost"] }]);
+  });
+});
+
+describe("restrictions data", () => {
+  test("the canonical set loads, is non-empty and has unique ids", () => {
+    expect(RESTRICTIONS.length).toBeGreaterThanOrEqual(9);
+    expect(new Set(RESTRICTIONS.map((x) => x.id)).size).toBe(RESTRICTIONS.length);
+  });
+
+  test("the set exercises the data: at least one restriction nothing violates, at least one many items violate", () => {
+    const unsafeCount = (rs: Restriction) => menu.items.filter((i) => verdictFor(i, [rs], menu).verdict === "unsafe").length;
+    expect(unsafeCount(byId("shellfish_free"))).toBe(0);
+    expect(RESTRICTIONS.some((x) => unsafeCount(x) >= 5)).toBe(true);
+    // the clean path: some item is genuinely safe for shellfish-free
+    expect(menu.items.some((i) => verdictFor(i, [byId("shellfish_free")], menu).verdict === "safe")).toBe(true);
+  });
+
+  test("loadRestrictions throws when an avoid id is not in the ingredient table", () => {
+    expect(() => loadRestrictions([{ id: "k", name: "K", avoid: ["kiwi"] }], menu)).toThrow(/kiwi/);
+  });
+
+  test.each([
+    ["not an array", {}],
+    ["empty avoid", [{ id: "a", name: "A", avoid: [] }]],
+    ["duplicate id", [{ id: "a", name: "A", avoid: ["dairy"] }, { id: "a", name: "A", avoid: ["egg"] }]],
+    ["missing name", [{ id: "a", avoid: ["dairy"] }]],
+  ])("loadRestrictions rejects %s", (_l, input) => {
+    expect(() => loadRestrictions(input, menu)).toThrow();
   });
 });

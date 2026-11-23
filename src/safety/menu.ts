@@ -24,7 +24,12 @@ export function loadMenu(json: unknown): Menu {
     if (!isRecord(v)) fail(`ingredient "${key}" must be an object`);
     if (typeof v.id !== "string" || v.id !== key) fail(`ingredient "${key}" must have a matching id`);
     if (typeof v.name !== "string") fail(`ingredient "${key}" needs a name`);
-    ingredients[key] = { id: v.id, name: v.name, contains: stringArray(v.contains, `ingredient "${key}".contains`) };
+    if (v.contentsUnknown !== undefined && v.contentsUnknown !== true) {
+      fail(`ingredient "${key}".contentsUnknown must be true or absent`);
+    }
+    const ing: Ingredient = { id: v.id, name: v.name, contains: stringArray(v.contains, `ingredient "${key}".contains`) };
+    if (v.contentsUnknown === true) ing.contentsUnknown = true;
+    ingredients[key] = ing;
   }
   for (const ing of Object.values(ingredients)) {
     for (const c of ing.contains) {

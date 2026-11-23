@@ -339,6 +339,27 @@
       "name": "Daily special",
       "price": 9,
       "ingredients": []
+    },
+    {
+      "id": "chili_chicken_plate",
+      "name": "Chili chicken plate",
+      "price": 11,
+      "ingredients": [
+        "chicken",
+        "supplier_chili_sauce",
+        "lettuce",
+        "cucumber"
+      ]
+    },
+    {
+      "id": "glazed_donut",
+      "name": "Glazed donut",
+      "price": 3.5,
+      "ingredients": [
+        "wheat_flour",
+        "sugar",
+        "bakery_glaze"
+      ]
     }
   ],
   "ingredients": {
@@ -999,6 +1020,18 @@
         "wheat_flour",
         "butter"
       ]
+    },
+    "supplier_chili_sauce": {
+      "id": "supplier_chili_sauce",
+      "name": "Supplier chili sauce",
+      "contains": [],
+      "contentsUnknown": true
+    },
+    "bakery_glaze": {
+      "id": "bakery_glaze",
+      "name": "Bakery glaze",
+      "contains": [],
+      "contentsUnknown": true
     }
   }
 }

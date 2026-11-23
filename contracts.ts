@@ -13,6 +13,13 @@ export interface Ingredient {
   name: string;
   /** Ids of ingredients (or allergens) this ingredient directly contains. */
   contains: string[];
+  /**
+   * Present (true) when we do not know what this ingredient contains, e.g. a
+   * bought-in component with no published ingredient list. Absent means the
+   * contents ARE known, so `contains: []` is a genuine leaf. An ingredient
+   * carrying this flag makes any item containing it `unknown`, transitively.
+   */
+  contentsUnknown?: true;
 }
 
 export interface Restriction {

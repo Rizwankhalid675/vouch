@@ -46,6 +46,57 @@ describe("menu data", () => {
   });
 });
 
+describe("contentsUnknown", () => {
+  const reaches = (menu: ReturnType<typeof loadMenu>, ids: string[], seen = new Set<string>()): boolean =>
+    ids.some((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      const g = menu.ingredients[id];
+      return !!g && (g.contentsUnknown === true || reaches(menu, g.contains, seen));
+    });
+  const allergens = ["dairy", "gluten", "egg", "fish", "shellfish", "soy", "sesame", "peanut", "tree_nut", "pork", "mustard"];
+
+  test("the loader accepts and preserves contentsUnknown", () => {
+    const menu = loadMenu({
+      items: [{ id: "a", name: "A", price: 1, ingredients: ["mystery"] }],
+      ingredients: { mystery: { id: "mystery", name: "Mystery", contains: [], contentsUnknown: true } },
+    });
+    expect(menu.ingredients["mystery"]?.contentsUnknown).toBe(true);
+  });
+
+  test("known ingredients do not carry the flag", () => {
+    expect(loadMenu(raw).ingredients["butter"]?.contentsUnknown).toBeUndefined();
+  });
+
+  test("the loader rejects contentsUnknown: false", () => {
+    expect(() =>
+      loadMenu({ items: [], ingredients: { a: { id: "a", name: "A", contains: [], contentsUnknown: false } } }),
+    ).toThrow();
+  });
+
+  test("at least two ingredients are flagged and at least two items reach one", () => {
+    const menu = loadMenu(raw);
+    expect(Object.values(menu.ingredients).filter((g) => g.contentsUnknown).length).toBeGreaterThanOrEqual(2);
+    expect(menu.items.filter((i) => reaches(menu, i.ingredients)).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("an item with no known allergen still reaches an unknown ingredient", () => {
+    const menu = loadMenu(raw);
+    const contains = (ids: string[], seen = new Set<string>()): Set<string> => {
+      for (const id of ids) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        contains(menu.ingredients[id]?.contains ?? [], seen);
+      }
+      return seen;
+    };
+    const hit = menu.items.filter(
+      (i) => reaches(menu, i.ingredients) && !allergens.some((a) => contains(i.ingredients).has(a)),
+    );
+    expect(hit.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe("loadMenu rejects malformed input", () => {
   test.each([
     ["null", null],

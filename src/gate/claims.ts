@@ -152,6 +152,8 @@ const DIRECT: Trigger[] = [
   // reassurance
   T(/(?<![a-z0-9])worr(?:y|ies|ied|ying)(?![a-z0-9])/),
   T(/(?<![a-z0-9])(?:rest (?:assured|easy)|breathe easy|peace of mind|without (?:a )?(?:care|concern|fear|hesitat\w*|worry))(?![a-z0-9])/),
+  T(/(?<![a-z0-9])(?:good|great|solid|smart|wise|best|top|better|right|excellent|perfect|winning) (?:pick|choice|bet|option|call|go-to)(?![a-z0-9])/),
+  T(/(?<![a-z0-9])(?:clean|cleaner|cleanest|cleanly)(?![a-z0-9])/),
   T(/(?<![a-z0-9])(?:harmless|risk-free|low[- ]risk|minimal risk|tolerat\w+|gentle on|easy on|kid-proof|[a-z]+-proof)(?![a-z0-9])/),
   T(/(?<![a-z0-9])no (?:problem|problems|issue|issues|concern|concerns|risk|risks|danger|harm|trouble|fear|reaction|reactions|worries|cause for|doubt)(?![a-z0-9])/),
   T(/(?<![a-z0-9])nothing (?:in|inside|hidden|sneaky|nasty|bad|harmful|to (?:worry|fear|be))(?![a-z0-9])/),
@@ -311,7 +313,7 @@ const FN = new Set(
     "containing includes include including made with from of on in at for to served serve serves offer offers " +
     "priced costs cost price menu item items ingredient ingredients listed there their").split(" "),
 );
-const ANAPHORA = new Set("it its they them their this that these those both either neither each one ones all everything which".split(" "));
+const ANAPHORA = new Set("it its they them their this that these those both either neither each one ones all everything which former latter latter's yours mine ours theirs same such said".split(" "));
 /** Extra words allowed only in a (backed) safety-claim sentence. */
 const CLAIM_WORDS = new Set(
   ["free", "no", "not", "without", "from", "of", ...STATIC_VOCAB.flatMap((w) => w.split(" "))],

@@ -232,6 +232,27 @@ describe("the gate: no unbacked safety claim reaches the screen", () => {
     }
   });
 
+  test("round 3: reassurance tails at level 1 are withheld", () => {
+    const unsafe: Finding = {
+      item: "fruit_cup", verdict: "unsafe", covered: ["dairy"], because: { ingredient: "x", allergen: "dairy", via: ["x", "dairy"] },
+    };
+    const head = "The fruit cup is on the menu. It costs $5. ";
+    for (const t of [
+      "The former is clean.", "Same here.", "Yours is clean.", "Such a clean pick.", "Said item is clean.",
+      "Totally clean.", "Perfectly clean.", "Completely clean.", "A good pick.",
+    ]) {
+      const g = gate(head + t, [unsafe]);
+      expect(g.refusals.length, t).toBe(1);
+      expect(g.shown, t).toBe(head + REFUSAL_MARKER);
+    }
+  });
+
+  test("overcorrection guards: innocuous prose still passes", () => {
+    expect(gate("Same opening hours on Sunday.", []).refusals).toEqual([]);
+    expect(gate("The Reuben is made with rye bread, corned beef, swiss cheese, sauerkraut and russian dressing. It costs $11.50.", []).refusals).toEqual([]);
+    expect(gate("The fruit cup is on the menu. It costs $5. Welcome to the deli!", []).refusals).toEqual([]);
+  });
+
   test("the chain ends on a genuinely new topic", () => {
     const g = gate("The fruit cup is on the menu. It costs $5. Welcome to the deli!", []);
     expect(g.refusals).toEqual([]);

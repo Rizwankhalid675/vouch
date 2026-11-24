@@ -134,15 +134,15 @@ and `describes_without_vouching`. The second one shows the gate refusing a model
 *right* — the cost `LIMITS.md` §2.1 admits in prose. If a judge asks "does it just suppress
 wrong answers?", that scenario is the answer, on screen, in about eight seconds.
 
-**Shot 6 cannot be filmed yet, and one of its prerequisites is now a deploy step.** The runtime
-loads and runs a peer network and the peer's own site is built (`peer-dist/`), but the deli
-publishes **no peer**: `allowed_peers` is `[]`, `links.json` binds nothing, and
-`vouch.network.json` carries no symbolic reference, because the origin we had listed was a
-claimable `*.vercel.app` subdomain nobody here owns (`DECISIONS.md`). `OWNER-TODO.md` item 1
-deploys both origins and wires those three fields in one commit; until it has run, there is
-nothing for the compose field to load and no consent card to film. After it has run, what a
-judge types in the "Load a published agent network" field is `marrow_point`, and the consent card
-names the bakery's origin and says its agents will run in this browser.
+**Shot 6 can be filmed once the site is redeployed.** Both origins are live and the three fields
+are wired: `allowed_peers` names `https://tubular-valkyrie-c8b80c.netlify.app`, `links.json`
+binds `marrow_point` to it, and `vouch.network.json` carries the symbolic reference. What a judge
+types in the "Load a published agent network" field is `marrow_point` — the panel's own note says
+so now, which it did not while nothing was bound — and the consent card names the bakery's origin
+and says its agents will run in this browser. The prerequisite that remains is a **redeploy**:
+the wiring is in the repository and in `dist/`, and the live site serves the previous build until
+it is pushed again. (The fields were empty for a round because the origin we had listed was a
+claimable `*.vercel.app` subdomain nobody here owned — `DECISIONS.md`.)
 
 The peer exchange in the second half of the shot needs a provider key, because no recorded reply
 covers it (`LIMITS.md` §2.8a).

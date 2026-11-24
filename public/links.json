@@ -1,7 +1,9 @@
 {
-  "//": "§3.3's peer-network link map. The `vouch` map is EMPTY ON PURPOSE, and that is a statement rather than a formality: this site binds no external network, and publishing an empty map says so — absence cannot be told apart from oversight, this can. A caller that resolves a named reference against this file learns, in one GET, that there is nothing here to resolve. It bound `marrow_point` to a claimable *.vercel.app subdomain this project does not own and has never deployed; the manifest's `//allowed_peers` records why that is gone. A binding, its allow-list entry and the symbolic reference that needs it go in together — docs/OWNER-TODO.md item 1.",
+  "//": "§3.3's peer-network link map. The `vouch` map binds one name: `marrow_point`, the bakery network published on the second origin of this project, which we deploy and serve. A caller that resolves a named reference against this file learns in one GET where that name points, and the three files have to agree — the binding, the `allowed_peers` entry in agent-manifest.json and the symbolic reference in vouch.network.json went in together and come out together. IT WAS EMPTY BEFORE THIS, AND THE REASON IS WORTH KEEPING: it bound `marrow_point` to marrow-point-bakery.vercel.app, a claimable *.vercel.app subdomain this project did not own and had never deployed, so whoever registered that project name would have been bound and allow-listed here. The manifest's `//allowed_peers` carries the full record and the rule: an allow-listed origin is one WE control, publishing a binding for an origin that does not exist is worse than publishing none, and an empty map is itself a statement rather than an oversight — which is what this file published, deliberately, for as long as that was true.",
   "version": 1,
   "networks": {
-    "vouch": {}
+    "vouch": {
+      "marrow_point": "https://tubular-valkyrie-c8b80c.netlify.app/agents/marrow_point"
+    }
   }
 }

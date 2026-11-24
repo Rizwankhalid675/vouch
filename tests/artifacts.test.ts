@@ -968,3 +968,141 @@ describe("the SiteText trust boundary is three guarded casts in one file", () =>
     expect(counts.get("runtime/errors.ts")).toBe(3);
   });
 });
+
+/**
+ * THE TWO DEPLOY CONFIGS DESCRIBE THE SAME SITE.
+ *
+ * This repository ships both `public/_headers` (Netlify, Cloudflare Pages) and
+ * `vercel.json`, because they are not interchangeable and the wrong one is a
+ * SILENT no-op: a host reads its own file and ignores the other, so a header that
+ * exists in one of them and not the other is a header that is present or absent
+ * depending on where we happen to deploy. The conformance CLI says this about
+ * CORS in its own words, and it is the check most likely to pass locally and fail
+ * deployed.
+ *
+ * IT WAS MEASURED, NOT IMAGINED. On the deployed Netlify site the three §3.3
+ * artifacts returned `Access-Control-Allow-Origin: *` and
+ * `/broken/invalid.network.json` returned HTTP 200 with NO CORS header, because
+ * `vercel.json` has a `/broken/(.*)` rule and `public/_headers` listed only the
+ * three artifacts. `public/_headers` was also missing the `Cache-Control` the
+ * three artifacts get in `vercel.json` and the two response headers `vercel.json`
+ * sets on everything. Four differences, none of which anything in this repository
+ * would have noticed.
+ *
+ * WHY `/broken/*` IS CROSS-ORIGIN READABLE RATHER THAN DROPPED FROM BOTH. We
+ * publish three deliberately invalid networks SO THAT THE REFUSALS CAN BE WATCHED
+ * RATHER THAN TAKEN ON TRUST, and `docs/LIMITS.md`, the compose panel's own note
+ * and `docs/SUBMISSION-TEXT.md` — the text a judge reads — all say so in those
+ * words. A reader on another origin who cannot fetch them has to take
+ * our word for the refusals instead, which is the one thing those fixtures exist
+ * to avoid. Nothing is risked by serving them: an invalid network's only possible
+ * outcome in any conforming runtime is a refusal, which is the demonstration.
+ *
+ * The matchers below MODEL each host's path matching rather than reproducing it —
+ * `*` as a splat for `_headers`, the `source` as an anchored regular expression
+ * for `vercel.json`. That is sound for what this test does, which is compare the
+ * two configs WITH EACH OTHER over paths this repository actually publishes. It
+ * is not a claim about what either host does, and only a real response can be
+ * that: `tools/conformance` reads CORS off the wire, and `docs/RESULTS.md` records
+ * what the deployed sites returned.
+ *
+ * BREAKS IF: a rule is added to one config and not the other, a value drifts
+ * between them, or a path gains two rules that set the same header differently.
+ */
+describe("the deploy configs for both origins agree, path by path", () => {
+  const root = resolve(import.meta.dirname, "..");
+  const text = (p: string): string => readFileSync(resolve(root, p), "utf8");
+  type VercelConfig = { headers: { source: string; headers: { key: string; value: string }[] }[] };
+
+  /** Headers a `_headers` file sets for one path: every matching block, merged. */
+  function netlifyHeaders(file: string, path: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    let matching = false;
+    for (const raw of file.split("\n")) {
+      if (raw.trim() === "" || raw.trimStart().startsWith("#")) continue;
+      if (!/^\s/.test(raw)) {
+        const pattern = raw.trim();
+        const re = new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
+        matching = re.test(path);
+        continue;
+      }
+      if (!matching) continue;
+      const at = raw.indexOf(":");
+      expect(at, `${path}: header line without a colon: ${raw}`).toBeGreaterThan(0);
+      const key = raw.slice(0, at).trim();
+      const value = raw.slice(at + 1).trim();
+      if (key in out) expect(out[key], `${path}: two rules set ${key} differently`).toBe(value);
+      out[key] = value;
+    }
+    return out;
+  }
+
+  /** Headers a `vercel.json` sets for one path: every matching `source`, merged. */
+  function vercelHeaders(config: VercelConfig, path: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const rule of config.headers) {
+      if (!new RegExp(`^${rule.source}$`).test(path)) continue;
+      for (const { key, value } of rule.headers) {
+        if (key in out) expect(out[key], `${path}: two rules set ${key} differently`).toBe(value);
+        out[key] = value;
+      }
+    }
+    return out;
+  }
+
+  /** The published paths of one origin: its §3.3 artifacts, its fixtures, and a page. */
+  const deliPaths = [
+    "/agent-manifest.json",
+    "/vouch.network.json",
+    "/links.json",
+    // Read from disk, so a fourth broken fixture is covered without an edit here.
+    ...readdirSync(resolve(root, "public/broken")).map((f) => `/broken/${f}`),
+    "/index.html",
+  ];
+  const peerPaths = ["/agents/agent-manifest.json", "/agents/marrow_point.network.json", "/agents/links.json", "/index.html"];
+
+  const sites = [
+    { label: "deli", headers: "public/_headers", vercel: "vercel.json", paths: deliPaths },
+    { label: "peer", headers: "peer/public/_headers", vercel: "peer/vercel.json", paths: peerPaths },
+  ];
+
+  for (const site of sites)
+    test(`${site.label}: every published path gets the same headers from ${site.headers} and ${site.vercel}`, () => {
+      const file = text(site.headers);
+      const config = JSON.parse(text(site.vercel)) as VercelConfig;
+      for (const path of site.paths) expect(netlifyHeaders(file, path), `${site.label} ${path}`).toEqual(vercelHeaders(config, path));
+    });
+
+  /**
+   * And the §3.3 MUST itself, in both formats, for both origins: the published
+   * artifacts are readable from another origin. Asserted separately from the
+   * agreement above, because two configs that agree on serving no CORS at all
+   * would satisfy that one.
+   */
+  test("every published agent artifact carries CORS in both formats, on both origins", () => {
+    for (const site of sites) {
+      const file = text(site.headers);
+      const config = JSON.parse(text(site.vercel)) as VercelConfig;
+      for (const path of site.paths.filter((p) => p.endsWith(".json") && !p.startsWith("/broken/"))) {
+        expect(netlifyHeaders(file, path)["Access-Control-Allow-Origin"], `${site.label} ${path} (_headers)`).toBe("*");
+        expect(vercelHeaders(config, path)["Access-Control-Allow-Origin"], `${site.label} ${path} (vercel)`).toBe("*");
+      }
+    }
+  });
+
+  /**
+   * The broken fixtures are readable too, on the origin that publishes them. The
+   * claim they exist to support — "watched rather than taken on trust" — is a
+   * claim made to a reader who is not on our origin.
+   */
+  test("the deliberately broken networks are readable cross-origin, in both formats", () => {
+    const file = text("public/_headers");
+    const config = JSON.parse(text("vercel.json")) as VercelConfig;
+    const fixtures = readdirSync(resolve(root, "public/broken")).map((f) => `/broken/${f}`);
+    expect(fixtures.length).toBeGreaterThan(0);
+    for (const path of fixtures) {
+      expect(netlifyHeaders(file, path)["Access-Control-Allow-Origin"], `${path} (_headers)`).toBe("*");
+      expect(vercelHeaders(config, path)["Access-Control-Allow-Origin"], `${path} (vercel)`).toBe("*");
+    }
+  });
+});

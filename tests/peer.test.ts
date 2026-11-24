@@ -28,24 +28,35 @@
 //     Nothing here re-types either document, so a test cannot pass against a
 //     fixture that the deployment does not serve.
 //
-//     ONE EXCEPTION, AND IT IS THE POINT OF A WHOLE FIX ROUND: the peer's ORIGIN
-//     is a constant here, and the deli's three artifacts are served with the peer
-//     wired in, because the published ones no longer wire it. We published
-//     `allowed_peers: ["https://marrow-point-bakery.vercel.app"]` and a binding to
-//     it — a claimable `*.vercel.app` subdomain this project does not own and has
-//     never deployed. Anyone who registered that Vercel project name became an
-//     allow-listed peer of this site: fetched, parsed and run in a visitor's
+//     ONE EXCEPTION, AND IT IS THE REASON THE ORIGIN BELOW IS A CONSTANT: the
+//     peer's ORIGIN is written here, once, and asserted against the three
+//     published documents rather than read out of them. There are no fixture
+//     artifacts any more — `MANIFEST`, `NETWORK` and `LINKS` ARE the published
+//     files — so every block below runs against what we deploy.
+//
+//     THE HISTORY, WHICH IS WHY THE CONSTANT IS A PIN AND NOT A CONVENIENCE: we
+//     published `allowed_peers: ["https://marrow-point-bakery.vercel.app"]` and a
+//     binding to it — a claimable `*.vercel.app` subdomain this project did not own
+//     and had never deployed. Anyone who registered that Vercel project name became
+//     an allow-listed peer of this site: fetched, parsed and run in a visitor's
 //     browser on the visitor's own router, behind a consent card naming an origin
 //     that looked exactly like the bakery the site talks about. `docs/DECISIONS.md`
 //     had written the rule down first — "publishing an allow-list entry for an
 //     origin that does not exist is worse than publishing none" — and we did it
-//     anyway.
+//     anyway. The fields were then emptied, and this file tested the capability
+//     against the reserved `.example` TLD until an origin we control existed.
 //
-//     So this file keeps testing the capability, against an origin in the reserved
-//     `.example` TLD that nobody can register, and the §3.2 block below asserts
-//     that the PUBLISHED artifacts wire no peer at all. When a peer origin we
-//     control exists (`docs/OWNER-TODO.md` item 1), `PEER_ORIGIN` becomes the real
-//     one and the three fixture documents collapse back into the published ones.
+//     It exists: `docs/OWNER-TODO.md` item 1 ran, both halves are deployed, and
+//     the peer is the Netlify site below — ours, and serving. CHECKED RATHER THAN
+//     ASSUMED, because this file's whole point is that the documents it reads off
+//     disk are the ones a browser gets: a cross-origin GET of all three
+//     `/agents/*.json` with a cache-buster returned HTTP 200 with
+//     `access-control-allow-origin: *`, and each body was BYTE-IDENTICAL to the
+//     copy in `peer-dist/` that rule 1 reads. The rule it is held to has not
+//     changed: an allow-list entry names an origin WE control, and the day we stop
+//     controlling it the three fields empty again in one commit. A Netlify
+//     subdomain is released back to the pool if the site is deleted, so "we own
+//     it" is a fact with an expiry, not a property of the string.
 //  2. **Payloads, not intent.** Key isolation and private context are asserted by
 //     capturing every outbound request and reading its URL, query, headers and
 //     body at scan time. "A function was not called" proves nothing.
@@ -100,29 +111,25 @@ const PEER_VERCEL = readJson("peer", "vercel.json") as { headers: { source: stri
 /**
  * Everything about the peer's address except its ORIGIN comes from the peer's own
  * published manifest, not from a constant here: rename the network there and this
- * file follows it. The origin is the one invented value in this file, and it is
- * invented because there is no deployed peer to point at — see rule 1 above. It
- * is in the reserved `.example` TLD (RFC 2606), so it cannot be registered by
- * anyone, which is the property the published `*.vercel.app` host lacked.
+ * file follows it. The origin is the one value written out in this file, and it is
+ * written out rather than read from `public/links.json` ON PURPOSE — see rule 1
+ * above. Read from the binding it would assert nothing: whatever origin the
+ * allow-list named would be the origin the suite approved of. Written here, it is
+ * a pin, and the §3.2 block below holds all three published documents to it.
  */
 const SYMBOLIC = PEER_NETWORK_NAME;
-const PEER_ORIGIN = "https://marrow-point.example";
+const PEER_ORIGIN = "https://tubular-valkyrie-c8b80c.netlify.app";
 const PEER_REF = `${PEER_ORIGIN}/agents/${SYMBOLIC}`;
 
 /**
- * The deli's three artifacts AS THEY WILL READ once a peer origin exists: the
- * published documents, with the symbolic reference, its binding and its
- * allow-list entry put back. Everything downstream of here runs against these,
- * so this file tests the composition path rather than testing that the path is
- * currently unreachable. What is PUBLISHED is asserted in the §3.2 block.
+ * The deli's three artifacts, AS PUBLISHED. There is no fixture copy any more:
+ * the symbolic reference, its binding and its allow-list entry are in the files
+ * themselves, so everything downstream of here runs against what we deploy. They
+ * are read-only aliases — every test that needs a variant clones first.
  */
-const MANIFEST: Manifest = { ...structuredClone(PUBLISHED_MANIFEST), allowed_peers: [PEER_ORIGIN] };
-const NETWORK: NetworkConfig = (() => {
-  const n = structuredClone(PUBLISHED_NETWORK);
-  n.tools!.find((a) => a.name === "menu_guide")!.tools = [SYMBOLIC];
-  return n;
-})();
-const LINKS = { version: 1, networks: { vouch: { [SYMBOLIC]: PEER_REF } } };
+const MANIFEST: Manifest = PUBLISHED_MANIFEST;
+const NETWORK: NetworkConfig = PUBLISHED_NETWORK;
+const LINKS = PUBLISHED_LINKS;
 /** §3.2: the preceding path is the site base, the final component is the network name. */
 const PEER_BASE = PEER_REF.slice(0, PEER_REF.lastIndexOf("/"));
 const PEER_NAME = PEER_REF.slice(PEER_REF.lastIndexOf("/") + 1);
@@ -527,8 +534,8 @@ describe("the peer is a conforming agent site, on an origin of its own", () => {
   /**
    * INVARIANT: the binding has the §3.2 shape, so the base the runtime derives
    * really is where the peer's manifest is published. Asserted on the binding
-   * this file composes against — the one the deploy step will publish — because
-   * the published map binds nothing; the test below pins that.
+   * this file composes against, which is now the PUBLISHED one; the test below
+   * holds `public/links.json` to it.
    *
    * BREAKS IF: the binding gains a trailing slash, a query, or a path whose last
    * component is the peer's network name no longer — each of which would make the
@@ -543,63 +550,86 @@ describe("the peer is a conforming agent site, on an origin of its own", () => {
   });
 
   /**
-   * THIS SITE PUBLISHES NO PEER, AND THAT IS THE WHOLE STATEMENT.
+   * THIS SITE VOUCHES FOR EXACTLY ONE ORIGIN, AND IT IS ONE WE OWN.
    *
-   * We published an allow-list entry and a binding for a claimable
-   * `*.vercel.app` subdomain we do not own, which would have made whoever
-   * registered that project name an allow-listed peer of this site — run in a
-   * visitor's browser, on the visitor's own router, behind a consent card naming
-   * an origin the visitor had every reason to trust. The allow-list is the
-   * control that says "this origin is one we vouch for", and we were vouching for
-   * a stranger. `docs/DECISIONS.md` had refused this in writing first.
+   * This block replaces "the published artifacts vouch for no origin", which held
+   * the gap open while the three fields were empty. The history it recorded is
+   * why this one is written the way it is: we published an allow-list entry and a
+   * binding for a claimable `*.vercel.app` subdomain we did not own, which would
+   * have made whoever registered that project name an allow-listed peer of this
+   * site — run in a visitor's browser, on the visitor's own router, behind a
+   * consent card naming an origin the visitor had every reason to trust. The
+   * allow-list is the control that says "this origin is one we vouch for", and we
+   * were vouching for a stranger. `docs/DECISIONS.md` had refused it in writing
+   * first.
    *
-   * All three published files are asserted, because the exposure needed two of
-   * them and the third — the symbolic reference — cannot be left behind on its
-   * own: unresolved it is a `missing` tool to upstream's validator, which stops
-   * the site at startup rather than going quiet.
+   * So what is asserted is not "the list is non-empty" — that is the property the
+   * bad entry satisfied. It is that the list, the binding and the symbolic
+   * reference name ONE origin, that it is the origin pinned at the top of this
+   * file, and that no OTHER registrable third-party subdomain host appears in any
+   * published artifact. The blanket regex that forbade `*.vercel.app`,
+   * `*.netlify.app`, `*.pages.dev` and `*.github.io` outright could not survive
+   * our own peer being deployed on one of them, so it is kept as an
+   * allow-list-of-one instead of dropped: that class of host is permitted at
+   * exactly the origin we hold, and nowhere else.
    *
-   * BREAKS IF: a peer is wired into the published artifacts again. Then it should
-   * break, and the fix is `docs/OWNER-TODO.md` item 1: deploy an origin we
-   * control, wire all three files in one step, and point `PEER_ORIGIN` at it.
+   * All three published files are asserted together, because the exposure needed
+   * two of them and the third — the symbolic reference — cannot be left behind on
+   * its own: unresolved it is a `missing` tool to upstream's validator, which
+   * stops the site at startup rather than going quiet.
+   *
+   * BREAKS IF: a second origin is allow-listed, the binding or the reference goes
+   * missing or points somewhere else, or any published artifact names a different
+   * `*.vercel.app` / `*.netlify.app` / `*.pages.dev` / `*.github.io` host. If we
+   * ever give up the Netlify site, this is the test that has to be made red
+   * deliberately, by emptying all three fields again in one commit.
    */
-  test("the published artifacts vouch for no origin: no allow-list entry, no binding, no symbolic reference", () => {
-    expect(PUBLISHED_MANIFEST.allowed_peers).toEqual([]);
-    expect(PUBLISHED_LINKS.networks["vouch"]).toEqual({});
-    expect(symbolicRefs(PUBLISHED_NETWORK)).toEqual([]);
-    expect(manifestAllowsPeer(PEER_REF, PUBLISHED_MANIFEST)).toBe(false);
-    // And no published artifact carries a URL on a registrable third-party
-    // subdomain service. Scheme-anchored on purpose: the notes beside the two
-    // emptied fields name `*.vercel.app` in prose, which is the record of why
-    // they are empty and must not trip this.
+  test("the published artifacts wire exactly one peer: the origin pinned here, bound once and referenced once", () => {
+    expect(PUBLISHED_MANIFEST.allowed_peers).toEqual([PEER_ORIGIN]);
+    expect(PUBLISHED_LINKS.networks["vouch"]).toEqual({ [SYMBOLIC]: PEER_REF });
+    expect(symbolicRefs(PUBLISHED_NETWORK)).toEqual([SYMBOLIC]);
+    expect(manifestAllowsPeer(PEER_REF, PUBLISHED_MANIFEST)).toBe(true);
+    // Scheme-anchored on purpose: the notes beside those fields still name the
+    // withdrawn `*.vercel.app` host in prose, which is the record of what we did
+    // and must not trip this.
+    const SUBDOMAIN_HOST = /https?:\/\/[^"\s]*\.(?:vercel\.app|netlify\.app|pages\.dev|github\.io)[^"\s]*/g;
     for (const [label, doc] of Object.entries({
       manifest: PUBLISHED_MANIFEST,
       network: PUBLISHED_NETWORK,
       links: PUBLISHED_LINKS,
     }))
-      expect(JSON.stringify(doc), label).not.toMatch(/https?:\/\/[^"\s]*\.(vercel\.app|netlify\.app|pages\.dev|github\.io)/);
+      for (const url of JSON.stringify(doc).matchAll(SUBDOMAIN_HOST))
+        expect(new URL(url[0]).origin, `${label}: ${url[0]}`).toBe(PEER_ORIGIN);
   });
 
   /**
-   * AND THE PAGE DOES NOT OFFER A PEER THE PUBLISHED ARTIFACTS DO NOT BIND.
+   * AND THE PAGE SAYS WHAT THE PUBLISHED ARTIFACTS BIND — NO MORE AND NO LESS.
    *
    * The compose panel's note read *"Type marrow_point to load the one this site
    * is bound to: a bakery, on its own origin"*, and its input's placeholder was
-   * `marrow_point`. Emptying the allow-list without this would have left the page
-   * inviting a guest to load a network that resolves to nothing — the artifacts
-   * would be honest and the sentence a guest reads would not. The note is static
-   * text built before any artifact is fetched, so nothing derives it from the
-   * binding and nothing but a test can hold the two together.
+   * `marrow_point`. Emptying the allow-list without removing that would have left
+   * the page inviting a guest to load a network that resolves to nothing — the
+   * artifacts honest and the sentence a guest reads not. The note is static text
+   * built before any artifact is fetched, so nothing derives it from the binding
+   * and nothing but a test can hold the two together.
    *
-   * BREAKS IF: a peer name is written back into the panel's prose or its
-   * placeholder without a binding in `public/links.json`, or the placeholder stops
-   * naming a reference that loads.
+   * IT RUNS BOTH WAYS, which it did not before. Held one way only, it passed
+   * vacuously the moment a binding came back: the page could bind a peer and
+   * never mention it, and a guest would have no way to know the name to type. A
+   * tripwire that is satisfied by silence is the defect this project keeps
+   * finding, so the bound direction is asserted too.
+   *
+   * BREAKS IF: a peer name is written into the panel's prose or its placeholder
+   * without a binding in `public/links.json`, a peer is bound and the panel stops
+   * naming it, or the placeholder stops naming a reference that loads.
    */
-  test("the compose panel offers no peer name the published links.json does not bind", async () => {
+  test("the compose panel names every peer the published links.json binds, and no name it does not", async () => {
     const s = await session();
     const note = visibleTextOf(s.mount, "[data-compose] .panel-note");
     const placeholder = s.mount.querySelector<HTMLInputElement>("[data-compose-input]")!.placeholder;
     const bound = Object.keys(PUBLISHED_LINKS.networks["vouch"] ?? {});
-    if (!bound.includes(SYMBOLIC)) {
+    if (bound.includes(SYMBOLIC)) expect(note).toContain(SYMBOLIC);
+    else {
       expect(note).not.toContain(SYMBOLIC);
       expect(placeholder).not.toContain(SYMBOLIC);
     }
@@ -622,19 +652,17 @@ describe("the peer is a conforming agent site, on an origin of its own", () => {
     expect(PEER_ORIGIN).not.toBe(BASE);
     expect(new URL(PEER_REF).hostname).not.toMatch(/^(localhost|127\.|\[?::1)/);
     // And the allow-list that permits it is read TOP LEVEL, which is where the
-    // runtime reads it. The entry itself is this file's fixture; the published
-    // list is empty, asserted above.
+    // runtime reads it. `MANIFEST` is the published document, so this is the
+    // published entry.
     expect(manifestAllowsPeer(PEER_REF, MANIFEST)).toBe(true);
     expect(MANIFEST.allowed_peers).toEqual([PEER_ORIGIN]);
-    // THERE IS NO NESTED COPY, in the fixture or in what we publish. It used to be
-    // published as an empty array beside a top-level list naming the bakery, so the
-    // document read as deny-all to anyone who consulted the block the runtime does
-    // not read. §3.3 fixes no location for it ("peer policy"), and a second copy
-    // can only ever disagree.
-    for (const m of [MANIFEST, PUBLISHED_MANIFEST]) {
-      expect(Object.keys(m.peer_policy!)).not.toContain("allowed_peers");
-      expect(m.peer_policy!.mode).toBeUndefined();
-    }
+    // THERE IS NO NESTED COPY. It used to be published as an empty array beside a
+    // top-level list naming the bakery, so the document read as deny-all to anyone
+    // who consulted the block the runtime does not read. §3.3 fixes no location for
+    // it ("peer policy"), and a second copy can only ever disagree — which matters
+    // again now that the top-level list is not empty.
+    expect(Object.keys(MANIFEST.peer_policy!)).not.toContain("allowed_peers");
+    expect(MANIFEST.peer_policy!.mode).toBeUndefined();
   });
 
   /**
@@ -2320,10 +2348,11 @@ describe("a caller's binding is the caller's, and never touches the published fi
     expect(s.runtime.conversation).not.toBeNull();
     // And the published file is untouched, to the byte.
     expect(readFileSync(path).equals(before)).toBe(true);
-    // The publisher's own file still says what it said: it binds nothing, and a
-    // caller supplying a binding did not write one into it.
+    // The publisher's own file still says exactly what it said: the one binding it
+    // publishes, and nothing the caller supplied written into it.
     const onDisk = JSON.parse(readFileSync(path, "utf8")) as typeof LINKS;
-    expect(onDisk.networks["vouch"]).toEqual({});
+    expect(onDisk.networks["vouch"]).toEqual({ [SYMBOLIC]: PEER_REF });
+    expect(onDisk.networks["vouch"]!["other_bakery"]).toBeUndefined();
   });
 
   /**

@@ -1,10 +1,10 @@
 # Submission text — draft
 
 The Devpost form asks for "a text description of features and functionality". This is that text,
-ready to paste. Three placeholders remain, all marked `[…]`. Two of them — the live site and the
-second origin — fill themselves the moment the site is deployed. The third, `[one-line command]`,
-does not: it waits on whether the conformance CLI is published to npm or installed from the repo,
-which is a decision, not a measurement (`docs/OWNER-TODO.md` item 4).
+ready to paste. One placeholder remains, `[one-line command]`: it waits on whether the
+conformance CLI is published to npm or installed from the repo, which is a decision, not a
+measurement (`docs/OWNER-TODO.md` item 4). The two URLs are filled in — both origins are
+deployed — and they point at the Netlify sites, so they change if a custom domain is added.
 
 Written to be read by a judge who has forty entries to get through and will decide in the first
 twenty seconds whether this one is interesting.
@@ -13,7 +13,8 @@ twenty seconds whether this one is interesting.
 
 ## Vouch — a deli whose assistant may never tell you the food is safe
 
-**Live site:** `[deployed URL]` · **Second origin (the bakery):** `[peer URL]`
+**Live site:** `https://illustrious-kulfi-3c65a2.netlify.app` · **Second origin (the bakery):**
+`https://tubular-valkyrie-c8b80c.netlify.app`
 
 ### The one idea
 

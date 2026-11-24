@@ -1,6 +1,31 @@
+# §3.3: a public agent artifact fetched by a browser from another origin MUST be
+# permitted through standard cross-origin controls. The deploy target has to
+# honour this file (Netlify, Cloudflare Pages) or the equivalent vercel.json
+# beside it — a host reads one and ignores the other, so a rule written in only
+# one of them is present or absent depending on where we deploy, silently.
+# GitHub Pages cannot set a response header at all and is disqualified for that
+# reason. `tests/artifacts.test.ts` holds this file and vercel.json to each other,
+# path by path, because that is how the two came apart: on the deployed site the
+# three artifacts below carried CORS and /broken/ did not, and nothing in the
+# repository noticed.
+#
+# All THREE of §3.3's minimum public files, including the link map. A link map a
+# caller cannot fetch cross-origin states nothing to anyone.
 /agent-manifest.json
   Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=60
 /vouch.network.json
   Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=60
 /links.json
   Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=60
+# The three deliberately invalid networks are published SO THAT THE REFUSALS CAN
+# BE WATCHED RATHER THAN TAKEN ON TRUST, and that is a claim made to a reader who
+# is not on this origin. No cache header: a fixture is fetched to be refused, and
+# refusing it twice should not be served from a cache either time.
+/broken/*
+  Access-Control-Allow-Origin: *
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

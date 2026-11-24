@@ -115,11 +115,13 @@ measurement, and the §3.4 check stops being the entry's biggest unknown.
 3. **Re-check the measurement pass on the deployed build** — widths at 320/375/570/900/1440,
    contrast computed in the page, the no-JavaScript path. All three pass locally; this project has
    already shipped a layout bug that appeared only on the real site.
-4. **Put the three manifest fields back, in one commit** — `allowed_peers`, the `links.json`
-   binding, and `menu_guide.tools` — pointed at the real peer origin. They are empty right now
-   because we had published an allow-list entry for a claimable subdomain nobody owned. Separately
-   they break the site at startup rather than degrading; together they are correct. Then the peer
-   test's fixture origin moves to the real one.
+4. ~~**Put the three manifest fields back, in one commit**~~ — **done, 24 November 2026.**
+   `allowed_peers`, the `links.json` binding and `menu_guide.tools` are pointed at
+   `https://tubular-valkyrie-c8b80c.netlify.app`, in one commit, and the peer test's fixture
+   origin is now the real one. `public/_headers` gained the `/broken/*` CORS rule in the same
+   commit, because the deployed Netlify site was serving those fixtures without one while
+   `vercel.json` said otherwise. **Both need a redeploy to take effect**, and steps 1-3 above are
+   worth re-running after it: the artifacts they measure are the ones that changed.
 5. **Fill the placeholders** in `docs/SUBMISSION-TEXT.md` and re-shoot nothing — the screenshot
    shot list and the video script are both written against states I have confirmed render.
 

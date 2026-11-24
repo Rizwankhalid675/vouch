@@ -161,6 +161,28 @@ project can add — the checker and the verdict cards keep working with no key a
 they never call a model. A visitor with no AI provider still gets every safety answer this
 site can give.
 
+**The deliberately broken fixtures are served cross-origin, and both deploy configs now say so.**
+Measured on the deployed deli: the three §3.3 artifacts returned `Access-Control-Allow-Origin: *`
+and `/broken/invalid.network.json` returned HTTP 200 with no CORS header at all, because
+`vercel.json` carried a `/broken/(.*)` rule and `public/_headers` listed only the three artifacts
+— and we are deployed on Netlify, which reads the file that did not have it. The choice was real:
+drop the rule from `vercel.json` and declare the fixtures same-origin, or add it to `_headers`.
+**Added**, because those three networks exist so that the five refusals can be *watched rather
+than taken on trust*, and a reader on another origin who cannot fetch them has to take our word
+for it instead — which is the one thing they are published to avoid. Nothing is risked by
+serving them: the only possible outcome of loading an invalid network in a conforming runtime is
+a refusal, which is the demonstration. Two further differences fell out of the same comparison —
+`_headers` was missing the `Cache-Control` the three artifacts get in `vercel.json`, and the two
+response headers `vercel.json` sets on every path.
+
+**The defence is the test, not the fix.** Four differences existed because nothing could tell the
+two files apart except a deploy, and each host silently ignores the other's file. So
+`tests/artifacts.test.ts` now models each host's path matching and compares the two configs path
+by path, for both origins, over every path this repository publishes — including each file in
+`public/broken/`, read from disk, so a fourth fixture is covered without an edit. The peer's pair
+was compared the same way and already agreed. What the test cannot do is tell us what a host
+actually sends; only a response can, which is `tools/conformance`'s job and `RESULTS.md`'s record.
+
 **Repeated invocation is not a cycle.** The obvious cycle detector — a set of seen agent names
 — would refuse a guest who asks about two dishes, because that invokes the same agent twice.
 The specification forbids treating that as a cycle. Detection happens on the composition path
@@ -340,3 +362,29 @@ a third party*, and it is the only kind of claim in this project that a stranger
 of themselves later. Every other false sentence here was wrong the day it was written. This one
 would have become dangerous on a day nobody was looking, and nothing in the repository would
 have changed.
+
+**And the three fields are back in, 24 November 2026, for an origin we hold.** Both halves are
+deployed and the peer is `https://tubular-valkyrie-c8b80c.netlify.app` — a site this project
+created, serves and has fetched its artifacts from. `allowed_peers`, the `links.json` binding and
+`menu_guide`'s symbolic reference went in in one commit, for the same reason they came out in
+one: the reference without the binding is a `missing` tool to the validator, so the site would
+have refused to start rather than quietly losing a peer.
+
+Two things are deliberately different from the entry that was withdrawn, and both are answers to
+the question *what would make this one go the same way?*
+
+1. **The origin is pinned as a literal in `tests/peer.test.ts`, and all three published documents
+   are held to it.** The old three-way tripwire — reference bound, binding allow-listed — was
+   satisfied by the bad entry, because the three files agreed with each other perfectly about an
+   origin nobody owned. Agreement between our own files cannot distinguish an origin we hold from
+   one we do not. So the test that replaced *"the published artifacts vouch for no origin"* asserts
+   the identity of the origin, and permits a `*.vercel.app`, `*.netlify.app`, `*.pages.dev` or
+   `*.github.io` host at **exactly** that one address and nowhere else. A self-consistent swap to
+   another claimable host fails it; that mutation was run.
+2. **The rule has an expiry written beside it, in the artifact itself.** A Netlify subdomain is
+   ours while the site exists and returns to the pool if it is deleted, so "we own it" is a fact
+   about today, not a property of the string. `//allowed_peers` in the published manifest says
+   that, and says that giving the deployment up means emptying all three fields in one commit.
+   That is the honest residual: this entry is safe because of an account, and the repository
+   cannot check an account. A custom domain we register would move the fact out of Netlify's
+   control and is the only way to retire that caveat.

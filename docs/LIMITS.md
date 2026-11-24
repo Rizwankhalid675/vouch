@@ -434,9 +434,10 @@ The apostrophes in the value re-pair the quotes. `quotedTokensOnly` saw `'x'` an
 through untouched — then `ours(...)` declared the whole built string the site's own
 words. **That rendered an ungated safety claim in the deli's voice**, on
 `[data-compose-status]` and on the startup error line. It was not reachable while
-`allowed_peers` was `[]`, and `allowed_peers` is `[]` again — the entry Task 8
-published named an origin this project does not own, and it was withdrawn (§2.8
-below). **That is not why this was fixed and is not a reason to call it latent**: the
+`allowed_peers` was `[]`. It is not `[]` now: the entry Task 8 published named an
+origin this project did not own and was withdrawn, and it has been replaced by the
+origin of our own deployed second site (§2.8 below). **That is not why this was
+fixed and is not a reason to call it latent**: the
 compose field takes a URL the visitor types, a same-origin network needs no
 allow-list entry at all, and the three `/broken/` networks reach the same startup
 error line. A test drives it through the real walk with a hostile document served
@@ -1007,7 +1008,8 @@ a limits document that understates what a system does is as wrong as one that
 overstates it, and this file has already taken the stale-prose corrections §2.1
 enumerates.
 
-What the build now does, **once a peer is wired in**: `public/vouch.network.json`
+What the build now does, and what the published artifacts now wire:
+`public/vouch.network.json`
 names a peer network symbolically, `public/links.json` binds that name to a URL on a
 **second origin**, and `public/agent-manifest.json` lists that origin in its
 top-level `allowed_peers`.
@@ -1018,15 +1020,26 @@ validates the definition, and then **runs the peer's agents in this browser** on
 caller's router, under the caller's budgets. The answer comes back through the
 normal tool-result path and reaches the screen through `gate`.
 
-**What the deployed artifacts wire today: nothing.** All three fields are empty or
-absent — `allowed_peers` is `[]`, `links.json` binds no name, and
-`vouch.network.json` carries no symbolic reference. The entry we published named
+**What the deployed artifacts wire today: one origin, and it is ours.**
+`allowed_peers` names `https://tubular-valkyrie-c8b80c.netlify.app`, `links.json`
+binds `marrow_point` to `/agents/marrow_point` on it, and `vouch.network.json`
+gives `menu_guide` that symbolic reference. All three went in together, in one
+commit, because a symbolic reference whose binding is missing is a `missing` tool
+to the validator and stops the site at startup rather than degrading.
+
+**They were all empty for a round, and the rule that emptied them governs the
+entry that is there now.** The entry we had published named
 `marrow-point-bakery.vercel.app`, a **claimable `*.vercel.app` subdomain this
-project does not own and has never deployed**, so anyone who registered that Vercel
+project did not own and had never deployed**, so anyone who registered that Vercel
 project name would have been an allow-listed peer of this site — fetched, parsed
 and run in a visitor's browser, on the visitor's own router, behind a consent card
 naming an origin the visitor had every reason to trust. `DECISIONS.md` had written
-the refusal down before we committed it, in its own words.
+the refusal down before we committed it, in its own words. The rule is that an
+allow-listed origin is one **we control**, and it has an expiry that the string
+does not show: a Netlify subdomain returns to the pool if the site is deleted, so
+giving up that deployment means emptying all three fields in the same commit.
+`tests/peer.test.ts` pins the origin as a literal and holds all three published
+documents to it, so that is a deliberate act and not a drift.
 
 So the paragraph above describes a **capability that is built, tested and
 unreachable in the deployed build**, and this is the one place in this file that
@@ -1259,6 +1272,17 @@ Three honest costs:
   the published manifest declares one network, `vouch`, and §3.2 requires an exact
   name match, so nothing reaches them by accident. A test pins that they are not
   listed.
+
+  **"Exactly as a peer's artifacts are fetched" was not true on the deployed site
+  until this round, and that is worth recording rather than quietly fixing.**
+  `vercel.json` carried a `/broken/(.*)` CORS rule and `public/_headers` listed only
+  the three §3.3 artifacts, so on Netlify — where both halves are actually deployed
+  — the fixtures returned HTTP 200 with no `Access-Control-Allow-Origin`, and a
+  reader on another origin had to take the refusals on trust after all. Measured on
+  the live site, not reasoned about. Both configs now carry the rule, and
+  `tests/artifacts.test.ts` holds the two files to each other path by path, which is
+  the defence that was missing: the only thing that could tell them apart before was
+  a deploy.
 - Their external references are **site-root-relative** (`/broken/cycle-b`), which
   keeps them portable between localhost, a preview host and production but assumes
   the site is served at the origin root. Served from a subpath, the cycle pair would

@@ -111,10 +111,15 @@ log, filtered on the peer port, returned nothing. Consent is a gate, not a notic
 locally; a second contact asks again with the box unticked; declining reports that nothing was
 fetched.
 
-**And the deli publishes no peer today.** The allow-list entry this ran against named a claimable
-`*.vercel.app` subdomain we do not own, and it is withdrawn with its binding and its symbolic
-reference (`docs/DECISIONS.md`). The capability is unchanged and tested; what is empty is the
-three published fields, and they go back in at the deploy step (`docs/OWNER-TODO.md` item 1).
+**And the deli now publishes one peer: the second origin of this project.** The allow-list entry
+that run was made against named a claimable `*.vercel.app` subdomain we did not own, and it was
+withdrawn with its binding and its symbolic reference (`docs/DECISIONS.md`). All three fields are
+wired again, to `https://tubular-valkyrie-c8b80c.netlify.app` — a site we deploy and serve — in
+the one commit that `docs/OWNER-TODO.md` item 1 describes. The capability itself is unchanged
+since that run; what changed is that the published artifacts point at it. **The two-port loopback
+run above has not been repeated against the two deployed origins**, so what this file grades for
+checks 4-6 is still a loopback measurement plus a wiring change, and `docs/RESULTS.md` §4.5 is
+still the record of the only run there has been.
 
 **5 — No key at the peer, no router takeover.** Asserted on **captured request payloads**: every
 request a session makes is recorded at the moment it is made and its body read at scan time, so

@@ -22,9 +22,38 @@ interoperability checks stands and how strongly.
 
 ## 0. What is still missing, in one place
 
-The deploy is blocked on the owner: no `vercel`, `netlify` or `wrangler` is installed
-on this machine, there is no saved configuration for any of them, and the repository
-has no git remote. Nothing below was improvised around that.
+**The deploy has happened, and this section has not been re-measured since the commit
+that wired the peer in.** Both halves are live on Netlify — deli
+`https://illustrious-kulfi-3c65a2.netlify.app`, peer
+`https://tubular-valkyrie-c8b80c.netlify.app` — and the controller reports all six
+published artifacts returning HTTP 200 with `Access-Control-Allow-Origin: *` on a real
+cross-origin GET with a cache-buster, and the conformance CLI scoring **14 of 14
+machine-checkable checks pass, 0 fail, 6 not checked, exit 0** against each origin on
+24 November 2026. That measurement is the controller's, not this session's, and **it
+predates the commit that put the three peer fields back and brought `public/_headers`
+into line with `vercel.json`** — so B1-B3 below are to be re-run against the redeployed
+sites, and the figures that land then are the ones that belong in §4. The rows are kept
+as the list of what to run.
+
+**Three things were measured against the live sites in the wiring session itself**, with a
+cross-origin `Origin` header and a query cache-buster on every GET, and they are the reason
+two commits' worth of claims in this repository changed:
+
+1. **The peer serves all three `/agents/*.json` with `access-control-allow-origin: *`, HTTP
+   200**, and each body is **byte-identical** to the copy in `peer-dist/`. So the binding
+   published in `public/links.json` resolves to real documents, and the peer artifacts that
+   `tests/peer.test.ts` reads off disk are the ones a browser gets. The peer needs no redeploy.
+2. **`/broken/invalid.network.json` on the deli returned HTTP 200 with no CORS header at all**,
+   while the three §3.3 artifacts beside it returned `*`. `vercel.json` had a `/broken/(.*)`
+   rule and `public/_headers` did not, and Netlify reads the file that did not. Fixed in
+   `public/_headers`, with a test holding the two configs to each other (`DECISIONS.md`).
+3. **The deli's three live artifacts differ from `dist/`**, which is the expected state and the
+   one thing outstanding: the wiring is built, and the live site serves the previous build until
+   it is pushed again.
+
+The rest of this section was written while no origin existed: no `vercel`, `netlify` or
+`wrangler` is installed on this machine, there is no saved configuration for any of
+them, and the repository has no git remote. Nothing below was improvised around that.
 
 | # | Blocked item | Spec | Command to run the moment a URL exists |
 |---|---|---|---|
@@ -33,7 +62,7 @@ has no git remote. Nothing below was improvised around that.
 | B3 | The conformance CLI's verdict on the deployed site | §6 | as B2, and again for the peer: `npm run conformance -- https://<PEER-ORIGIN>/agents/marrow_point` |
 | B4 | Widths and contrast on the deployed build | — | open each origin at 320 / 375 / 570 / 900 / 1440px with a cache-buster; compute ratios in the page |
 | B5 | The no-JavaScript path on the deployed build | §3.1 | load the deployed page with scripting disabled |
-| B6 | The five CORS tests in our own suite | — | `npm run test:cors` (see §5 below — they are **skipped**, not passed, in this environment) |
+| B6 | ~~The five CORS tests in our own suite~~ — **run and passed, 24 November 2026**, in a shell that permits `listen(127.0.0.1)`; §5 has the figures and the caveat | — | `npm run test:cors` |
 
 **One thing to know before running B2 and B3: the CLI asks for a fresh copy, and asking
 is not insisting.** Every GET now carries `Cache-Control: no-cache` and
@@ -168,12 +197,15 @@ including the link-map check it could not have passed before it published one.
 | Private context is absent at the peer unless a named field is explicitly allowed | §6 | **not-demonstrated** | no browser |
 | An invalid network, a cycle, an over-budget request and a denied origin all stop visibly | §6 | **not-demonstrated** | *"it will not read the presence of a broken fixture on a site as evidence that anything refuses it."* We publish three broken networks at `/broken/`; the tool correctly declines to credit us for them. |
 
-**One figure in that table has gone stale since the run, and is left as it was read
-rather than edited to today.** The peer row's *"1 allowed peer origin declared"* was
-true on 24 November; `allowed_peers` is now `[]` (`docs/DECISIONS.md` — the origin we
-declared was one we did not own), so a re-run reports **0**. Nothing else in the table
-moves: `links.json` is still published, and with no symbolic reference left there is
-still nothing that fails to resolve. The run is dated and the figure belongs to the run.
+**One figure in that table has been through two changes since the run, and is left as it
+was read rather than edited to today, because the run is dated and the figure belongs to
+the run.** *"1 allowed peer origin declared"* was true on 24 November, for an origin we
+did not own; `allowed_peers` then became `[]` (`docs/DECISIONS.md`), and it is **1
+again** since the deploy — this time naming
+`https://tubular-valkyrie-c8b80c.netlify.app`, which we serve. So a re-run reports 1 for
+a different reason than the run did. One other thing moves with it: `vouch.network.json`
+carries a symbolic reference again, and `links.json` binds it, so a re-run has a
+reference to resolve rather than nothing. What it reports is for the re-run to say.
 
 **The one failure is the honest answer to what was measured.** The checker read the
 absent header off a real response to a GET carrying
@@ -521,31 +553,45 @@ What was observed, in order:
 
 Two caveats, because the row is only worth having if it carries them. The origins were
 loopback, so nothing here says anything about CORS or about HTTPS. And the binding it ran
-against no longer exists in the published artifacts at all — the allow-list is empty
-(`docs/DECISIONS.md`), so reproducing this run today requires pointing the built `dist/`
-at a local peer exactly as the run above did.
+against is not the one in the published artifacts: the entry it used was withdrawn
+(`docs/DECISIONS.md`), and what is published now points at the deployed peer on Netlify,
+not at a port. So reproducing this run still requires pointing the built `dist/` at a
+local peer exactly as the run above did — and the run that would supersede it is the same
+five observations made against the two deployed origins, which has not been done.
 
 ---
 
 ## 5. Build and test, exit codes read from `$?` with no pipes
 
-Run 24 November 2026, Node v26.13.1:
+Run 24 November 2026, Node v26.13.1. The last row is new: for the first time these five
+tests were **run** rather than skipped.
 
 | Command | Exit | Result |
 |---|---|---|
-| `npm test` | **0** | 495 passed, 5 skipped (500) across 12 files |
+| `npm test` | **0** | 515 passed, 5 skipped (520) across 12 files |
 | `npm run typecheck` | **0** | `tsc --noEmit`, strict |
-| `npm run build` | **0** | `dist/` — `index.html` 22,911 bytes |
+| `npm run build` | **0** | `dist/` and `peer-dist/`, since `build` is `build:site && build:peer` |
 | `npm run build:peer` | **0** | `peer-dist/` |
+| `npm run test:cors` | **0** | 10 passed (10) — the 5 CORS tests and the 5 shape checks beside them, demanded rather than skipped |
 
 The working tree was clean before and after; `dist/` points where it always points.
 
-**The 5 skipped tests are the conformance CLI's CORS tests, and they are skipped
-loudly rather than quietly.** This environment refuses to bind a loopback port
+**What the passing CORS gate does and does not say.** It binds a loopback server, serves a
+response with a header it controls, and reads what the CLI's CORS check makes of it — so what it
+measures is **the checker**, including that a header echoing some other origin fails and one
+echoing the probe's own `Origin` passes. It says nothing about any deployed host. It also needed
+a shell where `listen(127.0.0.1)` is permitted: in the sandboxed shell the rest of this file was
+measured in, the same command exits **1** with `EPERM`, which is the design — see below.
+
+**The 5 tests `npm test` still skips are those same CORS tests, and they are skipped
+loudly rather than quietly.** The default environment refuses to bind a loopback port
 (`EPERM: listen 127.0.0.1`) and those five assert on a real HTTP response from a real
 server by design. The suite prints a block saying so and saying that **nothing about
 CORS has been verified by that run** — because a suite expected to be red is how a real
-failure gets ignored. `npm run test:cors` fails rather than skipping. **B6.**
+failure gets ignored. `npm run test:cors` fails rather than skipping, which is how that
+EPERM was read as an environment limit rather than as a pass. **B6 is answered for the
+checker** by the run in the table above; what it was always going to leave open is a
+header on a deployed host, which is B2.
 
 ---
 

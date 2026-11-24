@@ -52,27 +52,41 @@ print. Two projects on one account is enough —
 they get different origins. The repo already builds both halves: `npm run build` produces
 `dist/` (the deli) and `peer-dist/` (the second site).
 
-**Three published fields are deliberately empty until the peer origin exists, and they go in
-together.** The site currently vouches for no external origin at all:
+**DONE, 24 November 2026 — the three published fields are wired, in one commit.** Both origins
+are deployed and the peer is ours, so the site vouches for exactly one external origin:
 
-| File | Field | Today | On deploy |
-|---|---|---|---|
-| `public/agent-manifest.json` | `allowed_peers` | `[]` | `["https://<PEER-ORIGIN>"]` |
-| `public/links.json` | `networks.vouch` | `{}` | `{ "marrow_point": "https://<PEER-ORIGIN>/agents/marrow_point" }` |
-| `public/vouch.network.json` | `menu_guide.tools` | `[]` | `["marrow_point"]` |
+| File | Field | Now |
+|---|---|---|
+| `public/agent-manifest.json` | `allowed_peers` | `["https://tubular-valkyrie-c8b80c.netlify.app"]` |
+| `public/links.json` | `networks.vouch` | `{ "marrow_point": "https://tubular-valkyrie-c8b80c.netlify.app/agents/marrow_point" }` |
+| `public/vouch.network.json` | `menu_guide.tools` | `["marrow_point"]` |
 
-All three in one commit, or the site breaks rather than degrades: a symbolic reference with no
-binding is a missing tool to the validator, which refuses the network at startup. Then point
-`PEER_ORIGIN` in `tests/peer.test.ts` at the real origin — the whole peer suite runs against a
-reserved-TLD fixture until then — and delete `tests/peer.test.ts`'s "the published artifacts
-vouch for no origin" test in the same commit, reading its comment first.
+All three went in together, because separately the site breaks rather than degrades: a symbolic
+reference with no binding is a missing tool to the validator, which refuses the network at
+startup. `PEER_ORIGIN` in `tests/peer.test.ts` is the real origin now and the peer suite runs
+against the published documents rather than a reserved-TLD fixture; "the published artifacts
+vouch for no origin" is gone, replaced by a test that the published artifacts wire **that one
+origin and no other** — including the `*.vercel.app` / `*.netlify.app` / `*.pages.dev` /
+`*.github.io` check, kept as an allow-list of one rather than dropped.
 
-**Why they are empty.** They were not. We published `allowed_peers:
-["https://marrow-point-bakery.vercel.app"]` and a binding to it, for a **claimable
-`*.vercel.app` subdomain nobody here owns** — so whoever registered that Vercel project name
-would have been an allow-listed peer of this site, run in a visitor's browser on the visitor's
-own key. If you deploy the peer to Vercel, that project name is fine to claim *because you will
-own it*; until then nothing may name it. `docs/DECISIONS.md` has the full record.
+**What is left for you here is the redeploy.** The live sites serve the build from before this
+commit, so the compose field will not load the peer until `dist/` and `peer-dist/` are pushed
+again. The same push carries a `public/_headers` fix: `/broken/*` had no CORS header on Netlify,
+so the three deliberately broken networks were not readable from another origin (`DECISIONS.md`).
+
+**One caveat that cannot be tested away.** The allow-listed origin is a Netlify subdomain, which
+is ours while that site exists and returns to the pool if it is deleted — the same class of host
+as the entry that was withdrawn, held safe by an account rather than by anything in the
+repository. If this entry is to outlive the hackathon, a custom domain is the fix; if the
+deployment is ever given up, all three fields empty again in one commit.
+
+**Why they were empty, which is why the entry that is there now is written the way it is.** We
+published `allowed_peers: ["https://marrow-point-bakery.vercel.app"]` and a binding to it, for a
+**claimable `*.vercel.app` subdomain nobody here owned** — so whoever registered that Vercel
+project name would have been an allow-listed peer of this site, run in a visitor's browser on the
+visitor's own key. The three files agreed with each other perfectly the whole time, which is why
+agreement between our own files is not the test: the origin's identity is. `docs/DECISIONS.md`
+has the full record.
 
 **Why this blocks more than the URL.** A list of things currently verified only on localhost,
 which is where this project has already been bitten once: the page layout at real widths, colour

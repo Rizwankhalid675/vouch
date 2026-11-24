@@ -362,7 +362,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       { class: "panel-note" },
       "A network is named by a URL whose last path component is its name. A network from another site runs here in " +
         "your browser, and you will be asked before anything is fetched from it; an origin this site does not list " +
-        "in its published allow-list is refused by name and never contacted. This site also publishes three " +
+        "in its published allow-list is refused by name and never contacted. Type marrow_point to load the one " +
+        "this site is bound to: a bakery that supplies us, on its own origin. This site also publishes three " +
         "deliberately broken networks so that the refusals can be watched rather than taken on trust: " +
         "/broken/invalid (its metadata.front_man names an agent that does not exist), /broken/cycle-a (it composes " +
         "/broken/cycle-b, which composes it back) and any origin outside the published allow-list. Nothing here " +

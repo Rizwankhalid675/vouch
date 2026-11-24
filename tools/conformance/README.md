@@ -250,7 +250,7 @@ instead of CORS.
 
 ## How well tested this is, exactly
 
-90 tests — 65 on the checks, 15 on the command line's exit codes, 10 on CORS. Each one was watched
+104 tests — 74 on the checks, 15 on the command line's exit codes, 10 on CORS, 5 on the structural invariant that an unreached check cannot carry a statement about the site. Each one was watched
 failing against a named one-line mutation of the implementation before it was kept, because a test
 nobody watched fail is not evidence. They run under the repository's root test runner, so
 `npm test` covers them and a change to this tool cannot be green in isolation.

@@ -167,15 +167,34 @@ the same qualifier (3) carries and for the same mechanism. Standing alone that s
 passes; after "We have the Reuben and the Turkey club." it is withheld. Prices are
 published data, so this is a false positive in the derivation check either way.
 
-That qualifier was missing here until Task 10, which makes it the **fifth** prose
-correction this file has taken — the others being the leak count that was right after
-one round and wrong after three, "applied without exception" when four surfaces were
-exempt and one was live, a tension called unresolved after being resolved, and two
-sentences saying a redirect case passed that is in fact refused. Nothing pins prose;
-495 passing tests said nothing about any of the five. That is why §2.6 and §3.4 now
-hold the two most expensive paragraphs in this document to the code and the data they
-describe, and it is the standing reason to re-read a sentence here rather than trust
-that something would have caught it.
+That qualifier was missing here until Task 10, and it joins the list below.
+
+**This file's prose corrections, enumerated here and counted nowhere else.** The figure
+had gone stale in four separate places at once — this paragraph said five, §2.8 said
+three, §4 said four, `DECISIONS.md` said three and `artifacts.test.ts` said "fourth" —
+on the one document whose subject is its own reliability, which is the costliest place
+in the project for two numbers to disagree. A count that has gone stale four times should
+not be a prose figure in five places. So it is a list, in one section, and every other
+mention points here instead of restating it:
+
+1. a leak count that was right after one round of Task 3's hardening and wrong after the
+   third;
+2. "applied without exception", when four surfaces were exempt and one of them was live
+   and exploitable;
+3. a tension described as unresolved after it had been resolved;
+4. two sentences saying a redirect case passed that is in fact refused;
+5. the price sentence above, which lost the qualifier that makes it a false positive
+   either way;
+6. this fix round's two — §2.8 describing a published peer in the present tense after
+   the allow-list entry was withdrawn, and §4.1 crediting the action vocabulary to §2.1,
+   a section that contains neither of the two words it was credited with.
+
+**Six.** Nothing pins prose, and the suite being green says nothing about a sentence:
+every one of these was found by a reader. That figure is held to the length of the list
+above by `tests/artifacts.test.ts`, which is the only reason it can be trusted at the
+top of a paragraph. It is also why §2.6 and §3.4 hold the two most expensive paragraphs
+in this document to the code and the data they describe, and it is the standing reason to
+re-read a sentence here rather than trust that something would have caught it.
 
 ### 2.1a What still leaks through the gate, and which of its two defences is weaker
 
@@ -884,7 +903,8 @@ test. They are never presented as a live generation.
 stopped at loaded-and-validated and that a peer's agents were never instantiated.
 That was true until Task 8 and is now false, so it is replaced rather than softened:
 a limits document that understates what a system does is as wrong as one that
-overstates it, and this file has corrected three stale claims already.
+overstates it, and this file has already taken the stale-prose corrections §2.1
+enumerates.
 
 What the build now does, **once a peer is wired in**: `public/vouch.network.json`
 names a peer network symbolically, `public/links.json` binds that name to a URL on a
@@ -1265,8 +1285,8 @@ Because the failure above was a document disagreeing with the data it describes,
 `trackedAllergens(RESTRICTIONS)`, and that §3.2's six declined ingredients are exactly
 the ones `data/restrictions.policy.md` declines. A twelfth restriction, or a change of
 mind about horseradish, fails a test until this section follows. Prose is what has gone
-stale four times in this file; these two sentences are the ones that could do it again
-most expensively.
+stale every time in this file — §2.1 enumerates each one — and these two sentences are
+the ones that could do it again most expensively.
 
 ---
 

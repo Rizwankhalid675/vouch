@@ -614,8 +614,10 @@ describe("links.json (§3.3 peer-network link map)", () => {
  * sentence is what a reader takes away; the paragraphs below it are for whoever
  * wants the arithmetic. Fix round 1 found it still saying 60 seconds against a
  * `maxElapsedMs` of 90, edited for `depth 4` in the same hunk that left the
- * seconds behind — the fourth correction this file has had for stale prose, and
- * the first three were all caught by a reader rather than by anything that runs.
+ * seconds behind — one of the prose corrections `LIMITS.md` §2.1 enumerates, and
+ * the earlier ones were all caught by a reader rather than by anything that runs.
+ * The count itself is pinned below, against that list, because it had gone stale in
+ * four places while it was a prose figure in five.
  *
  * So the numbers come from `DEFAULT_LIMITS` and the document is matched against
  * them. Every figure is asserted to be the ONLY one of its kind in the sentence,
@@ -708,7 +710,7 @@ describe("upstream provenance is self-consistent (Apache-2.0 §4, and our own st
  *
  * `LIMITS.md` §3 is the only place a guest can learn which allergens this site speaks
  * to and which it does not, and the §2.6 test exists because a sentence in that file
- * went stale four times with 495 tests green. This one exists because the same file
+ * went stale repeatedly with the suite green (§2.1 enumerates each time). This one exists because the same file
  * now carries a list that a data change can falsify, and the failure mode is worse
  * than a wrong number: a reader with a chickpea allergy acting on a boundary we had
  * since moved.
@@ -842,5 +844,73 @@ describe("the spec sections this project cites are the ones that carry the quote
       expect(src(p), p).not.toMatch(/§3\.4's "a missing key/);
       expect(src(p), p).toContain('§4\'s "a missing key MUST stop');
     }
+  });
+});
+
+/**
+ * THE COUNT OF THIS FILE'S OWN CORRECTIONS, HELD TO THE LIST THAT ENUMERATES THEM.
+ *
+ * `LIMITS.md` disagreed with itself about this in four places at once — §2.1 said
+ * five and enumerated five, §2.8 said three, §3.4 said four, `DECISIONS.md` said
+ * three, and this very file said "fourth" and "four times". On the one document
+ * whose subject is its own reliability, two numbers disagreeing is the costliest
+ * kind of defect there is, and it is the fifth correction's own subject.
+ *
+ * A figure that has gone stale four times should not be prose in five places. So
+ * §2.1 carries an enumerated list, every other mention points at it, and the
+ * figure at the head of that paragraph is asserted here to be the list's length.
+ * A future correction cannot be added to the list without the number following,
+ * and cannot be added to the number without the list following.
+ *
+ * BREAKS IF: an item is added to or removed from the list without the figure
+ * moving, the figure is edited without the list, or the figure is restated as a
+ * second numeral anywhere in §2.1.
+ */
+describe("docs/LIMITS.md §2.1 counts its own corrections once, from its own list", () => {
+  const limitsMd = readFileSync(resolve(import.meta.dirname, "..", "docs/LIMITS.md"), "utf8");
+  const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+
+  /** §2.1, up to the next `###` heading. */
+  const section = (): string => {
+    const start = limitsMd.indexOf("### 2.1 The gate withholds");
+    expect(start, "§2.1's heading").toBeGreaterThan(-1);
+    const rest = limitsMd.slice(start + 10);
+    const end = rest.indexOf("\n### ");
+    return end === -1 ? rest : rest.slice(0, end);
+  };
+
+  test("the stated figure is the length of the enumerated list, and is stated once", () => {
+    const s = section();
+    const anchor = s.indexOf("**This file's prose corrections, enumerated here and counted nowhere else.**");
+    expect(anchor, "the enumeration's own heading sentence").toBeGreaterThan(-1);
+    const block = s.slice(anchor);
+
+    // The list: consecutive `N.` items from 1, so a renumbering or a gap fails too.
+    const items = [...block.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
+    expect(items.length).toBeGreaterThan(1);
+    expect(items).toEqual(items.map((_, i) => i + 1));
+
+    // The figure, as a word, on its own line in bold.
+    const stated = block.match(/\*\*([A-Z][a-z]+)\.\*\*/);
+    expect(stated, "the bold figure after the list").not.toBeNull();
+    expect(WORDS.indexOf(stated![1]!.toLowerCase()), `"${stated![1]}" is not a count word`).toBeGreaterThan(-1);
+    expect(WORDS[items.length], `the list has ${items.length} items`).toBe(stated![1]!.toLowerCase());
+
+    // And no second count of the same thing in this section, which is how four
+    // places came to disagree: the figure is the list's length or it is not here.
+    const others = [...s.matchAll(/\b(three|four|five|six|seven|eight)\b\s+(?:prose\s+)?corrections?\b/gi)];
+    expect(others.map((m) => m[0]), "a second stated correction count in §2.1").toEqual([]);
+  });
+
+  test("nothing else in the shipped documents restates the figure", () => {
+    const files = ["docs/LIMITS.md", "docs/DECISIONS.md", "docs/RESULTS.md", "docs/CONFORMANCE-STATUS.md", "docs/SUBMISSION-TEXT.md"];
+    const restating =
+      /(?:has been|have been|was|were)\s+corrected\s+(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+times/gi;
+    const found: string[] = [];
+    for (const f of files) {
+      const text = readFileSync(resolve(import.meta.dirname, "..", f), "utf8");
+      for (const m of text.matchAll(restating)) found.push(`${f}: ${m[0]}`);
+    }
+    expect(found, "the count belongs to §2.1's list and to nowhere else").toEqual([]);
   });
 });

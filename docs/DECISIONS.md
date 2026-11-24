@@ -272,11 +272,14 @@ is mentioned. The limits document had said this more precisely than the commit d
 unbacked claim, in the file a reader takes as the argument, on a project about not making
 unbacked claims.
 
-**The limits document has been corrected three times**: a leak count that was accurate after
-one fix round and wrong after the third, a claim that a rule had been "applied without
-exception" when four surfaces were exempt and one was live, and a tension described as
-unresolved after it had been resolved. Every one of these was in prose. Nothing pins prose,
-and 324 passing tests say nothing about a sentence.
+**The limits document keeps needing prose corrections**, and `LIMITS.md` §2.1 enumerates
+them — the count is stated there and nowhere else, because it went stale in four places at
+once while it was a prose figure in five. The first three were a leak count that was
+accurate after one fix round and wrong after the third, a claim that a rule had been
+"applied without exception" when four surfaces were exempt and one was live, and a tension
+described as unresolved after it had been resolved. Every one of them was in prose. Nothing
+pins prose, and the suite being green said nothing about a sentence: 324 tests passed at the
+time of the third, 495 at the fifth.
 
 **A consent card told a visitor "This reads only." about running a stranger's code.**
 The card that asks permission to load another site's agents said, in one breath, that those

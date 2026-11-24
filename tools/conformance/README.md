@@ -9,7 +9,7 @@ read, checks what can be checked from a shell, and **tells you plainly which che
 make.**
 
 ```
-$ npx agentic-web-conformance https://example.com/agents/local_services
+$ node cli.ts https://example.com/agents/local_services
 ```
 
 That last part is the point of the tool. Several of the specification's interoperability checks need
@@ -29,15 +29,18 @@ implies coverage it does not have is worse than no tool, so:
 Node 22.18 or later. No build step, no dependencies, nothing to compile.
 
 ```bash
-# one-off
-npx agentic-web-conformance https://example.com/agents/my_network
-
-# or copy this directory anywhere and run it
+# copy this directory anywhere and run it -- that is the whole install
 node cli.ts https://example.com/agents/my_network
 
 # machine-readable, for CI
 node cli.ts https://example.com/agents/my_network --json
 ```
+
+**It is not on npm yet.** The package is ready to publish (`npm publish --access public`
+from this directory), but whether to take the name is the owner's call and has not been made. Until
+it is, `npx agentic-web-conformance` will not resolve — copy the directory, or run it from a
+checkout. Nothing about the tool changes either way; it has no dependencies and no build step
+precisely so that copying it is enough.
 
 The tool ships TypeScript and is executed directly: Node strips the types on load, which is on by
 default from 22.18. That is why there is no `dist/` and no install step.
@@ -190,7 +193,8 @@ the output differently can see exactly what was decided and why.
 ## Using it in CI
 
 ```yaml
-- run: npx agentic-web-conformance https://example.com/agents/my_network
+- run: node tools/conformance/cli.ts https://example.com/agents/my_network
+# ...or, once this is on npm: npx agentic-web-conformance https://example.com/agents/my_network
 ```
 
 It exits non-zero on a failure and zero otherwise, so that one line is enough. Add `--json` and keep

@@ -50,9 +50,11 @@ reassurance. Rendering a model-supplied verdict does not compile.
   deliberately broken networks are **published** at `/broken/`, so the refusals can be watched
   rather than taken on trust.
 - **Cross-origin composition behind real consent.** Another site's published agent network loads
-  after approval and runs locally, in the visitor's browser, on the visitor's own router. Before
-  approval, **zero network requests reach the other origin** — consent is a gate, not a notice. A
-  second contact asks again. And a peer's prose is not a safety source that happens to be remote:
+  after approval and runs locally, in the visitor's browser, on the visitor's own router. **The
+  fetch does not start until the visitor approves** — the request is not issued and then
+  cancelled; the call is never made, which the test suite holds by leaving the consent promise
+  unresolved and asserting that nothing was fetched. Consent is a gate, not a notice. A second
+  contact asks again. And a peer's prose is not a safety source that happens to be remote:
   it goes through the **same gate** as our own model's, so a peer claiming a dish is dairy-free
   has that claim *withheld* and the card beside the dish still shows this site's own verdict,
   computed from this site's own ingredient data. Nothing fetches a peer's ingredient data; trust

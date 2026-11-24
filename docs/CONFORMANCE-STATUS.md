@@ -18,10 +18,10 @@ Last updated 24 November 2026. `docs/OWNER-TODO.md` lists what is blocked and on
 
 | # | Check | Status | How strongly |
 |---|---|---|---|
-| 1 | Publish a two-agent network and manifest from an ordinary HTTPS host | Built; not hosted | **needs a deployed origin** |
+| 1 | Publish a two-agent network and manifest from an ordinary HTTPS host | **Deployed, both origins** | **verified on the live site** |
 | 2 | Load and run it with the published default router; demonstrate BYOK too | BYOK path yes; funded-default no | tested; **no browser run with a provider key** |
 | 3 | Call an internal agent **and** a grounded capability via MCP or a site action | Yes, via site actions | tested |
-| 4 | After approval, load an exact named network from a second origin, run it locally | Built; **no peer wired in what we publish** | **browser-verified across two loopback origins** |
+| 4 | After approval, load an exact named network from a second origin, run it locally | **Done, two deployed HTTPS origins** | **browser-verified live; the gate itself is test-evidenced** |
 | 5 | The second site never receives the user's key and cannot change the caller's router | Yes | **payload-asserted** |
 | 6 | Private context absent at the peer unless explicitly allowed | Yes | **payload-asserted** |
 | 7 | Stop an invalid network, a composition cycle, an over-budget request and a denied origin, visibly | Five refusals, not four | tested; three browser-verified |
@@ -142,6 +142,51 @@ site can give.
 Three are confirmed rendering on the built site — invalid network, composition cycle, and a
 refused contact. Three deliberately broken networks are **published** at `/broken/`, so the
 refusals can be watched rather than taken on trust.
+
+---
+
+## Deployed, 24 November 2026 — and the §3.4 check is closed
+
+Both sites are live, public, and served by Netlify, which honours `public/_headers`:
+
+- **Deli:** `https://illustrious-kulfi-3c65a2.netlify.app`
+- **Peer (Marrow Point Bakery):** `https://tubular-valkyrie-c8b80c.netlify.app`
+
+**CORS is proven on real responses.** A cross-origin GET carrying
+`Origin: https://agentic-web-conformance.invalid`, cache-busted, against all six published
+artifacts across both origins: every one returns `200` with `Access-Control-Allow-Origin: *`.
+That was the one check that passes locally in every wrong configuration, and it is now measured
+rather than configured.
+
+**Our own checker, against both live origins: 14 of 14 machine-checkable checks pass, 0 failed,
+6 NOT CHECKED, exit 0 — on each.** The six declined are the six that need a browser and a model.
+
+**What the real host found that local testing could not.** On the first deploy,
+`/broken/invalid.network.json` returned `200` with **no** `Access-Control-Allow-Origin`:
+`vercel.json` had a rule for `/broken/(.*)` and `_headers` did not. Chasing it turned up two more
+— `_headers` was also missing the `Cache-Control` on the three artifacts and the
+`nosniff`/`Referrer-Policy` pair, so the live site served **neither security header**. Both files
+now agree, a test holds them to each other path by path, and the live responses carry all of it.
+
+**Fidelity of what is served.** All six published artifacts are **byte-identical** to the build,
+by SHA-256 on cache-busted fetches. `index.html` is **not**: Netlify injects a 326-byte HTML
+comment (a marketing line with a UTM link). It is a comment — no script, no DOM node — and the
+deployed page has one script tag, ours, and zero injected scripts. So "the published artifacts are
+byte-identical" is true and "the deployed page is byte-identical" is false; both are stated rather
+than rounded.
+
+**The deployed measurement pass.** Silent console; no horizontal scroll and nothing overflowing at
+320, 375 and 1440; contrast identical to local, minimum 7.36 against AAA's 7.0; the no-JavaScript
+path correct in the served markup (34 verdict slots, 34 ingredient blocks, one script tag, no
+agent-panel text).
+
+**The cross-origin flow, on two real HTTPS origins.** The consent card names the live bakery
+origin and carries the corrected effect clause — *"This runs their code in this browser."* The
+remember box is unticked. After approval the peer loads and validates, and the status names the
+exact URL composed. See `docs/RESULTS.md` §4.5 for what this run does **not** establish: the
+browser's network panel does not record cross-origin requests from that tab, so it cannot be used
+to show that nothing was fetched before approval. That property is held by the test suite, which
+leaves the consent promise unresolved and asserts the fetch was never called.
 
 ---
 

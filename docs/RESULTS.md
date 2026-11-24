@@ -541,11 +541,26 @@ What was observed, in order:
 1. The consent card renders with the destination and the arguments in `data-not-ours`
    nodes, and states the architecture at the moment it matters: *"Your provider key is
    not sent there. Nothing it says can change the verdict beside a dish."*
-2. **Before approval, zero network requests reached the peer origin.** The browser's own
-   network log, filtered on the peer port, returned *"No requests matching 4179"*. Not
-   "the card appeared first" — nothing went out. This is the part worth keeping: §6's
-   *"After user approval"* demonstrated rather than asserted, and it is a property of the
-   browser's own record rather than of a test's bookkeeping.
+2. The peer loaded **only after** approval: card first, then approval, then the load.
+   That is a sequence this run observed and it is true.
+
+   **A claim that stood here has been withdrawn, 24 November 2026.** It said: *"Before
+   approval, zero network requests reached the peer origin — the browser's own network
+   log, filtered on the peer port, returned 'No requests matching 4179'."* That was
+   called the strongest single result this project had, and three §6 grades leaned on it.
+
+   It does not survive a check of the instrument. Repeating the run on the two **deployed**
+   origins, the same network panel reported no requests to the peer origin **after** a
+   successful load, and then reported none for a page-initiated `fetch()` to that origin
+   that returned HTTP 200 in the same breath. So the panel does not record cross-origin
+   requests from that tab at all: an absence in it is not evidence of an absence on the
+   wire, and the original measurement never established that the recorder could show a
+   request if one existed.
+
+   This is the project's own rule about mutation testing, applied to a measurement rather
+   than to a test: an instrument that reports nothing has to be shown capable of reporting
+   something before its silence counts. The evidence for the gate is now **§4.6's test
+   evidence**, which is in-process and cannot miss a call — not a browser panel.
 3. After approval the peer loads, validates and runs locally, and the status line says
    so.
 4. A **second** contact asked again, with the remember box still unticked.

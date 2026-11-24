@@ -144,7 +144,11 @@ export class RedirectedOriginError extends RuntimeMessage {
       text: ours(
         "Refused: that request was redirected to a different origin, which makes it a new destination and needs approval of its own. You approved the first origin below; the answer came from the second, and that one you have not approved, so nothing from it was parsed, run or shown as another site's words. It did receive the request before that could be known.",
       ),
-      quotedLabel: ours("What was asked for, then the origin the response came back from:"),
+      // "Where", not "the origin": this error also carries a landing VALUE that
+      // is not an origin at all — an unparseable URL, or a `javascript:` or
+      // `data:` one whose origin is opaque. Calling that an origin on the page
+      // would be the document overstating what it has, in one word.
+      quotedLabel: ours("What was asked for, then where the response came back from:"),
       quoted: [requested, landedOn],
     });
     this.name = "RedirectedOriginError";
@@ -525,15 +529,41 @@ export function landingCheck(
   const now = deps.now ?? Date.now;
   const asked = normOrigin(requested);
   return (finalUrl: string): void => {
-    // `normOrigin` DOES NOT THROW: on a parse failure it returns the string it
-    // was given (`upstream/router.ts`). So an unparseable final URL arrives here
-    // as a non-origin string, which matches neither `asked` nor the site's own
-    // origin and is in no allow-list, and is refused by the ordinary path below
-    // with `reason: "not_allow_listed"`. A test asserts that, because it used to
-    // be asserted by a `try/catch` that could not run — a dead branch inside a
-    // security check with a comment as the only thing claiming it worked, which
-    // is the shape of fix round 1's finding 1.
-    const landed = normOrigin(finalUrl);
+    /*
+     * THE LANDING VALUE MUST BE AN HTTP(S) ORIGIN, AND THAT IS REFUSED HERE.
+     *
+     * Not by `normOrigin`, which does not throw — it returns the string it was
+     * given on a parse failure (`upstream/router.ts`) — and not by the allow-list
+     * below, which would reject a non-origin string but only incidentally.
+     *
+     * Round 3 deleted an unreachable `try/catch` here and left the guarantee to
+     * that incidental rejection. Round 4 reversed it, on the reason round 2 gave
+     * for keeping a redundant control: THE IMPLICATION WAS A PROPERTY OF ANOTHER
+     * FUNCTION. `manifestAllowsPeer` refusing `"not a url at all"` is not what
+     * that function is for, nobody maintaining it would know this check leans on
+     * it, and "be more lenient about inputs that are not quite origins" is a
+     * plausible change that would open this silently. A security check does not
+     * rest on a side effect of a function one file away, whichever way the
+     * dependency runs.
+     *
+     * The protocol test is not belt-and-braces. `javascript:`, `data:` and
+     * `file:` URLs all PARSE, so a parse check alone lets them through, and their
+     * `origin` is the string `"null"` — not somewhere anything may be fetched
+     * from, and not something to compare against an allow-list. This refuses
+     * them as what they are.
+     */
+    const parsed = ((): URL | null => {
+      try {
+        return new URL(finalUrl);
+      } catch {
+        return null;
+      }
+    })();
+    if (parsed === null || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) {
+      deps.trace?.({ at: now(), event: "peer_redirect_refused", detail: { requested, url: finalUrl, reason: "not_an_origin" } });
+      throw new RedirectedOriginError(requested, finalUrl);
+    }
+    const landed = parsed.origin;
     if (landed === asked) return;
     deps.trace?.({ at: now(), event: "redirect_offsite", detail: { requested, landedOn: landed, url: finalUrl } });
     // The caller's OWN origin is not a third-party destination, so the consent

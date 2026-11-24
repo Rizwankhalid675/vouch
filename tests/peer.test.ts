@@ -1233,7 +1233,36 @@ describe("consent blocks the fetch, rather than announcing it", () => {
     expect(() => check(`${PEER_ORIGIN}/agents/canonical/marrow_point.network.json`)).not.toThrow();
   });
 
-  test("...and a final URL that cannot be parsed is refused, through the path that actually runs", () => {
+  /**
+   * ...AND A LANDING VALUE THAT IS NOT AN HTTP(S) ORIGIN IS REFUSED BY ITS OWN
+   * CHECK, not by the allow-list happening to reject it.
+   *
+   * Two rounds of history, because the second correction reversed the first.
+   *
+   * Round 3 deleted a `try/catch` around `normOrigin` that could never run —
+   * `normOrigin` returns the string it was given on a parse failure — and left
+   * the guarantee to the ordinary path: a non-origin string is in no allow-list,
+   * so `manifestAllowsPeer` refused it. Round 4 ruled that wrong, on the reason
+   * round 2 gave for keeping a redundant control: **the implication was a
+   * property of a different function.** `manifestAllowsPeer` rejecting
+   * `"not a url at all"` is incidental to what that function is for, nobody
+   * maintaining it would know this check depends on it, and "be more lenient
+   * about inputs that are not quite origins" is a plausible change that would
+   * silently open this.
+   *
+   * So the refusal is explicit and local, and it covers the case the allow-list
+   * path handled only by accident: an OPAQUE origin. `javascript:`, `data:` and
+   * `file:` URLs all parse — `new URL` does not throw on them — and their
+   * `origin` is the string `"null"`, which is not somewhere anything may be
+   * fetched from. The protocol test is what catches those. It is the same http(s)
+   * rule `manifestAllowsPeer` applies, duplicated on purpose: that is the point
+   * of the ruling.
+   *
+   * BREAKS IF: the guard goes away (all six fall through to `not_allow_listed`),
+   * or the protocol test is dropped while the parse check stays (the three opaque
+   * ones fall through).
+   */
+  test("...and a final URL that is not an http(s) origin is refused by its own check", () => {
     const seen: TraceEntry[] = [];
     const check = landingCheck(PEER_HOCON_URL, {
       siteBase: BASE,
@@ -1241,15 +1270,18 @@ describe("consent blocks the fetch, rather than announcing it", () => {
       consent: new SessionConsent(),
       trace: (e) => seen.push(e),
     });
-    for (const junk of ["", "not a url at all", "://", "javascript:alert(1)"]) {
+    const notOrigins = ["", "not a url at all", "://", "javascript:alert(1)", "data:application/json,{}", "file:///etc/passwd"];
+    for (const junk of notOrigins) {
       expect(() => check(junk), junk).toThrow(/redirected to a different origin/);
     }
-    expect(seen.filter((e) => e.event === "peer_redirect_refused").map((e) => e.detail["reason"])).toEqual([
-      "not_allow_listed",
-      "not_allow_listed",
-      "not_allow_listed",
-      "not_allow_listed",
-    ]);
+    // Every one of them refused by THIS check, with its own reason. Asserted as
+    // the exact list, so one falling through to the allow-list fails.
+    expect(seen.filter((e) => e.event === "peer_redirect_refused").map((e) => e.detail["reason"])).toEqual(
+      notOrigins.map(() => "not_an_origin"),
+    );
+    // And none was recorded as an off-origin redirect, because none of them is an
+    // origin to have landed on.
+    expect(seen.some((e) => e.event === "redirect_offsite")).toBe(false);
   });
 });
 

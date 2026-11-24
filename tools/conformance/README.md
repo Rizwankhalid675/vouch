@@ -156,6 +156,27 @@ just the presence, because a header naming one specific caller is not a pass for
 If you run it against `localhost` the CORS result says so in as many words: it is evidence about the
 server on your machine and nothing else. Run it again against the deployed origin.
 
+### Freshness: it asks, and a request header cannot insist
+
+Every GET carries `Cache-Control: no-cache` and `Pragma: no-cache`, because a CDN serving a previous
+build would make every result above a statement about the wrong artifact — which is the classic way
+to "verify" something that is not deployed.
+
+**That is a request, not a guarantee, and the distinction matters for the CORS check in particular.**
+An edge cache configured to ignore client cache directives will serve a stale object anyway, and
+nothing a client sends can force otherwise. If a result surprises you right after a deploy, confirm
+it by hand before believing either answer:
+
+```
+curl -sSI -H "Origin: https://agentic-web-conformance.invalid" \
+  "https://example.com/agent-manifest.json?cb=$(date +%s)" | grep -i "^access-control-allow-origin"
+```
+
+**This tool will not do that for you, deliberately.** Appending `?cb=…` changes the URL under test,
+and §3.2 derives the network name from the final path component — so a cache-buster in the tool
+would mean reporting on an address no visitor uses. Changing the thing you are measuring is worse
+than measuring it once more by hand.
+
 ---
 
 ## What it does **not** check
@@ -258,7 +279,7 @@ instead of CORS.
 
 ## How well tested this is, exactly
 
-108 tests — 74 on the checks, 15 on the command line's exit codes, 10 on CORS, and 9 on the structural invariants: that an unreached check cannot carry a statement about the site, and that the set of checks a run reports is the same in every state, whatever answered. Each one was watched
+109 tests — 75 on the checks, 15 on the command line's exit codes, 10 on CORS, and 9 on the structural invariants: that an unreached check cannot carry a statement about the site, and that the set of checks a run reports is the same in every state, whatever answered. Each one was watched
 failing against a named one-line mutation of the implementation before it was kept, because a test
 nobody watched fail is not evidence. They run under the repository's root test runner, so
 `npm test` covers them and a change to this tool cannot be green in isolation.

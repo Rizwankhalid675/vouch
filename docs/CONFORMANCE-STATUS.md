@@ -50,22 +50,33 @@ the real situation and we name it rather than resolving it in our own favour.
 Our own conformance checker scores this `not-demonstrated` with the reason — never a quiet pass.
 A strict reader may mark it unmet, and that is the correct way to lose a point.
 
-Corroboration, since it was checked rather than assumed: upstream's real `selectTopRouter`
-(`nsdeploy/runtime/engine.js` at the pinned revision) was run against `public/agent-manifest.json`
-in five configurations and none throws — with no key it returns our published default, and with a
-visitor key it upgrades to `byok_router` and reports `upgradedToByok: true`. So the manifest is
-runnable by the reference consumer in both modes, which is a smaller claim than "the default path
-runs without a key" and is the one we are entitled to. Our manifest publishes no
-`publisher_funded` key at all, so it makes no claim that this site pays for inference — the claim
-it would be easiest to make by accident. Figures and commands in `docs/RESULTS.md` §3.3.
+Corroboration, from two different reference runtimes, both checked rather than assumed. They are
+named by repository and path because this project has two "upstreams" whose organisation names
+differ by one letter.
 
-**A corroboration that used to sit here has been withdrawn.** This file said upstream's current
-runtime gates publisher funding behind an explicit `llm_router.publisher_funded === true` and
-reports `publisherFunded: false` against our manifest. It could not be reproduced: that key
-appears nowhere in `cognizant-ai-lab/nsdeploy` at the pin or at `main` `71b5037`, nor in
-`cognizant-ai-lab/neuro-san` at `main` `a5537db`. `publisher_funded` **is** a key our own
-conformance CLI looks for, which is the likeliest source of the mix-up. The reading it was
-offered to support does not depend on it.
+**The starter runtime** — `cognizant-ai-labs/agentic-web` (organisation *plural*), the event's own
+spec-and-starter repository, at commit `d67755e762`,
+`skills/agentify-website/runtime/engine.js:56-73` — gates publisher funding behind an explicit
+`llm_router.publisher_funded === true` and exports `isPublisherFundedRouter`. Run against
+`public/agent-manifest.json` it reports **`publisherFunded: false` in all five configurations with
+no error**, and `isPublisherFundedRouter` is false for both our routers. So the manifest makes no
+claim that this site pays for inference — the claim it would be easiest to make by accident.
+
+Sharper, as a counterfactual: `skills/agentify-website/scripts/build_network.mjs:667-673` refuses a
+manifest whose `byok_router` equals its `base_url` *when* `publisher_funded` is true — and **ours
+are equal**. Setting that one flag would have our own manifest refused by the event's own build
+check. Verified both ways. The refusal arrived in commit `9fb36d3dbe`.
+
+**The adapted runtime** — `cognizant-ai-lab/nsdeploy` (organisation *singular*), pinned in
+`docs/vendor/PROVENANCE.md`, whose `selectTopRouter` is what `src/runtime/upstream/router.ts` is
+adapted from — runs our manifest in five configurations without throwing: our published default
+with no key, an upgrade to `byok_router` with one. That is a smaller claim than "the default path
+runs without a key" and is the one we are entitled to.
+
+The two runtimes' `selectTopRouter` differ in exactly this area — the starter's returns a
+`publisherFunded` field and the adapted one does not — so neither is called simply "upstream" here.
+Figures, commands and the one-letter trap that briefly cost this claim a wrong withdrawal are in
+`docs/RESULTS.md` §3.3 and `docs/LIMITS.md` §2.5a.
 
 **3 — An internal agent and a grounded capability.** Four registered site actions
 (`get_menu_state`, `check_safety`, `add_to_cart`, `checkout_demo_order`), each published with

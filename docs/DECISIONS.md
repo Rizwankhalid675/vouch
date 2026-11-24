@@ -107,20 +107,30 @@ default, so its first clause is not demonstrable here without a visitor key — 
 specification does not do is say that a BYOK-only site conforms, or that it fails. That silence
 is the actual situation, and naming it is better than resolving it in our own favour.
 
-Upstream corroborates the reading, by a route that can be re-run: its real `selectTopRouter`,
-run against our published manifest in five configurations, returns our published default with no
-key and upgrades to `byok_router` with one, and never throws. So the manifest is runnable by the
-reference consumer in both modes. Our manifest therefore makes no claim that the site pays for
-inference — which is the claim it would be easiest to make by accident.
+The event's own starter runtime corroborates the reading, by a route anyone can re-run:
+`cognizant-ai-labs/agentic-web` at commit `d67755e762`,
+`skills/agentify-website/runtime/engine.js:56-73`, gates publisher funding behind an explicit
+`llm_router.publisher_funded === true`. Run against our published manifest it reports
+`publisherFunded: false` with no error. Our manifest therefore makes no claim that the site pays
+for inference — which is the claim it would be easiest to make by accident. Separately, the
+adapted runtime (`cognizant-ai-lab/nsdeploy`, pinned in `PROVENANCE.md`) runs the same manifest in
+five configurations without throwing, in both the default and the BYOK mode.
 
-**One sentence here was withdrawn on 24 November 2026.** It said upstream's runtime "now gates
-publisher funding behind an explicit `llm_router.publisher_funded === true`" and reported
-`publisherFunded: false` against our manifest. That could not be reproduced: the key appears
-nowhere in `cognizant-ai-lab/nsdeploy` at the pinned revision or at `main` `71b5037`, nor in
-`cognizant-ai-lab/neuro-san` at `main` `a5537db`. `publisher_funded` **is** a key our own
-conformance CLI looks for, which is the likeliest source of the mix-up. Recorded rather than
-deleted, because the pattern it belongs to is already recorded above: a claim cited from memory
-rather than from a run.
+**A naming decision that cost a round, recorded because it will recur.** This paragraph said
+"upstream's runtime". There are **three** repositories in play and two of them differ by one
+letter: `cognizant-ai-lab/nsdeploy` and `cognizant-ai-lab/neuro-san` (singular), which
+`PROVENANCE.md` pins and which this project's word "upstream" has always meant, and
+`cognizant-ai-labs/agentic-web` (plural), the event's spec-and-starter repository, which nothing
+here is adapted from. `publisher_funded` lives only in the third. An implementer sent to re-verify
+the claim searched the two that "upstream" names, found nothing, and withdrew it as
+unreproducible — correct search, wrong conclusion, and the fault was in the word.
+
+**So the rule now is: name the repository, the path and the commit, and never write "upstream"
+where two referents are live.** And the lesson is one notch sharper than "cite from a run rather
+than from memory", which is recorded above and is a different failure. This claim *did* come from
+a run. The **attribution** came from memory. A verified fact can still be unverifiable as stated,
+and at that point a reader cannot tell it from an invented one — so the citation is part of the
+claim, not decoration on it.
 
 A strict reader may still score the check unmet. That remains the correct way to lose a point,
 and it is the same three-valued judgement our own conformance CLI makes: `not-demonstrated`,

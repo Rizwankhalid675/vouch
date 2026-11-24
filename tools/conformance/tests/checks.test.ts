@@ -49,9 +49,9 @@ function one(results: readonly CheckResult[], id: string): CheckResult {
 
 /** Run against a file map. */
 async function run(files: Record<string, unknown>, url = NETWORK_URL) {
-  const { fetchImpl, asked, origins } = serve(files as never);
+  const { fetchImpl, asked, origins, cacheHeaders } = serve(files as never);
   const results = await runChecks(url, { fetchImpl });
-  return { results, asked, origins };
+  return { results, asked, origins, cacheHeaders };
 }
 
 const findingsText = (r: CheckResult) => findingsOf(r).join("\n");
@@ -1023,6 +1023,32 @@ describe("§3.3 and §3.4 hosting", () => {
     for (const origin of origins) expect(origin).toMatch(/^https?:\/\//);
     // ...and never this site's own origin, which would make the probe same-origin and the CORS result meaningless.
     for (const origin of origins) expect(origin).not.toBe("https://fixture.example");
+  });
+
+  /**
+   * ASKING FOR A FRESH COPY, AND NOT BY CHANGING THE URL.
+   *
+   * This tool's only value is that it reads a real response, so a CDN serving a
+   * previous build would make every result a statement about the wrong artifact --
+   * the classic way to "verify" something that is not deployed.
+   *
+   * MUTATION: delete either header from `getArtifact`'s `headers` object and the
+   * first assertion fails on all three artifacts. Append `?cb=…` to the URL instead
+   * and the second fails, which is the point of asserting both -- §3.2 derives the
+   * network name from the final path component, so a query cache-buster changes the
+   * thing under test.
+   *
+   * What it does NOT assert, because no client can: that the server honours it.
+   */
+  test("every artifact request asks for a fresh copy, and no request rewrites the URL to get one", async () => {
+    const { cacheHeaders, asked } = await run(conformingSite());
+    expect(cacheHeaders.length).toBeGreaterThanOrEqual(3);
+    for (const h of cacheHeaders) {
+      expect(h.cacheControl).toBe("no-cache");
+      expect(h.pragma).toBe("no-cache");
+    }
+    // No query string anywhere: the URL under test is the URL a visitor would get.
+    for (const url of asked) expect(url).not.toContain("?");
   });
 });
 

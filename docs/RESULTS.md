@@ -35,11 +35,18 @@ has no git remote. Nothing below was improvised around that.
 | B5 | The no-JavaScript path on the deployed build | §3.1 | load the deployed page with scripting disabled |
 | B6 | The five CORS tests in our own suite | — | `npm run test:cors` (see §6 below — they are **skipped**, not passed, in this environment) |
 
-**One thing to know before running B2 and B3: the CLI does not bust caches.** It sends
-no `Cache-Control` and appends no cache-buster, so a CDN serving a previous build would
-be measured as the current one — the classic way to "verify" something that is not
-deployed. Until the CLI grows a flag for it, read the three headers by hand as well,
-with a query string the CDN has not seen:
+**One thing to know before running B2 and B3: the CLI asks for a fresh copy, and asking
+is not insisting.** Every GET now carries `Cache-Control: no-cache` and
+`Pragma: no-cache` (added in this pass; it previously sent neither, which would have let
+a CDN serving a previous build be measured as the current one — the classic way to
+"verify" something that is not deployed). But an edge cache configured to ignore client
+directives will serve a stale object anyway, and no client can force otherwise.
+
+The CLI deliberately does **not** append a query cache-buster: §3.2 derives the network
+name from the final path component, so `?cb=…` would change the URL under test and
+report on an address no visitor uses. So read the three headers by hand as well, where
+changing the URL is harmless because you are reading a header rather than selecting a
+network:
 
 ```
 for f in agent-manifest.json vouch.network.json links.json; do
@@ -235,11 +242,85 @@ pinned by a *date*, not a SHA, so "identical today" is a measurement and not a
 guarantee. They should carry digests in `upstream-pins.json` as the six runtime
 sources do.
 
-### 3.3 The reference consumer, run against our published manifest
+### 3.3 The two reference runtimes, run against our published manifest
 
-Upstream's real `selectTopRouter` — not our paraphrase of it, which has already cost
-this project one defect — run against `public/agent-manifest.json` in five
-configurations. None throws:
+**There are three upstream repositories in play and two of them differ by one letter**,
+so each result below names its own. This is not pedantry: it cost one wrong withdrawal
+of a true claim, recorded in `LIMITS.md` §2.5a.
+
+| Short name used here | Repository | What it is to us |
+|---|---|---|
+| **the adapted runtime** | `cognizant-ai-lab/nsdeploy` (*singular*) | pinned in `PROVENANCE.md`; `src/runtime/upstream/` is adapted from it |
+| — | `cognizant-ai-lab/neuro-san` (*singular*) | the HOCON schema and reference docs in `docs/vendor/` |
+| **the starter runtime** | `cognizant-ai-lab**s**/agentic-web` (*plural*) | the event's spec-and-starter repository; **nothing here is adapted from it** |
+
+Their `selectTopRouter` functions are **not the same function**: the starter runtime's
+returns a `publisherFunded` field and carries a `requestedPublisherFunded` branch; the
+adapted runtime's has neither. So "upstream's `selectTopRouter`" names two things that
+answer differently, and the phrase is not used.
+
+#### The starter runtime, and `publisher_funded`
+
+`cognizant-ai-labs/agentic-web` @ `d67755e762`,
+`skills/agentify-website/runtime/engine.js` — verified byte-identical at `main`
+`05a665e`, SHA-256 `46691260…9252e56`:
+
+```
+line 56:  * (`llm_router.publisher_funded`, spec §4). A visitor's key is never sent to it,
+line 59: export function isPublisherFundedRouter(manifest, url) {
+line 61:   return declared.publisher_funded === true && declared.mock !== true && …
+line 73:   const publisherFunded = declared.publisher_funded === true && declared.mock !== true;
+```
+
+Run against `public/agent-manifest.json`:
+
+| Configuration | `publisherFunded` | Threw? |
+|---|---|---|
+| no override, no key | `false` | no |
+| real visitor key | `false` (`upgradedToByok: true`) | no |
+| key + explicit router override | `false` | no |
+| explicit model, no key | `false` (`upgradedToByok: true`) | no |
+| key `"demo"` (sentinel) | `false` | no |
+| `isPublisherFundedRouter(manifest, base_url)` | `false` | — |
+| `isPublisherFundedRouter(manifest, byok_router)` | `false` | — |
+
+**So our manifest makes no claim that this site funds inference** — the claim it would
+be easiest to make by accident. It publishes no `publisher_funded` key at all.
+
+Worth noting in the other direction: `publisher_funded` is one of the three keys **our
+own** conformance CLI looks for before it will say a declared default router works
+without a visitor key (`checks.ts:991`). That is not a name we invented — it is this
+runtime's, used in this runtime's sense, which is the right thing for a conformance
+tool to be reading.
+
+**And the counterfactual, which is the sharper form of the same point.**
+`skills/agentify-website/scripts/build_network.mjs:667-673` refuses a manifest whose
+`byok_router` equals its `base_url` — *"Otherwise a visitor's own key goes to the site's
+proxy"* — but **only** when `publisher_funded === true`. **Ours are equal**
+(`https://api.openai.com/v1` for both). Run both ways:
+
+| Manifest | `isPublisherFundedRouter(m, byok_router)` | Build check |
+|---|---|---|
+| as published | `false` | **not refused** |
+| `+ publisher_funded: true` | `true` | **refused** |
+
+Setting that one flag would have our own published manifest refused by the event's own
+build check. The refusal was introduced in commit `9fb36d3dbe`, "Refuse a
+publisher-funded base_url that is also byok_router".
+
+Reproduce:
+
+```
+git clone --depth 1 https://github.com/cognizant-ai-labs/agentic-web /tmp/aw
+grep -n "publisher_funded" /tmp/aw/skills/agentify-website/runtime/engine.js \
+  /tmp/aw/skills/agentify-website/scripts/build_network.mjs
+```
+
+#### The adapted runtime, in both modes
+
+`cognizant-ai-lab/nsdeploy`'s real `selectTopRouter` at the pinned revision — not our
+paraphrase of it, which has already cost this project one defect — run against
+`public/agent-manifest.json` in five configurations. None throws:
 
 | Configuration | Result |
 |---|---|
@@ -249,18 +330,35 @@ configurations. None throws:
 | explicit model, no key | upgrades to the BYOK route |
 | key `"demo"` (sentinel) | correctly **not** treated as a real key |
 
-And the published peer policy, through upstream's own `manifestAllowsPeer`: the bakery
-origin is permitted, an unlisted third origin is refused.
+And the published peer policy, through that runtime's own `manifestAllowsPeer`: the
+bakery origin is permitted, an unlisted third origin is refused. The same two results
+hold through the starter runtime's copy.
 
-**One claim withdrawn.** An earlier note in this project said upstream's current
-runtime gates publisher funding behind `llm_router.publisher_funded === true` and
-reports `publisherFunded: false` against our manifest. That could not be reproduced:
-`publisher_funded` / `publisherFunded` appears nowhere in `cognizant-ai-lab/nsdeploy`
-at the pin or at `main` `71b5037`, nor in `cognizant-ai-lab/neuro-san` at `main`
-`a5537db`. `publisher_funded` **is** a key our *own* conformance CLI looks for, which
-is the likeliest source of the mix-up. The substance survives by a checkable route:
-our manifest publishes no such key, so it makes no claim that this site funds
-inference. See `LIMITS.md` §2.5a.
+#### The one-letter trap, published because it will catch somebody else
+
+The `publisher_funded` result above was **briefly withdrawn from three documents on 24
+November 2026 as unreproducible, and the withdrawal was wrong.** It is recorded here
+rather than quietly reverted, because the trap is reusable:
+
+- The claim was written as "**upstream's** current runtime".
+- This project's `PROVENANCE.md` pins `cognizant-ai-lab/nsdeploy` and
+  `cognizant-ai-lab/neuro-san`, so "upstream" in this repository's vocabulary means
+  exactly those two.
+- `publisher_funded` is in neither. It is in `cognizant-ai-lab**s**/agentic-web` —
+  **one letter different in the organisation name**, a third repository, the event's own
+  spec-and-starter repo, which nothing here is adapted from.
+- A case-insensitive search for `funded` across the two pinned repositories returns
+  three hits, all the word "refunded" in example files. The search was right. The word
+  it was given was wrong.
+
+**The lesson is not "cite from a run rather than from memory",** which this project has
+already recorded for a different claim. This claim *did* come from a run — the function
+was executed against this manifest and its output read. The **attribution** came from
+memory. **A verified fact can still be unverifiable as stated, and at that point a
+reader cannot tell it from an invented one.** The citation is part of the claim.
+
+Hence the table at the top of §3.3, and hence every figure in this section carrying a
+repository, a path and a commit.
 
 ---
 
@@ -348,7 +446,7 @@ Run 24 November 2026, Node v26.13.1:
 
 | Command | Exit | Result |
 |---|---|---|
-| `npm test` | **0** | 494 passed, 5 skipped (499) across 12 files |
+| `npm test` | **0** | 495 passed, 5 skipped (500) across 12 files |
 | `npm run typecheck` | **0** | `tsc --noEmit`, strict |
 | `npm run build` | **0** | `dist/` — `index.html` 22,911 bytes |
 | `npm run build:peer` | **0** | `peer-dist/` |

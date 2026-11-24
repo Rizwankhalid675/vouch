@@ -57,7 +57,27 @@ export async function getArtifact(
   probeOrigin: string,
   timeoutMs: number,
 ): Promise<Fetched> {
-  const headers = { accept: "application/json, */*", origin: probeOrigin };
+  const headers = {
+    accept: "application/json, */*",
+    origin: probeOrigin,
+    // A CDN serving a previous build is the classic way to "verify" something that is
+    // not deployed, and this tool's whole value is that it reads a real response. So
+    // every GET asks for a fresh one. `Pragma` is sent alongside `Cache-Control`
+    // because HTTP/1.0 caches and a few proxies still honour only the older header.
+    //
+    // NOT a query cache-buster, deliberately: §3.2 derives the network name from the
+    // final path component of the URL under test, so appending `?cb=…` would change
+    // the thing being tested -- and on a static host it can also miss the cache
+    // entirely and be served from a different path than the one a visitor gets.
+    //
+    // And what this does NOT buy, because the tool must not overstate its own reach:
+    // a request header is a REQUEST for freshness. An edge cache configured to ignore
+    // it will still serve a stale object, and nothing a client sends can force
+    // otherwise. The README says so, and `docs/RESULTS.md` keeps a manual
+    // cache-busting `curl` beside the CLI for exactly that case.
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+  };
   let response: Response;
   try {
     response = await withTimeout(fetchImpl(url, { headers }), timeoutMs, url);

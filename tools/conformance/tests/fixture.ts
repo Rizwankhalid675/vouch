@@ -115,14 +115,18 @@ export function serve(files: Record<string, Artifact>): {
   fetchImpl: FetchLike;
   asked: string[];
   origins: (string | null)[];
+  /** Every request's cache headers, so "it asks for a fresh copy" is assertable. */
+  cacheHeaders: { cacheControl: string | null; pragma: string | null }[];
 } {
   const asked: string[] = [];
   const origins: (string | null)[] = [];
+  const cacheHeaders: { cacheControl: string | null; pragma: string | null }[] = [];
   const fetchImpl: FetchLike = async (url, init) => {
     const href = String(url);
     asked.push(href);
     const headers = new Headers(init?.headers as HeadersInit | undefined);
     origins.push(headers.get("origin"));
+    cacheHeaders.push({ cacheControl: headers.get("cache-control"), pragma: headers.get("pragma") });
     const file = files[href];
     if (file?.throws) {
       // The transport failing: no status, no headers, no body. What `fetch` does
@@ -144,7 +148,7 @@ export function serve(files: Record<string, Artifact>): {
       },
     });
   };
-  return { fetchImpl, asked, origins };
+  return { fetchImpl, asked, origins, cacheHeaders };
 }
 
 /**

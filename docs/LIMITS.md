@@ -162,8 +162,20 @@ rather than a wording annoyance. `tests/runtime.test.ts` pins that independence 
 booting with every artifact fetch failing.
 
 A fourth, smaller case: a sentence reciting real prices ("They are $11.00 and
-$11.50") was withheld as `not_derivable`. Prices are published data, so this is a
-false positive in the derivation check.
+$11.50") is withheld as `not_derivable` — **once a dish has been mentioned**, which is
+the same qualifier (3) carries and for the same mechanism. Standing alone that sentence
+passes; after "We have the Reuben and the Turkey club." it is withheld. Prices are
+published data, so this is a false positive in the derivation check either way.
+
+That qualifier was missing here until Task 10, which makes it the **fifth** prose
+correction this file has taken — the others being the leak count that was right after
+one round and wrong after three, "applied without exception" when four surfaces were
+exempt and one was live, a tension called unresolved after being resolved, and two
+sentences saying a redirect case passed that is in fact refused. Nothing pins prose;
+495 passing tests said nothing about any of the five. That is why §2.6 and §3.4 now
+hold the two most expensive paragraphs in this document to the code and the data they
+describe, and it is the standing reason to re-read a sentence here rather than trust
+that something would have caught it.
 
 ### 2.1a What still leaks through the gate, and which of its two defences is weaker
 
@@ -654,30 +666,82 @@ in its own words, is the three-part statement above compressed:
 A conformance tool that scored its author's own weakest claim as a pass would be
 worthless, so it does not.
 
-**One corroboration offered, and one withdrawn.**
+**Two corroborations, from two different reference runtimes.** They are *different
+runtimes* and the distinction is load-bearing, so this document names each by
+repository and path rather than calling either one "upstream":
 
-*Offered, because it is checkable:* upstream's real `selectTopRouter`
-(`nsdeploy/runtime/engine.js` at the pinned revision) was run against
+- **the adapted runtime** — `cognizant-ai-lab/nsdeploy` (organisation **singular**),
+  pinned in `docs/vendor/PROVENANCE.md`. This is what `src/runtime/upstream/` is
+  adapted from, and what this project's own word "upstream" has meant throughout.
+- **the starter runtime** — `cognizant-ai-labs/agentic-web` (organisation **plural**),
+  `skills/agentify-website/runtime/`. This is the event's own spec-and-starter
+  repository, vendored into the skill that the brief points entrants at. Nothing from
+  it is adapted here.
+
+They are not copies of each other. Their `selectTopRouter` functions differ in exactly
+the area this section is about: the starter runtime's returns a `publisherFunded` field
+and carries a `requestedPublisherFunded` branch, and the adapted runtime's has neither.
+So "upstream's `selectTopRouter`" is ambiguous in a way that changes the answer, which
+is why neither is called that below.
+
+**Corroboration 1 — the starter runtime knows what a publisher-funded router is, and
+says ours is not one.** In `cognizant-ai-labs/agentic-web` at commit `d67755e762`,
+`skills/agentify-website/runtime/engine.js`:
+
+```js
+// line 56:  * (`llm_router.publisher_funded`, spec §4). A visitor's key is never sent to it,
+// line 59: export function isPublisherFundedRouter(manifest, url) {
+// line 61:   return declared.publisher_funded === true && declared.mock !== true && !!url
+//              && !!declared.base_url && sameRouter(String(url).replace(/\/$/, ""), declared.base_url);
+// line 73:   const publisherFunded = declared.publisher_funded === true && declared.mock !== true;
+```
+
+Run against `public/agent-manifest.json`, that runtime's `selectTopRouter` reports
+**`publisherFunded: false` in all five configurations, with no error**, and
+`isPublisherFundedRouter` is `false` for both our `base_url` and our `byok_router`. So
+our manifest makes no claim that this site pays for inference — **the claim it would
+be easiest to make by accident** — and the runtime that would act on such a claim
+agrees.
+
+There is a sharper version of the same point, which is a counterfactual rather than a
+reading. `skills/agentify-website/scripts/build_network.mjs` lines 667-673 **refuses** a
+manifest whose `byok_router` equals its `base_url` — *"Otherwise a visitor's own key
+goes to the site's proxy"* — but only when `publisher_funded === true`. **Ours are
+equal.** Setting that one flag to `true` would therefore have our own published
+manifest refused by the event's own build check. Verified by running it both ways:
+as published, `isPublisherFundedRouter(manifest, byok_router)` is `false` and nothing
+refuses; with the flag added, it is `true` and the refusal fires. The refusal was
+introduced in commit `9fb36d3dbe`, "Refuse a publisher-funded base_url that is also
+byok_router".
+
+**Corroboration 2 — the adapted runtime runs our manifest in both modes.**
+`cognizant-ai-lab/nsdeploy`'s real `selectTopRouter` at the pinned revision — not our
+paraphrase of it, which has already cost this project one defect — run against
 `public/agent-manifest.json` in five configurations. With no key it returns our
 published default; with a visitor key it upgrades to `byok_router` and reports
 `upgradedToByok: true`; with an explicit router override it honours the override;
 `"demo"` is correctly not treated as a real key. No configuration throws. So the
-manifest is *runnable by the reference consumer* in both modes — which is a different
-and smaller claim than "the default path runs without a key", and it is the one we
-are entitled to.
+manifest is *runnable by that consumer* in both modes — a different and smaller claim
+than "the default path runs without a key", and the one we are entitled to.
 
-*Withdrawn:* an earlier draft of this project's notes corroborated the reading by
-saying that upstream's current runtime gates publisher funding behind an explicit
-`llm_router.publisher_funded === true`, and reports `publisherFunded: false` against
-our manifest. **That could not be reproduced.** `publisher_funded` and
-`publisherFunded` appear nowhere in `cognizant-ai-lab/nsdeploy` at the pinned revision
-or at `main` (`71b5037`), and nowhere in `cognizant-ai-lab/neuro-san` at `main`
-(`a5537db`); a case-insensitive search for "funded" across both repositories returns
-only the word "refunded" in two example files. `publisher_funded` **is** a key *our
-own* conformance CLI looks for, which is the likeliest source of the confusion. The
-substance of the point survives without it and is checkable directly: our manifest
-publishes no `publisher_funded` key at all, so it makes no claim that this site pays
-for inference. The unverifiable sentence is removed rather than softened.
+**A precision note, because this paragraph was briefly withdrawn in error and the
+reason is worth publishing.** Corroboration 1 was first written as "upstream's current
+runtime gates publisher funding behind `llm_router.publisher_funded === true`". An
+implementer went to re-verify it, searched `cognizant-ai-lab/nsdeploy` and
+`cognizant-ai-lab/neuro-san` — the two repositories this project's own vocabulary calls
+upstream, and the only two `PROVENANCE.md` pins — found zero occurrences in either, and
+withdrew the claim as unreproducible. The search was correct and the conclusion was
+wrong: `publisher_funded` lives in a **third** repository whose organisation differs
+from those two by one letter, `cognizant-ai-lab**s**`.
+
+The lesson is not the one it first looked like. The claim did **not** come from memory;
+somebody ran that function against this manifest and read the output. What came from
+memory was the **attribution** — "upstream", a word with two referents here and a third
+thing it was being used for. **A verified fact can still be unverifiable as stated, and
+at that point it is indistinguishable from an invented one.** A reader who cannot
+re-run a claim has to take it on trust, which is precisely what this document exists
+not to ask of anyone. So every citation in this section now carries the repository, the
+path and the commit, and the two runtimes are never both called "upstream".
 
 ### 2.6 Execution bounds
 

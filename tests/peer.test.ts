@@ -1242,6 +1242,46 @@ describe("after approval the named network loads from the second origin and runs
   });
 
   /**
+   * INVARIANT (§3.2, "The runtime stops ... requests that exceed its budgets"):
+   * the budget is checked BEFORE the peer is contacted, not after.
+   *
+   * On most projects this would be a nit — the turn dies either way. Here it is
+   * not. A peer contact spends two things that cannot be given back: an approval
+   * asked of a person, and a request to a stranger's server. Making both and
+   * then reporting "Execution limit reached" means the visitor approved something
+   * that bought nothing, and we contacted a third party we already knew we had no
+   * budget to use.
+   *
+   * BREAKS IF: the headroom check moves back after `peers.open`, which is where
+   * the consent card and both cross-origin fetches live. Asserted on the card and
+   * on the captured requests, not on a call count.
+   */
+  test("a turn with no delegation budget left refuses before the peer is contacted at all", async () => {
+    const h = harness({ replies: [callTool("menu_guide", { question: "glaze?" }), callTool(SYMBOLIC, { request: "glaze?" })] });
+    const s = await session({ key: SENTINEL, h, limits: { maxAgentCalls: 1 } });
+    await s.runtime.ask("what is in the glaze?");
+
+    expect(visibleTextOf(s.mount, "[data-transcript]")).toContain("Execution limit reached");
+    // Nothing was asked of the visitor, and nothing reached the bakery.
+    expect(s.plans).toEqual([]);
+    expect(s.h.toPeer()).toEqual([]);
+    expect(s.runtime.trace().some((e) => e.event === "peer_consent")).toBe(false);
+    expect(s.runtime.trace().some((e) => e.event === "peer_called")).toBe(false);
+  });
+
+  /** ...and the same for the model-call budget, which the peer's own agents spend. */
+  test("a turn with no model-call budget left refuses before the peer is contacted at all", async () => {
+    const h = harness({ replies: [callTool("menu_guide", { question: "glaze?" }), callTool(SYMBOLIC, { request: "glaze?" })] });
+    const s = await session({ key: SENTINEL, h, limits: { maxModelCalls: 2 } });
+    await s.runtime.ask("what is in the glaze?");
+
+    expect(visibleTextOf(s.mount, "[data-transcript]")).toContain("Execution limit reached");
+    expect(s.plans).toEqual([]);
+    expect(s.h.toPeer()).toEqual([]);
+    expect(s.runtime.trace().some((e) => e.event === "peer_consent")).toBe(false);
+  });
+
+  /**
    * INVARIANT: an unreachable peer is a failure reported in OUR words, with only
    * its kind shown. A peer serving prose where JSON should be throws a
    * `SyntaxError` whose message quotes the file; an unreachable host throws a

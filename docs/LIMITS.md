@@ -514,6 +514,16 @@ and never answers. With only the first, the limit would be a lie for exactly the
 it exists for. What it does *not* bound: time spent inside a site action's own
 handler, which is bounded separately by that action's timeout.
 
+**A peer contact is checked against the call budgets before it is made**, not
+after. The budgets a peer run spends are spent inside the delegation it performs,
+so until fix round 1 an over-budget turn asked the visitor to approve a
+third-party contact, let the peer serve two documents, and *then* stopped with
+"Execution limit reached". An approval asked of a person and a request to
+somebody else's server are two things that cannot be given back, so the headroom
+for a delegation and for a model call is checked before the card is drawn. The
+refusal is the ordinary one, with the same figures; it just arrives one step
+earlier. §3.2: "The runtime stops … requests that exceed its budgets."
+
 **Concurrency** has no numeric limit because it is structurally one: the loop awaits
 every call in sequence and the composition walk is depth first, so there is never
 more than one request in flight.

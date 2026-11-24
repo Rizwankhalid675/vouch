@@ -197,7 +197,16 @@ export class Conversation {
     return (this.deps.now ?? Date.now)();
   }
 
-  private spend(budget: "maxModelCalls" | "maxAgentCalls"): void {
+  /**
+   * Throw the ordinary over-budget refusal if `budget` has nothing left, WITHOUT
+   * spending it.
+   *
+   * Split out of `spend` so a step can ask "can this turn still finish?" before
+   * doing something it cannot take back. `runPeerNetwork` is the one caller:
+   * everything else either spends the budget immediately or does nothing a
+   * refusal needs to undo.
+   */
+  private refuseIfSpent(budget: "maxModelCalls" | "maxAgentCalls"): void {
     // The wall clock is checked at every step boundary, so it bounds a turn that
     // is making progress too slowly as well as one that has stalled.
     this.clock.check();
@@ -208,12 +217,17 @@ export class Conversation {
       if (this.modelCalls >= this.limits.maxModelCalls) {
         throw new BudgetError("maxModelCalls", this.limits.maxModelCalls, this.modelCalls);
       }
+    } else if (this.agentCalls >= this.limits.maxAgentCalls) {
+      throw new BudgetError("maxAgentCalls", this.limits.maxAgentCalls, this.agentCalls);
+    }
+  }
+
+  private spend(budget: "maxModelCalls" | "maxAgentCalls"): void {
+    this.refuseIfSpent(budget);
+    if (budget === "maxModelCalls") {
       this.modelCalls += 1;
       this.sessionModelCalls += 1;
     } else {
-      if (this.agentCalls >= this.limits.maxAgentCalls) {
-        throw new BudgetError("maxAgentCalls", this.limits.maxAgentCalls, this.agentCalls);
-      }
       this.agentCalls += 1;
     }
   }
@@ -504,6 +518,24 @@ export class Conversation {
     if (stack.length >= this.limits.maxDepth) {
       return `REFUSED: delegation is already ${stack.length} deep and the limit is ${this.limits.maxDepth}. The peer network '${symbolic}' was not contacted.`;
     }
+    /*
+     * CAN THIS TURN STILL FINISH? ASKED BEFORE THE STRANGER IS CONTACTED.
+     *
+     * §3.2: "The runtime stops ... requests that exceed its budgets." The budgets
+     * a peer run needs are spent inside `runAgent`, below `peers.open` — so until
+     * fix round 1 an over-budget turn asked the visitor to approve a third-party
+     * contact, let the peer serve two documents, and THEN died with "Execution
+     * limit reached". On most projects that is a nit, because the turn ends either
+     * way. Here it is not: a peer contact spends an approval asked of a person and
+     * a request to somebody else's server, and neither can be given back.
+     *
+     * Both budgets, because a peer run needs both: at least one delegation for its
+     * front agent and at least one model call for that agent to answer. The
+     * refusal is the ordinary one — the same `BudgetError`, with the same figures
+     * on the page — raised one step earlier.
+     */
+    this.refuseIfSpent("maxAgentCalls");
+    this.refuseIfSpent("maxModelCalls");
     let peer: LoadedPeer;
     try {
       // Everything that decides whether this origin may be contacted at all

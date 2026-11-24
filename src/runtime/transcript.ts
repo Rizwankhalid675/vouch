@@ -2,12 +2,19 @@
  * The transcript, and the single door model prose goes through to reach a screen.
  * OURS, written here.
  *
- * `showModelText` is the ONLY function in this runtime that puts model-generated
- * text into the DOM, and the only thing it will put there is `gate(...).shown`.
- * Everything else the panel says is written by us. The loop never touches the
- * transcript element; it calls this. A test asserts the rendered text is
- * character-for-character `gate(raw, findings, menu).shown`, so rendering raw
- * prose, or anything else, fails loudly.
+ * `showModelText` and `showPeerText` are the ONLY functions in this runtime that
+ * put model-generated text into the DOM, and the only thing either will put
+ * there is `gate(...).shown` — they share one private `renderGated`, which holds
+ * the one call to `gate` in this file. Everything else the panel says is written
+ * by us. The loop never touches the transcript element; it calls this. A test
+ * asserts the rendered text is character-for-character
+ * `gate(raw, findings, menu).shown` on both paths, so rendering raw prose, or
+ * anything else, fails loudly.
+ *
+ * The second path is Task 8's, and it is the composition boundary: a peer's
+ * answer is prose from a model on someone else's origin, and it is held to the
+ * same findings as our own model's. Not a weaker check for a remote source, and
+ * not a stronger one — the SAME one, which is the point.
  */
 
 import type { Finding, Menu, Restriction } from "../../contracts.ts";
@@ -152,9 +159,7 @@ export class Transcript {
    * @param findings the checker's findings for the current restriction set
    */
   showModelText(raw: string, findings: Finding[], meta?: { source: "live" | "scripted"; scriptLabel?: string }): ShownResult {
-    const result = gate(raw, findings, this.menu);
-    const row = this.append("agent", "Front of house", result.shown);
-    if (result.shown.includes(REFUSAL_MARKER)) row.setAttribute("data-withheld", "true");
+    const { row, result } = this.renderGated(raw, findings, "agent", "Front of house");
     if (meta?.source === "scripted") {
       // Say so, visibly. A replayed reply presented as a live one would be the
       // exact dishonesty this project is about.
@@ -176,6 +181,61 @@ export class Transcript {
     }
     this.showRefusals(result.refusals);
     return result;
+  }
+
+  /**
+   * A PEER's answer, on its way to the screen through the same gate.
+   *
+   * This is the composition boundary, and it is the project's thesis in one
+   * method. A peer's answer is prose produced by a model that was prompted by
+   * instructions another company published on another origin. It is not data, it
+   * is not a finding, and it is not evidence of anything. So it goes through
+   * `gate` exactly as our own model's prose does, against the SAME findings —
+   * the ones computed here from this site's published ingredient list — and a
+   * claim no finding backs is withheld whoever made it.
+   *
+   * A peer that says "our glaze is completely dairy-free, I checked" is not a
+   * safety source that happens to be remote. It is a sentence. It is withheld,
+   * and the card beside the dish still reads "We don't know", because an
+   * ingredient this site has not published stays unknown however confident
+   * somebody else is about it.
+   *
+   * Two things are deliberately NOT done here: the answer is not attributed to
+   * the deli (the row says a peer network said it, and names the origin), and the
+   * peer's words are not put in one of our sentences. The origin and the peer's
+   * own network name go in nodes, like every other stranger's string.
+   */
+  showPeerText(raw: string, findings: Finding[], peer: { origin: string; network: string }): ShownResult {
+    const { row, result } = this.renderGated(raw, findings, "peer", "A peer network");
+    const source = this.doc.createElement("p");
+    source.className = "peer-source";
+    source.setAttribute("data-peer-source", "");
+    renderPhrase(this.doc, source, [
+      ours("Answered by the network"),
+      theirs(peer.network),
+      ours(" published at"),
+      theirs(peer.origin),
+      ours(". These are that site's words, read here through the same check as any other reply. No verdict on this page comes from them."),
+    ]);
+    row.prepend(source);
+    this.showRefusals(result.refusals);
+    return result;
+  }
+
+  /**
+   * Gate prose and put the result on screen. The ONE call site of `gate` in this
+   * class, so "model prose reaches the screen only through the gate" is a
+   * property of this file and not a habit of its authors: `showModelText` and
+   * `showPeerText` differ in the label and the chrome around the row, never in
+   * what reaches the text node.
+   *
+   * `who` is a literal at both call sites.
+   */
+  private renderGated(raw: string, findings: Finding[], kind: string, who: string): { row: HTMLElement; result: ShownResult } {
+    const result = gate(raw, findings, this.menu);
+    const row = this.append(kind, who, result.shown);
+    if (result.shown.includes(REFUSAL_MARKER)) row.setAttribute("data-withheld", "true");
+    return { row, result };
   }
 
   /**

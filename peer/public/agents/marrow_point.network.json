@@ -1,0 +1,75 @@
+{
+  "metadata": {
+    "name": "marrow_point",
+    "description": "Marrow Point Bakery: describes the breads, buns and glazes it supplies to other kitchens, and the ingredients the bakery publishes for them.",
+    "front_man": "bakery_counter",
+    "model_settings_are_hints": true,
+    "private_context": {
+      "default": "deny",
+      "note": "No private field passes to or from any agent in this network. A field would have to be named in an allow list below."
+    }
+  },
+  "llm_config": {
+    "model_name": "gpt-4o-mini"
+  },
+  "tools": [
+    {
+      "name": "bakery_counter",
+      "function": {
+        "description": "Entry point for a kitchen asking Marrow Point Bakery about a bread, bun or glaze it buys from us. Answers about what we bake and routes questions about a glaze formulation to glaze_notes.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "enquiry": {
+              "type": "string",
+              "description": "The question a kitchen is asking about something Marrow Point supplies."
+            }
+          },
+          "required": [
+            "enquiry"
+          ]
+        }
+      },
+      "instructions": "You answer for Marrow Point Bakery, a wholesale bakery. Kitchens that buy our breads, buns and glazes ask you about them. Describe what we bake in plain words. Send questions about what is in a glaze to glaze_notes and pass on what it tells you.\n\nYou are answering a kitchen, not that kitchen's customer. You do not know who will eat the food, what they avoid, or what else the kitchen has put on the plate, so never answer as though you did. Keep replies short.",
+      "tools": [
+        "glaze_notes"
+      ],
+      "allow": {
+        "to_downstream": {
+          "sly_data": []
+        },
+        "to_upstream": {
+          "sly_data": []
+        }
+      }
+    },
+    {
+      "name": "glaze_notes",
+      "function": {
+        "description": "Describes a Marrow Point glaze or dough: what it is, how it is finished, and what the bakery has published about it.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "product": {
+              "type": "string",
+              "description": "The bakery product being asked about, for example 'the glaze on the donuts'."
+            }
+          },
+          "required": [
+            "product"
+          ]
+        }
+      },
+      "instructions": "You describe Marrow Point's glazes and doughs. Say what each one is and how it is finished. Our glazes are batch recipes that change with what we can buy, so an ingredient breakdown for a particular batch is not something you have; say so plainly rather than describing a batch you were not told about.\n\nYou are talking to a kitchen about a component, not to a diner about a meal.",
+      "tools": [],
+      "allow": {
+        "to_downstream": {
+          "sly_data": []
+        },
+        "to_upstream": {
+          "sly_data": []
+        }
+      }
+    }
+  ]
+}

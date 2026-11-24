@@ -10,9 +10,14 @@
  * It exists because §6's refusal demonstration needs it. Two of the five
  * refusals — a composition cycle and a denied origin — are properties of a
  * *chain* of networks, not of one document, and there is no honest way to show
- * either without walking a chain. It deliberately stops at loaded-and-validated:
- * binding a peer network into the conversation is Task 8's, and `LIMITS.md` §2.8
- * says so.
+ * either without walking a chain.
+ *
+ * It stops at loaded-and-validated, and that is now the whole of its job rather
+ * than a limit of the build: `peers.ts` takes what this returns and instantiates
+ * the peer's agents into the conversation, and `loop.ts` runs them. The split is
+ * on purpose — everything that decides WHETHER a peer may be contacted (the
+ * allow-list, the consent gate, the cycle check, the composition budget) is
+ * here, in one walk, so there is no second route to a peer origin.
  *
  * FOUR THINGS IT DOES THAT ARE EASY TO GET WRONG
  *
@@ -44,14 +49,20 @@
  *
  *     **This exemption does not reach a peer on a second origin**, which must
  *     pass the allow-list and obtain consent. Do not route a cross-origin load
- *     through the same-origin branch to make it easier.
+ *     through the same-origin branch to make it easier. Both halves have their
+ *     own test, sitting beside each other, so the exemption cannot quietly grow.
+ *
+ *     All three live in `clearToContact`, which is THE ONLY WAY TO REACH A
+ *     THIRD-PARTY ORIGIN in this runtime. `Runtime.fetchPeerArtifact` used to
+ *     have its own allow-list check and no consent at all; it goes through here
+ *     now, because a second implementation of consent is a second thing to
+ *     forget.
  *  4. **Every refusal is a `RuntimeMessage`**, so the panel can show it in the
- *     deli's voice. Values from a peer document are either token-filtered
- *     through `siteText`/`joinTokens` - which admits no whitespace, so such a
- *     value cannot form a sentence at all - or, when they are prose, carried as
- *     a report's `quoted` and rendered in their own nodes. Nothing in here
- *     builds a string and declares it ours; `ours` no longer compiles for
- *     anything but a literal.
+ *     deli's voice. Every value from a peer document is carried as a report's
+ *     `quoted` and rendered in a node of its own. Nothing in here builds a
+ *     string and declares it ours; `ours` no longer compiles for anything but a
+ *     literal, and the filters that used to stand in for this were deleted
+ *     rather than fixed (`LIMITS.md` §2.2b).
  */
 
 import { RuntimeMessage, joinSiteText, ours } from "./errors.ts";
@@ -226,6 +237,83 @@ export interface CompositionDeps {
   now?: () => number;
   /** §3.1's composition depth. A cycle check does not bound a chain of distinct networks. */
   maxComposedNetworks: number;
+  /**
+   * What the visitor is being asked to approve. §3.2 requires the consent
+   * mechanism to identify "the external origin AND PURPOSE of the contact", so
+   * the two purposes this runtime has are two different sentences rather than
+   * one vague one.
+   *
+   * `read` — the panel's Load control, which fetches a reference and reports
+   * what it validated. Nothing is run.
+   * `run`  — a bound peer the conversation is about to ask. Its agents run in
+   * this browser, on this visitor's router.
+   *
+   * Defaults to `read`, so a caller that has not thought about it asks for the
+   * smaller thing.
+   */
+  purpose?: "read" | "run";
+}
+
+/**
+ * The allow-list and the consent gate, in that order. THE ONLY WAY TO REACH A
+ * THIRD-PARTY ORIGIN IN THIS RUNTIME.
+ *
+ * Extracted so there is one of it. The composition walk goes through here, and so
+ * does `Runtime.fetchPeerArtifact`, which used to check the allow-list and then
+ * fetch — unconsented contact with a third-party origin, which §3.2 forbids. It
+ * was unreachable while `allowed_peers` was `[]` and stopped being unreachable the
+ * moment this site published a peer. A second implementation of consent is a
+ * second thing to forget, so there is not one.
+ *
+ * Returns normally when contact is permitted, including for a same-origin target,
+ * which §3.2 and §3.4 exempt: the consent rule governs "contact with THIRD-PARTY
+ * origins" and names "the EXTERNAL origin", and §3.4 says artifacts "MAY be
+ * co-bundled or hosted under the caller's origin". Throws a `RuntimeMessage`
+ * otherwise, so a caller renders one string.
+ *
+ * `confirm` of `null` means the visitor cannot be asked, which is a refusal and
+ * never an assumed yes.
+ */
+export async function clearToContact(
+  origin: string,
+  about: Record<string, unknown>,
+  deps: Pick<CompositionDeps, "siteBase" | "manifest" | "runtimeAllowedPeers" | "confirm" | "trace" | "now" | "purpose">,
+): Promise<void> {
+  const now = deps.now ?? Date.now;
+  if (origin === normOrigin(deps.siteBase)) return;
+  if (!manifestAllowsPeer(origin, deps.manifest, deps.runtimeAllowedPeers ?? new Set())) {
+    deps.trace?.({ at: now(), event: "peer_refused", detail: { url: origin, origin } });
+    throw new DeniedOriginError(origin);
+  }
+  const approved = deps.confirm
+    ? await deps.confirm([
+        {
+          action: "load_peer_network",
+          // Literals, one per purpose. The dialog renders this field, so it
+          // follows the same rule as every other surface that speaks in the
+          // site's voice: our prose carries no value, and what the guest is
+          // approving goes in `arguments`, which the dialog renders in a node of
+          // its own.
+          //
+          // The `run` wording changed when Task 8 completed the walk. It used to
+          // say "It is read, not run." for both, which was true of the whole
+          // build then and is now true of one of its two paths; a consent card
+          // that understates what it is consenting to is the one kind of
+          // inaccuracy a consent card cannot have.
+          description:
+            deps.purpose === "run"
+              ? ours(
+                  "Fetch a published agent network from another site and run its agents here, in this browser, on your own model router. Your provider key is not sent there. Nothing it says can change the verdict beside a dish.",
+                )
+              : ours("Fetch a published agent network from another site and read it here. It is read, not run."),
+          origin,
+          effect: "read",
+          arguments: about,
+        },
+      ])
+    : false;
+  deps.trace?.({ at: now(), event: "peer_consent", detail: { origin, approved } });
+  if (!approved) throw new ConsentRefusedError(origin);
 }
 
 /**
@@ -285,30 +373,7 @@ async function walk(ref: string, path: string[], loaded: ComposedNetwork[], deps
 
   // Policy first, then consent. A denied origin is never put to the visitor as a
   // question: refusing it and then asking would teach them to approve anything.
-  const sameSite = target.origin === normOrigin(deps.siteBase);
-  if (!sameSite) {
-    if (!manifestAllowsPeer(target.id, deps.manifest, deps.runtimeAllowedPeers ?? new Set())) {
-      deps.trace?.({ at: now(), event: "peer_refused", detail: { url: target.id, origin: target.origin } });
-      throw new DeniedOriginError(target.origin);
-    }
-    const approved = deps.confirm
-      ? await deps.confirm([
-          {
-            action: "load_peer_network",
-            // Literal. The dialog renders this field, so it follows the same rule
-            // as every other surface that speaks in the site's voice: our prose
-            // carries no value, and the network and base the guest is approving
-            // are in `arguments`, which the dialog renders in a node of its own.
-            description: ours("Fetch a published agent network from another site and read it here. It is read, not run."),
-            origin: target.origin,
-            effect: "read",
-            arguments: { network: target.name, base: target.base },
-          },
-        ])
-      : false;
-    deps.trace?.({ at: now(), event: "peer_consent", detail: { origin: target.origin, approved } });
-    if (!approved) throw new ConsentRefusedError(target.origin);
-  }
+  await clearToContact(target.origin, { network: target.name, base: target.base }, deps);
 
   const manifestUrl = `${target.base}/agent-manifest.json`;
   const peerManifest = (await deps.fetchArtifact(manifestUrl)) as Manifest;

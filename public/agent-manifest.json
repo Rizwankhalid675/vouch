@@ -31,7 +31,9 @@
     "private_context": "deny_by_default",
     "router_inherited_by_peers": true
   },
-  "allowed_peers": [],
+  "allowed_peers": [
+    "https://marrow-point-bakery.vercel.app"
+  ],
   "deployment": {
     "mode": "static"
   },

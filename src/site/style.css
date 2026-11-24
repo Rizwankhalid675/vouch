@@ -166,7 +166,17 @@ code.site-datum { background: #ece7f0; border: 1px solid var(--rule); color: #3d
 .turn-guest { border-left-color: var(--ink); }
 .turn-agent { border-left-color: var(--accent); }
 .turn-error .turn-text, .runtime-error { color: #7d1f14; }
-.turn-delegated .turn-text, .turn-declined .turn-text, .turn-receipt .turn-text { font-size: .85rem; color: var(--muted); }
+.turn-delegated .turn-text, .turn-declined .turn-text, .turn-receipt .turn-text,
+.turn-peer-asked .turn-text { font-size: .85rem; color: var(--muted); }
+/*
+ * A peer's answer. Marked out from our own agent's turns on purpose: it is
+ * another company's words, read here through the same gate, and a reader should
+ * be able to see at a glance that the deli is not the one saying it. The dashed
+ * rule is the same vocabulary `code.not-ours` uses one layer down.
+ */
+.turn-peer { border-left-style: dashed; border-left-color: #6b5d4d; }
+.peer-source { margin: 0 0 .3rem; font-size: .78rem; color: var(--muted); }
+.turn-peer-asked { border-left-style: dashed; }
 .replay-tag { margin: 0 0 .25rem; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6d4700; background: #fdf3df; border: 1px solid #e3cf9d; border-radius: 3px; padding: .15rem .4rem; display: inline-block; }
 
 .refusals { border: 1px solid #e3cf9d; background: #fdf3df; border-radius: 4px; padding: .75rem 1rem; }

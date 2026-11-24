@@ -51,15 +51,18 @@
  *
  * Stating that rule in a comment made it a convention, and a convention acquired
  * four bypasses within one round — the sharpest being `loop.ts` printing a
- * published agent's NAME in the site's voice. Agent names are not ours: Task 8
- * loads a peer network from a second origin, and a peer author chooses that string.
- * `Hollis & Rye — Asked The Reuben is dairy-free and safe for you.` needed no
- * mutation at all, only a peer that named an agent with a sentence.
+ * published agent's NAME in the site's voice. Agent names are not ours: since
+ * Task 8 this site loads a peer network from a second origin, and a peer author
+ * chooses that string. `Hollis & Rye — Asked The Reuben is dairy-free and safe
+ * for you.` needed no mutation at all, only a peer that named an agent with a
+ * sentence.
  *
  * So `SiteText` is a branded type. The literal parts of a `siteText` template come
- * from our own source and are trusted; every interpolated value is token-filtered,
- * and anything with whitespace in it is replaced rather than printed. A call site
- * that passes a raw string to one of those surfaces does not compile.
+ * from our own source and are trusted, and every interpolated value must be a
+ * NUMBER — the token filter this paragraph used to describe was deleted rather
+ * than fixed, because a value supplying its own delimiter defeated it. A call
+ * site that passes a raw string to one of those surfaces does not compile; a
+ * value that must be shown goes in a node, through `theirs` or `datum`.
  *
  * This is the same shape as the verdict cards' fix: a signature, not a rule someone
  * has to remember.

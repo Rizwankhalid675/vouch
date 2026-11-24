@@ -1,6 +1,8 @@
 {
   "version": 1,
   "networks": {
-    "vouch": {}
+    "vouch": {
+      "marrow_point": "https://marrow-point-bakery.vercel.app/agents/marrow_point"
+    }
   }
 }

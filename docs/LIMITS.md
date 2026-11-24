@@ -98,6 +98,11 @@ machine-wide guarantee, and it should not be read as one. Verified by mutation: 
 through `fetchImpl` is caught; the same beacon through the global `fetch` escapes the harness
 without being tested at all, which is a limit of the test, not a hole in the product.
 
+Task 8's peer suite uses the same harness and therefore has the same boundary. It adds one
+thing: the peer origin is a real published origin, so "the key is absent from every request
+to the peer" is asserted against requests the deployed site actually makes, rather than
+against a fixture origin invented for the test.
+
 ### 2.1 The gate withholds true statements, and more of them than you would expect
 
 The gate cannot tell a true safety claim from a false one and does not try. It
@@ -182,6 +187,17 @@ the DOM was then enumerated and classified, and the rule they all follow now is:
 | The startup catch | a malformed artifact's `SyntaxError` quotes the file | only a `RuntimeMessage` is shown; anything else becomes our own sentence plus a kind |
 | The unknown-outcome card's source line | a handler's raw `error` | a node (`theirs`), beside a node for our request id — §2.2b |
 | The key-status line | `selectTopRouter`'s message | only a `RuntimeMessage`'s own report is shown; the router host is a node — §2.2b |
+| A **peer's answer** | prose produced by a model prompted by another company's published instructions | `Transcript.showPeerText`, which shares one private `renderGated` with `showModelText`: both put `gate(...).shown` into the DOM and nothing else. Asserted character-for-character on both paths |
+| A **peer's origin and network name** | strings from `links.json` and from the peer's own document | nodes (`theirs`) in the row's source line and in the delegation notice; our symbolic name beside them is `datum`, because calling our own published name "not ours" would be a lie |
+| What the model is told a **peer tool is** | a peer author's `function.description` | never used: `PEER_TOOL_DESCRIPTION` is ours. This one is about the prompt rather than the page, and it is listed here because the same question — whose words are these — has the same answer |
+
+**Two rows above stopped being hypothetical in Task 8.** "A published agent's name"
+and "Network validator interpolations" both said *ours today, a peer's once one is
+published*. One is published now, on a second origin, and a peer author chooses
+every string in it. Both nets are unchanged and both are now driven end to end by
+`tests/peer.test.ts` rather than with the validator bypassed: a peer network whose
+agent is named with a sentence is refused through the real walk, and the name
+appears on the page only inside a node marked as not ours.
 
 ### 2.2b The filter that was defeated, and the rule that replaced it
 
@@ -203,7 +219,10 @@ The apostrophes in the value re-pair the quotes. `quotedTokensOnly` saw `'x'` an
 through untouched — then `ours(...)` declared the whole built string the site's own
 words. **That rendered an ungated safety claim in the deli's voice**, on
 `[data-compose-status]` and on the startup error line. It was not reachable while
-`allowed_peers` is `[]`; it became reachable the moment a peer could be published.
+`allowed_peers` was `[]`. **`allowed_peers` is no longer `[]`**: Task 8 published a
+peer on a second origin and listed its origin there, so this is a live path and not
+a latent one, and a test drives it through the real walk with a hostile document
+served from the peer's own URL.
 
 It was the **third** filter for the same problem: action arguments in the
 confirmation dialog, then agent names in the site's voice, then this. The lesson
@@ -391,6 +410,34 @@ or the docs may say that it does.
 In practice this costs nothing today: every `allow` list we publish is `[]`, so
 `filter_sly_data` returns `{}` at every boundary and no private context exists.
 
+**The peer boundary, and the channel a permitted field would cross by.** Task 8
+made the agent-site boundary real: a peer's agents run in this browser, and
+`runAgent` filters against the **calling** agent's `allow.to_downstream.sly_data`
+before the peer's front agent is prompted. Two things about that are ours rather
+than the specification's, and both are choices a reader should not have to infer.
+
+- **The transport.** §5 says which fields may cross ("Only explicitly named fields
+  MAY be forwarded under an applicable allow rule") and says nothing about how. A
+  browser-local peer run has no transport of its own — the peer's agents run on
+  the caller's router — so the only channel to them is the message array, and a
+  permitted field crosses as a labelled system message (`privateContextMessages`
+  in `loop.ts`). That means a forwarded field is **in a model prompt**, which is
+  not a confidential surface. Nothing is forwarded when nothing is permitted: the
+  function returns an empty array, so there is no message at all.
+- **The filter runs per boundary, not once.** `front_of_house` → `menu_guide` is
+  one boundary and `menu_guide` → the peer is another. A field named only at the
+  second crosses nothing, because by then `menu_guide` is holding `{}`. That is
+  the mechanism working, and a test names both to show the rule is live rather
+  than a no-op.
+
+The site supplies no private context at all — there is no sign-in and no table
+number — so every one of these paths is exercised only by tests. `boot` takes a
+`slyData` option for exactly that reason, and the panel has no way to set one.
+
+**Nothing comes back.** §3.2 permits private context to return from a peer "for
+fields explicitly permitted by the caller network". This build reads none: a
+peer's answer is text, and no `sly_data` is parsed out of it or accepted from it.
+
 ### 2.4 Writes, and what "unknown" means
 
 `checkout_demo_order` is the only action that commits anything irreversible. If it
@@ -433,7 +480,7 @@ A real deployment would need both.
 
 All of them live in `src/runtime/limits.ts`.
 
-**Per turn:** 16 model calls, 12 delegations, depth 3, 6 tool rounds, and 60 seconds
+**Per turn:** 16 model calls, 12 delegations, depth 4, 6 tool rounds, and 60 seconds
 of wall clock. These reset at the start of every turn, because the runaway a limit
 exists to stop is a turn that will not finish. **Per session:** 300 model calls, as a
 backstop against a page left open all day; reaching it says to start a new
@@ -492,6 +539,17 @@ false-positive cases have their own test, and those tests are the reason a later
 `maxComposedNetworks` is not made redundant by the cycle check: A → B → C → D → … of
 distinct networks is not a cycle and would otherwise walk until the host ran out.
 
+**`maxDepth` was 3 until Task 8, and was raised to 4 for a measured reason rather
+than by taste.** A peer hop is a rung on the same ladder as our own delegations, so
+the shortest honest route to the bakery — `front_of_house` → `menu_guide` → the
+bakery's front agent — is already 3, and the bakery's own second agent is the
+fourth. At 3 the peer network loaded, validated, and could only ever run half of
+itself: the limit was not bounding a runaway, it was truncating a conforming
+composition, and the truncation was invisible on the page. 4 is the smallest value
+that admits the peer we actually publish. It remains an arbitrary pick in the same
+sense `maxElapsedMs` is — finite as §3.1 requires, derived from no measurement of
+anything but our own graph.
+
 ### 2.7 Replayed replies
 
 `data/scripted-replies.json` holds fixed model replies that run through the real
@@ -507,13 +565,58 @@ test. They are never presented as a live generation.
 - MCP tools: none are declared and none are called.
 - Coded-tool bundles: none are published and none would be executed.
 - Streaming model output: the client is a single non-streaming request.
-- The peer network (Task 8). `fetchPeerArtifact`, the peer-policy check and the §3.2
-  composition walk are in place and tested, and `links.json` is loaded, but nothing
-  is bound yet. The walk stops at **loaded and validated**: it resolves a reference,
-  reads the peer manifest, selects the exactly-named entry, fetches and validates the
-  definition, and reports what it loaded. It does **not** instantiate a peer's agents
-  into the conversation, and the panel says so where it reports a successful load.
-  Nothing in the code, the UI or the docs may say otherwise.
+- Streaming peer answers, and peer coded tools: neither is published and neither
+  would be executed.
+
+**The peer network is no longer in this list.** It used to say the composition walk
+stopped at loaded-and-validated and that a peer's agents were never instantiated.
+That was true until Task 8 and is now false, so it is replaced rather than softened:
+a limits document that understates what a system does is as wrong as one that
+overstates it, and this file has corrected three stale claims already.
+
+What the build now does: `public/vouch.network.json` names a peer network
+symbolically, `public/links.json` binds that name to a URL on a **second origin**,
+and `public/agent-manifest.json` lists that origin in its top-level `allowed_peers`.
+When our `menu_guide` asks for it, the runtime checks the published allow-list,
+**blocks on a consent card naming the origin and the purpose**, fetches the peer's
+`agent-manifest.json` from the base, selects the exactly-named entry, fetches and
+validates the definition, and then **runs the peer's agents in this browser** on the
+caller's router, under the caller's budgets. The answer comes back through the
+normal tool-result path and reaches the screen through `gate`.
+
+### 2.8a What the peer composition does NOT do
+
+Named here rather than left to be discovered, because each is a place a reader
+could reasonably assume more:
+
+- **One hop.** A peer's own external references are loaded and validated by the
+  walk — that is how the composition cycle and the composition budget are
+  enforced — but they are **not instantiated**. A peer's agents are offered no
+  second peer, because §3.2's per-hop policy would require a second consent and
+  this build asks for one. A peer that proposes one is told it is not an agent of
+  its own network.
+- **No site action crosses the boundary.** A peer's agents are offered no entry
+  from our action catalog and the registry is not consulted in a peer's frame, so
+  `check_safety` stays on this origin. Cross-site action transport is outside the
+  minimum profile in any case.
+- **No caller-binding UI.** §3.3 lets a visitor bind a symbolic reference this
+  site has not bound, and `boot` takes a `peerBindings` option that does exactly
+  that, caller-owned and never merged over a publisher's. There is no control for
+  it on the page. The reason is the MUST attached to it — "MUST NOT modify the
+  publisher's file" — and the fact that a UI which looks like it is saving a
+  binding *to the site* when it is saving to one browser is the confusion that
+  MUST exists to prevent. A test asserts `public/links.json` is byte-identical
+  before and after a caller supplies one.
+- **An unbound symbolic reference refuses the whole network.** Upstream's
+  classifier reads a name nothing resolves as a `missing` tool, and we do not
+  override that: a typo and an unresolved reference are indistinguishable, and
+  refusing is the fail-closed answer. So the three published files must agree, and
+  a tripwire test holds them to it.
+- **No replay fixture covers the peer.** The recorded replies in
+  `data/scripted-replies.json` are played by a parameterised test through a
+  session with no peer artifacts, so a peer fixture would desynchronise its turns.
+  Watching a peer exchange therefore needs a key; watching a peer *load*, and the
+  consent card, does not.
 
 ### 2.9 The refusal demonstration, and what it costs
 

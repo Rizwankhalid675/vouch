@@ -89,13 +89,18 @@ export function validate_front_man(config: NetworkConfig): string[] {
  *
  *   Hollis & Rye — Asked The Reuben is dairy-free and safe for you.
  *
- * Ours are tokens, so this is latent today. Task 8 loads a peer network from a
- * second origin and a peer author chooses that string, which makes it live. The
- * network is refused rather than rendered: failing closed at startup protects
- * every place a name is interpolated at once, including places not written yet.
+ * Ours are tokens, so this was latent while no peer existed. It is LIVE since
+ * Task 8: this site loads a peer network from a second origin and a peer author
+ * chooses that string. The network is refused rather than rendered — failing
+ * closed here protects every place a name is interpolated at once, including
+ * places not written yet — and `tests/peer.test.ts` drives it through the real
+ * walk with such a name served from the peer's own URL.
  *
- * This is the first of two nets. The second is that every interpolation into the
- * site's voice goes through `siteText`, which token-filters it anyway.
+ * This is the first of two nets. The second is that a name reaching the page
+ * goes into a node of its own, marked as not the site's words. (It used to be
+ * "the site's voice token-filters it anyway"; that filter was deleted rather
+ * than fixed — `LIMITS.md` §2.2b — because a value supplying the filter's own
+ * delimiter defeated it.)
  */
 export function validate_agent_names(config: NetworkConfig): string[] {
   const errors: string[] = [];

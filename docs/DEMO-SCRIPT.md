@@ -108,5 +108,15 @@ check the recording shows what the script claims.
 status line saying so. That is correct and worth one beat of screen time: the site does not
 pretend to have checked something you have not told it about.
 
-Shots 1–5 and 7 have been confirmed rendering on the built site. Shot 6 needs the peer
-(Task 8) and shot 8 needs the deployed URL (Task 10).
+Shots 1–5 and 7 have been confirmed rendering on the built site. Shot 8 needs the deployed
+URL (Task 10).
+
+**Shot 6's prerequisite exists now** — Task 8 published the peer on a second origin and the
+runtime loads and runs it — but the shot itself has NOT been confirmed on the built site,
+because both origins have to be served for real before it can be. What a judge types in the
+"Load a published agent network" field is `marrow_point`; the consent card names the bakery's
+origin and says its agents will run in this browser. The peer exchange in the second half of
+the shot needs a provider key, because no recorded reply covers it (`LIMITS.md` §2.8a). The
+`unknown` verdict it ends on is the **glazed donut**, whose glaze is the bakery's own and
+carries no published ingredient list — so the one party who would actually know says
+dairy-free, and the card still reads "We don't know". That is the shot.

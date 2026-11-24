@@ -26,7 +26,11 @@ export interface Limits {
   maxModelCalls: number;
   /** Agent-to-agent delegations within one turn. */
   maxAgentCalls: number;
-  /** How deep delegation may nest. */
+  /**
+   * How deep delegation may nest, counting a peer's agents in the same ladder as
+   * ours. A peer hop is a rung: `front_of_house` → `menu_guide` →
+   * `bakery_counter` is three, and the bakery's own second agent is the fourth.
+   */
   maxDepth: number;
   /** Tool-call rounds within a single turn. */
   maxRounds: number;
@@ -79,7 +83,15 @@ export interface Limits {
 export const DEFAULT_LIMITS: Limits = {
   maxModelCalls: 16,
   maxAgentCalls: 12,
-  maxDepth: 3,
+  // Raised from 3 by Task 8, with a reason rather than by taste. A peer hop is a
+  // rung on the same ladder as our own delegations, and the shortest honest route
+  // to a peer is `front_of_house` → `menu_guide` → the peer's front agent, which
+  // is already 3. At 3 the peer's own second agent was unreachable in the
+  // deployed site — its network loaded, validated, and could only ever run half
+  // of itself — so the limit was not bounding a runaway, it was truncating a
+  // conforming composition. 4 is the smallest value that admits the peer network
+  // we actually publish; it is still an arbitrary pick, like the two below it.
+  maxDepth: 4,
   maxRounds: 6,
   maxSessionModelCalls: 300,
   maxElapsedMs: 60_000,

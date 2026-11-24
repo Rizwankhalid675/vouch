@@ -25,6 +25,7 @@ import { validate_agent_names, validate_missing_nodes, validate_network, validat
 import { filter_sly_data } from "../src/runtime/upstream/sly-data.ts";
 import { NOT_OURS, SITE_DATUM, joinSiteText, ours, renderPhrase, siteText, theirs } from "../src/runtime/errors.ts";
 import { selectTopRouter, manifestAllowsPeer } from "../src/runtime/upstream/router.ts";
+import { peerBindings, resolveSymbolicRefs, symbolicRefs } from "../src/runtime/peers.ts";
 
 /* ================================================================== */
 /* Harness                                                             */
@@ -35,7 +36,9 @@ const html = readFileSync(resolve(root, "src/site/index.html"), "utf8");
 const readPublic = (f: string): unknown => JSON.parse(readFileSync(resolve(root, "public", f), "utf8"));
 const MANIFEST = readPublic("agent-manifest.json") as Manifest;
 const NETWORK = readPublic("vouch.network.json") as NetworkConfig;
-const LINKS = readPublic("links.json");
+const LINKS = readPublic("links.json") as { networks: Record<string, Record<string, string>> };
+/** The publisher's own bindings for the running network, from the real links.json. */
+const PUBLISHED_BINDINGS = peerBindings(LINKS.networks["vouch"] ?? {});
 
 const BASE = "https://deli.example";
 const ROUTER = "https://api.openai.com/v1";
@@ -853,8 +856,11 @@ describe("nothing reachable from the model can change what a card shows", () => 
     hostile.tools![1]!.name = CANARY;
     hostile.tools![0]!.tools = [CANARY, "restriction_reader", "order_builder"];
     // Upstream's own checks are happy with it: the reference is name-presence only.
+    // Checked against the RESOLVED copy, because our published network now names a
+    // peer network symbolically and upstream's classifier reads an unresolved
+    // symbolic name as a missing tool — which is a different defect from this one.
     expect(validate_shape(hostile)).toEqual([]);
-    expect(validate_missing_nodes(hostile)).toEqual([]);
+    expect(validate_missing_nodes(resolveSymbolicRefs(hostile, PUBLISHED_BINDINGS))).toEqual([]);
     // Ours is not.
     expect(validate_agent_names(hostile)).toEqual([expect.stringContaining("not a usable identifier")]);
 
@@ -1379,6 +1385,10 @@ describe("check_safety is a registered site action, and the only source of a ver
   /**
    * The action catalog is offered to the front agent only. Breaks if a sub-agent
    * is ever handed the catalog: `check_safety` would appear among its tools.
+   *
+   * `menu_guide` now also carries one tool of its own — the peer network this
+   * site binds — so the assertion is stated as "no registered action reaches a
+   * sub-agent", which is the invariant, with the exact list beside it.
    */
   test("only the front agent is offered the action catalog", async () => {
     const h = harness({ replies: [callTool("menu_guide", { question: "x" }), say("ok"), say("done")] });
@@ -1390,7 +1400,9 @@ describe("check_safety is a registered site action, and the only source of a ver
     expect(frontTools).toContain("check_safety");
     expect(frontTools).toContain("menu_guide");
     expect(childTools).not.toContain("check_safety");
-    expect(childTools).toEqual([]);
+    const actionNames = (MANIFEST.actions ?? []).map((a) => a.name);
+    for (const t of childTools) expect(actionNames, t).not.toContain(t);
+    expect(childTools).toEqual(["marrow_point"]);
   });
 
   test("get_menu_state hands over published data and no verdict", () => {
@@ -2079,23 +2091,52 @@ describe("the adapted upstream plumbing, run against what we actually publish", 
     expect(find_front_man(reordered)).toBe("menu_guide");
   });
 
+  /**
+   * The published network validates ONCE ITS BINDINGS ARE RESOLVED, and does not
+   * validate without them. That second half is the runtime face of the artifacts
+   * tripwire: a symbolic reference with no binding is a `missing` tool to
+   * upstream's classifier, so forgetting `links.json` does not produce a quietly
+   * inert peer — it stops the network at startup, by name.
+   */
   test("the published network validates, and each kind of defect is caught", () => {
-    expect(validate_network(NETWORK)).toEqual([]);
+    expect(symbolicRefs(NETWORK)).toEqual(["marrow_point"]);
+    expect(validate_network(resolveSymbolicRefs(NETWORK, PUBLISHED_BINDINGS))).toEqual([]);
+    expect(validate_network(NETWORK)).toEqual(["Agent 'menu_guide' references missing tool 'marrow_point'."]);
     // Upstream's validator concatenates every check rather than stopping at the
     // first, so an empty network reports both its defects. Matched deliberately.
     expect(validate_network({ tools: [] })).toEqual(["Network 'tools' array must not be empty.", "No front-man agent found."]);
     expect(validate_network({})).toEqual(["Network must have a 'tools' array.", "No front-man agent found."]);
-    const dangling = structuredClone(NETWORK);
+    // The defect cases are built on the RESOLVED network, so each reports its own
+    // one defect rather than that defect plus an unresolved binding.
+    const BOUND = resolveSymbolicRefs(NETWORK, PUBLISHED_BINDINGS);
+    const dangling = structuredClone(BOUND);
     dangling.tools![0]!.tools = ["nobody"];
     expect(validate_network(dangling)).toEqual(["Agent 'front_of_house' references missing tool 'nobody'."]);
-    const dupe = structuredClone(NETWORK);
+    const dupe = structuredClone(BOUND);
     dupe.tools!.push(structuredClone(dupe.tools![1]!));
     expect(validate_network(dupe)).toEqual(["Duplicate agent name 'menu_guide'."]);
   });
 
-  test("every tool reference in the published network classifies as an in-network agent", () => {
+  /**
+   * Every reference in the published network is either an in-network agent or the
+   * ONE symbolic peer reference, which classifies as `remote` once its binding is
+   * resolved. Breaks if a bare URL or an MCP descriptor is ever added to an
+   * agent's tools without that being a deliberate, separately justified change.
+   */
+  test("every tool reference is an in-network agent, or the bound peer network", () => {
+    const BOUND = resolveSymbolicRefs(NETWORK, PUBLISHED_BINDINGS);
+    const bound = PUBLISHED_BINDINGS.map((b) => b.symbolic);
     for (const agent of NETWORK.tools ?? []) {
-      for (const ref of agent.tools ?? []) expect(classify_tool(NETWORK, ref), `${agent.name} -> ${String(ref)}`).toBe("agent");
+      for (const ref of agent.tools ?? []) {
+        const label = `${agent.name} -> ${String(ref)}`;
+        if (typeof ref === "string" && bound.includes(ref)) {
+          // Unresolved it reads as missing; resolved it is a peer network.
+          expect(classify_tool(NETWORK, ref), label).toBe("missing");
+          expect(classify_tool(BOUND, PUBLISHED_BINDINGS.find((b) => b.symbolic === ref)!.url), label).toBe("remote");
+          continue;
+        }
+        expect(classify_tool(NETWORK, ref), label).toBe("agent");
+      }
     }
   });
 
@@ -2141,7 +2182,10 @@ describe("the adapted upstream plumbing, run against what we actually publish", 
     const h = harness();
     const s = await session({ h });
     expect(h.captured.some((c) => c.url === `${BASE}/links.json`)).toBe(true);
-    expect(s.runtime.links()).toEqual({});
+    // The publisher's own binding, read from the real file rather than restated.
+    expect(s.runtime.links()).toEqual(LINKS.networks["vouch"]);
+    expect(Object.keys(s.runtime.links())).toEqual(["marrow_point"]);
+    expect(s.runtime.peerBindings().map((b) => b.boundBy)).toEqual(["publisher"]);
     const none = harness({ artifacts: { [`${BASE}/links.json`]: undefined } });
     expect(await loadPublishedLinks(BASE, "vouch", none.fetchImpl)).toEqual({});
   });

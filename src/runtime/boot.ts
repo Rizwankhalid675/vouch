@@ -40,7 +40,15 @@ import {
   type SiteReport,
 } from "./errors.ts";
 import { DEFAULT_LIMITS } from "./limits.ts";
-import { InvalidNetworkError, loadComposition, type ComposedNetwork } from "./composition.ts";
+import { InvalidNetworkError, clearToContact, loadComposition, type ComposedNetwork, type CompositionDeps } from "./composition.ts";
+import {
+  PeerBook,
+  peerBindings,
+  peerBookFor,
+  resolveSymbolicRefs,
+  symbolicRefs,
+  type PeerBinding,
+} from "./peers.ts";
 import { ActionRegistry, type ActionScope, type ConfirmFn } from "./upstream/action-registry.ts";
 import { find_front_man } from "./upstream/graph.ts";
 import { validate_network } from "./upstream/validation.ts";
@@ -63,6 +71,33 @@ export interface BootOptions {
   restrictions?: Restriction[];
   /** Origins the visitor has bound by hand, as upstream's `runtimeAllowedPeers`. */
   allowedPeers?: string[];
+  /**
+   * CALLER-owned bindings for symbolic peer-network references that this site's
+   * own `links.json` does not resolve (§3.3).
+   *
+   * They belong to the visitor, not to the site: "A binding supplied at runtime
+   * for an unresolved named peer-network reference is caller-owned and MUST NOT
+   * modify the publisher's file." Nothing in this runtime writes
+   * `public/links.json`, and nothing could — it is a static deployment with no
+   * endpoint to write through. A caller binding never overrides one the publisher
+   * made, for the same reason: the publisher owns the defaults.
+   *
+   * There is no UI for this, deliberately; see `LIMITS.md` §2.8.
+   */
+  peerBindings?: Record<string, string>;
+  /**
+   * Private context for the conversation (upstream's `sly_data`).
+   *
+   * This site supplies none, and the panel has no way to enter any: there is no
+   * sign-in, no table number and nothing else worth keeping out of a prompt. The
+   * option exists because the private-context boundary has to be testable with
+   * something actually in it — §6 asks for a demonstration that a field is
+   * absent at a peer unless named, and "absent because the map was empty" is not
+   * one. Every `allow` list this site publishes is `[]`, so a field put here
+   * crosses no boundary at all; `LIMITS.md` §2.3 says what that does and does
+   * not mean.
+   */
+  slyData?: Record<string, unknown>;
   /** Overrides for the committing checkout, so a test can make its outcome never arrive. */
   placeOrder?: SiteContext["placeOrder"];
   checkoutTimeoutMs?: number;
@@ -84,6 +119,8 @@ export interface Runtime {
   trace(): TraceEntry[];
   /** The publisher's symbolic peer-network bindings for this network, from links.json. */
   links(): Record<string, string>;
+  /** Every binding in play, publisher's and caller's, each saying which it is. */
+  peerBindings(): readonly PeerBinding[];
   /** Fetch a public artifact from a peer origin, subject to the published peer policy. */
   fetchPeerArtifact(url: string): Promise<unknown>;
   /**
@@ -261,18 +298,19 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       doc,
       "p",
       { class: "panel-note" },
-      "A network is named by a URL whose last path component is its name. This site publishes three deliberately " +
-        "broken ones so that the refusals can be watched rather than taken on trust: /broken/invalid (its " +
-        "metadata.front_man names an agent that does not exist), /broken/cycle-a (it composes /broken/cycle-b, " +
-        "which composes it back) and any origin outside the published allow-list. Nothing here affects the menu or " +
-        "the verdicts.",
+      "A network is named by a URL whose last path component is its name. Type marrow_point to load the one this " +
+        "site is bound to: a bakery, on its own origin, whose agents then run here in your browser — you will be " +
+        "asked before anything is fetched from it. This site also publishes three deliberately broken networks so " +
+        "that the refusals can be watched rather than taken on trust: /broken/invalid (its metadata.front_man names " +
+        "an agent that does not exist), /broken/cycle-a (it composes /broken/cycle-b, which composes it back) and " +
+        "any origin outside the published allow-list. Nothing here affects the menu or the verdicts.",
     ),
   );
   const composeLabel = el(doc, "label", { class: "field" });
   const composeInput = el(doc, "input", {
     type: "text",
     "data-compose-input": "",
-    placeholder: "/broken/cycle-a",
+    placeholder: "marrow_point",
     "aria-label": "Network reference to load",
   });
   composeLabel.append(el(doc, "span", {}, "Network reference"), composeInput);
@@ -411,6 +449,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
   let manifest: Manifest | null = null;
   let network: NetworkConfig | null = null;
   let links: Record<string, string> = {};
+  let bindings: readonly PeerBinding[] = [];
   let router: Router | null = null;
   let conversation: Conversation | null = null;
   let scope: ActionScope | null = null;
@@ -466,6 +505,30 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
 
   let composed: ComposedNetwork[] = [];
 
+  /**
+   * What the \u00a73.2 walk is given, read fresh each time: the published manifest is
+   * the allow-list and it is not known until startup has fetched it, while this
+   * control is wired before that so it works when startup failed.
+   */
+  const compositionDeps = (): Omit<CompositionDeps, "purpose"> => ({
+    siteBase: base,
+    manifest,
+    runtimeAllowedPeers,
+    fetchArtifact: (url) => fetchPublicArtifact(url, fetchImpl),
+    confirm,
+    trace: addTrace,
+    now,
+    maxComposedNetworks: opts.limits?.maxComposedNetworks ?? DEFAULT_LIMITS.maxComposedNetworks,
+  });
+
+  /**
+   * The bound peers of this session, and the ONLY place a peer is instantiated.
+   * It walks through `loadComposition`, so the allow-list and the consent gate
+   * are the same ones the Load control goes through; there is no second route to
+   * a peer origin.
+   */
+  const peers: PeerBook = peerBookFor(() => bindings, compositionDeps, { trace: addTrace, now });
+
   async function loadPeerNetwork(ref: string): Promise<void> {
     const wanted = ref.trim();
     if (!wanted) {
@@ -478,25 +541,33 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     }
     composeBtn.disabled = true;
     try {
-      composed = await loadComposition(wanted, {
-        siteBase: base,
-        manifest,
-        runtimeAllowedPeers,
-        fetchArtifact: (url) => fetchPublicArtifact(url, fetchImpl),
-        confirm,
-        trace: addTrace,
-        now,
-        maxComposedNetworks: opts.limits?.maxComposedNetworks ?? DEFAULT_LIMITS.maxComposedNetworks,
-      });
+      /*
+       * A symbolic name this site has BOUND is loaded for use: it goes through
+       * `peers`, so the conversation can ask it afterwards and the visitor is
+       * asked once rather than twice. Anything else \u2014 a URL, one of the broken
+       * fixtures \u2014 is read and reported, and the two consent cards say which is
+       * which, because \u00a73.2 requires the purpose and not only the origin.
+       */
+      const bound = peers.binding(wanted);
+      if (bound) {
+        const peer = await peers.open(bound.symbolic);
+        composed = [...peer.composed];
+      } else {
+        composed = await loadComposition(wanted, { ...compositionDeps(), purpose: "read" });
+      }
       // Even on success the peers' NAMES stay out of our sentence: they are a
       // peer's strings, and the rule does not have a happy-path exception.
       showCompose(
         {
-          text: ours(
-            composed.length === 1
-              ? "Loaded and validated the published network below. It has not been run: binding another site's network into the conversation is not part of this build."
-              : "Loaded and validated the published networks below. None of them has been run: binding another site's network into the conversation is not part of this build.",
-          ),
+          text: bound
+            ? ours(
+                "Loaded and validated the published network below, and its agents can now be asked from the conversation. They run in this browser, on your own model router, and your provider key is not sent to that site. Nothing the network says can change the verdict beside a dish: a verdict is worked out here, from this site's own published ingredient list.",
+              )
+            : ours(
+                composed.length === 1
+                  ? "Loaded and validated the published network below. It was read, not run: this control reads a reference, and only a network this site has published a binding for can be asked from the conversation."
+                  : "Loaded and validated the published networks below. None of them was run: this control reads a reference, and only a network this site has published a binding for can be asked from the conversation.",
+              ),
           quotedLabel: ours("What was loaded, in the order it was composed:"),
           quoted: composed.map((c) => `${c.ref.name} \u2014 ${c.url}`),
         },
@@ -548,7 +619,39 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     const hoconUrl = new URL(entry.hocon, `${base}/`).toString();
     startupStage = "network";
     network = (await fetchPublicArtifact(hoconUrl, fetchImpl)) as NetworkConfig;
-    const errors = validate_network(network);
+
+    /*
+     * LINKS BEFORE VALIDATION, and the order matters.
+     *
+     * Our published network names a peer network by a SYMBOLIC name, which the
+     * adapted upstream classifier reads as `missing` until `links.json` resolves
+     * it. Upstream resolves bindings in its build step, so its validator never
+     * sees a symbolic name; we have no build step between the publisher and the
+     * browser, so the same resolution happens here, in memory, and the validator
+     * sees what upstream's validator would see.
+     *
+     * `network` keeps its symbolic names: it is what the conversation runs on, so
+     * the name a model is shown for a peer is ours and not a stranger's address.
+     * `resolved` exists only to be validated. See `peers.ts`.
+     */
+    startupStage = "links";
+    links = await loadPublishedLinks(base, entry.name, fetchImpl);
+    bindings = peerBindings(links, opts.peerBindings ?? {});
+    addTrace({
+      at: now(),
+      event: "links_loaded",
+      detail: {
+        network: entry.name,
+        bindings: Object.keys(links),
+        callerBindings: bindings.filter((b) => b.boundBy === "caller").map((b) => b.symbolic),
+        // Named here so a reader can see whether the three files agree without
+        // opening them: a symbolic reference with no binding is refused below.
+        symbolicRefs: symbolicRefs(network),
+      },
+    });
+
+    startupStage = "validate";
+    const errors = validate_network(resolveSymbolicRefs(network, bindings));
     // §6: an invalid network is stopped with visible errors, not a blank page.
     // Reported by the same class the composition path uses, so the two surfaces
     // cannot drift: our sentence in literals, the document and the validator's
@@ -574,14 +677,6 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       });
     }
     addTrace({ at: now(), event: "network_loaded", detail: { url: hoconUrl, frontMan: front, agents: (network.tools ?? []).length } });
-
-    // The publisher's peer-network link map (§3.3). Our network uses no symbolic
-    // external reference yet, so this resolves to {}; it is loaded anyway because
-    // it is one of the three public artifacts, it is fetched under the same
-    // no-credentials rule as the other two, and Task 8's peer binding arrives here.
-    startupStage = "links";
-    links = await loadPublishedLinks(base, entry.name, fetchImpl);
-    addTrace({ at: now(), event: "links_loaded", detail: { network: entry.name, bindings: Object.keys(links) } });
 
     scope = { base: base || "https://localhost", network: entry.name };
     startupStage = "actions";
@@ -700,6 +795,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         transcript,
         findings: () => findings,
         confirm,
+        peers,
+        ...(opts.slyData ? { slyData: opts.slyData } : {}),
         trace: addTrace,
         ...(opts.limits ? { limits: opts.limits } : {}),
         now,
@@ -856,20 +953,33 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     ask,
     trace: () => trace,
     links: () => links,
+    peerBindings: () => bindings,
     loadPeerNetwork,
     composed: () => composed,
+    /**
+     * Fetch one public artifact from a peer origin, subject to the published
+     * policy AND to consent.
+     *
+     * The consent half is Task 8's. This used to check the allow-list and then
+     * fetch, which was unconsented contact with a third-party origin — forbidden
+     * by §3.2, unreachable while `allowed_peers` was `[]`, and reachable the
+     * moment this site published a peer. It goes through `clearToContact` now,
+     * the same function the composition walk uses, so there is one allow-list
+     * check and one consent gate in this runtime rather than two of each.
+     */
     async fetchPeerArtifact(url: string): Promise<unknown> {
+      const origin = (() => {
+        try {
+          return new URL(url).origin;
+        } catch {
+          return url;
+        }
+      })();
       if (!manifestAllowsPeer(url, manifest, runtimeAllowedPeers)) {
-        const origin = (() => {
-          try {
-            return new URL(url).origin;
-          } catch {
-            return url;
-          }
-        })();
         addTrace({ at: now(), event: "peer_refused", detail: { url, origin } });
         throw new Error(`Policy: ${origin} is not an allowed peer of this site, so it was not contacted.`);
       }
+      await clearToContact(origin, { artifact: url }, { ...compositionDeps(), purpose: "read" });
       addTrace({ at: now(), event: "peer_fetch", detail: { url, credentials: "omit" } });
       return fetchPublicArtifact(url, fetchImpl);
     },

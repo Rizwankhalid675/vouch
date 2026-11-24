@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "site": {
+    "name": "Marrow Point Bakery",
+    "description": "A wholesale bakery. It bakes the breads and mixes the glazes that other kitchens put on their menus, and it publishes an agent network that describes them."
+  },
+  "networks": [
+    {
+      "name": "marrow_point",
+      "description": "Describes Marrow Point's breads, buns and glazes and the ingredients the bakery publishes for them.",
+      "front_man": "bakery_counter",
+      "hocon": "marrow_point.network.json"
+    }
+  ],
+  "llm_router": {
+    "protocol": "openai-compatible",
+    "base_url": "https://router.marrow-point.example/v1",
+    "byok_router": "https://router.marrow-point.example/v1",
+    "mock": false,
+    "note": "Informational only. A caller that loads this network runs it on the caller's own active router, with the caller's own model policy and key. This bakery never receives a caller's credential and this block must not replace a caller's inference path."
+  },
+  "allowed_peers": [],
+  "peer_policy": {
+    "allowed_peers": [],
+    "consent": "required_before_contact",
+    "private_context": "deny_by_default"
+  },
+  "deployment": {
+    "mode": "static"
+  }
+}

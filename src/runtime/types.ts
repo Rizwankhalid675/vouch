@@ -118,11 +118,33 @@ export interface TraceEntry {
  * replace. Values a caller wants shown go in `arguments`, which the dialog
  * renders in a node of its own.
  */
+/**
+ * WHAT APPROVING ONE CARD ACTUALLY DOES, as a closed set.
+ *
+ * The dialog turns this into the card's last clause, so every member of this
+ * union is a sentence a person reads before deciding. It is a union and not a
+ * string for one reason: fix round 1 found the peer card hard-coding
+ * `effect: "read"` for BOTH of its purposes, so a card that had just said a
+ * stranger's agents would run in this browser ended with "This reads only."
+ *
+ * The three action effects are the registry's own vocabulary. `run_peer_code` is
+ * not one of them and must not be folded into one: running a published network
+ * from another origin in the visitor's browser is not a read of anything, and it
+ * is not a write to the order or an order that cannot be undone either. It is a
+ * fourth thing and it gets a fourth sentence.
+ *
+ * `boot.ts` maps this union to those sentences through a `Record` over it, so
+ * adding a member here is a type error until the sentence exists. A comment
+ * asking the next author to remember is what this replaces; the comment was
+ * already there, four lines above the bug, and it did not hold.
+ */
+export type ConfirmEffect = "read" | "write" | "irreversible" | "run_peer_code";
+
 export interface ConfirmItem {
   action: string;
   description: SiteText;
   origin: string;
-  effect: "read" | "write" | "irreversible";
+  effect: ConfirmEffect;
   /**
    * The card offers "do not ask again for this site, this visit", UNTICKED.
    *

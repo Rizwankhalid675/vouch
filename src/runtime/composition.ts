@@ -65,9 +65,9 @@
  *     rather than fixed (`LIMITS.md` §2.2b).
  */
 
-import { RuntimeMessage, joinSiteText, ours } from "./errors.ts";
+import { RuntimeMessage, joinSiteText, ours, type SiteText } from "./errors.ts";
 import { BudgetError } from "./limits.ts";
-import type { ConfirmItem, Manifest, NetworkConfig, TraceEntry } from "./types.ts";
+import type { ConfirmEffect, ConfirmItem, Manifest, NetworkConfig, TraceEntry } from "./types.ts";
 import { classify_tool } from "./upstream/graph.ts";
 import { manifestAllowsPeer, normOrigin } from "./upstream/router.ts";
 import { validate_network } from "./upstream/validation.ts";
@@ -307,8 +307,45 @@ export interface CompositionDeps {
    * Defaults to `read`, so a caller that has not thought about it asks for the
    * smaller thing.
    */
-  purpose?: "read" | "run";
+  purpose?: ContactPurpose;
 }
+
+/** The purposes for which this runtime contacts a third-party origin. */
+export type ContactPurpose = "read" | "run";
+
+/**
+ * ONE ROW PER PURPOSE, AND THE EFFECT IS IN THE ROW.
+ *
+ * Fix round 1's most serious finding was here. The two descriptions were a
+ * ternary and `effect` was a hard-coded `"read"` beside it, so the run card said
+ * "run its agents here, in this browser" and the dialog ended it with "This reads
+ * only." The comment four lines above the bug already called that "the one kind
+ * of inaccuracy a consent card cannot have"; the comment was not a mechanism.
+ *
+ * This is the mechanism. The description and the effect are one literal per
+ * purpose, so there is no place to add a purpose and leave its effect behind, and
+ * the `Record` over `ContactPurpose` means a third purpose does not compile until
+ * it has both. The clause a reader sees is derived from `effect` in `boot.ts`,
+ * through a `Record` over the effect union for the same reason.
+ *
+ * Running a published network from another origin IS NOT A READ. It is not a
+ * write to the order and not an irreversible order either, so it does not borrow
+ * one of those; `run_peer_code` is its own effect with its own sentence.
+ */
+const CONTACT_CARD: Record<ContactPurpose, { description: SiteText; effect: ConfirmEffect }> = {
+  /** A bound peer the conversation is about to ask. Its agents run in this browser. */
+  run: {
+    description: ours(
+      "Fetch a published agent network from another site and run its agents here, in this browser, on your own model router. Your provider key is not sent there. Nothing it says can change the verdict beside a dish.",
+    ),
+    effect: "run_peer_code",
+  },
+  /** The panel's Load control, and a single artifact fetch. Nothing is run. */
+  read: {
+    description: ours("Fetch a published agent network from another site and read it here. It is read, not run."),
+    effect: "read",
+  },
+};
 
 /**
  * The allow-list and the consent gate, in that order. THE ONLY WAY TO REACH A
@@ -367,30 +404,22 @@ export async function clearToContact(
     deps.trace?.({ at: now(), event: "peer_consent", detail: { origin, approved: true, source: "remembered this visit" } });
     return;
   }
+  // Defaults to `read`, so a caller that has not thought about it asks for the
+  // smaller thing. The effect comes with it; it is not chosen separately.
+  const card = CONTACT_CARD[deps.purpose ?? "read"];
   const answer = consentAnswer(
     await (deps.confirm
     ? await deps.confirm([
         {
           action: "load_peer_network",
-          // Literals, one per purpose. The dialog renders this field, so it
-          // follows the same rule as every other surface that speaks in the
-          // site's voice: our prose carries no value, and what the guest is
-          // approving goes in `arguments`, which the dialog renders in a node of
-          // its own.
-          //
-          // The `run` wording changed when Task 8 completed the walk. It used to
-          // say "It is read, not run." for both, which was true of the whole
-          // build then and is now true of one of its two paths; a consent card
-          // that understates what it is consenting to is the one kind of
-          // inaccuracy a consent card cannot have.
-          description:
-            deps.purpose === "run"
-              ? ours(
-                  "Fetch a published agent network from another site and run its agents here, in this browser, on your own model router. Your provider key is not sent there. Nothing it says can change the verdict beside a dish.",
-                )
-              : ours("Fetch a published agent network from another site and read it here. It is read, not run."),
+          // Both of these come from ONE row of `CONTACT_CARD`, keyed by the
+          // purpose. The description is a literal per purpose, so our prose
+          // carries no value and what the guest is approving goes in `arguments`,
+          // which the dialog renders in a node of its own; the effect travels
+          // with it, so neither can be set without the other.
+          description: card.description,
           origin,
-          effect: "read",
+          effect: card.effect,
           // Unticked. The card draws a "do not ask again for this site, this
           // visit" control because of this flag, and without it there is no
           // control and no relaxation to make.

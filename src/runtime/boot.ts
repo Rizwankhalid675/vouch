@@ -23,7 +23,7 @@ import { Router, SCRIPTED_ROUTER, SCRIPTS, missingKeyMessage } from "./llm.ts";
 import { BudgetError, Conversation, CycleError, type Limits } from "./loop.ts";
 import { Transcript } from "./transcript.ts";
 import { renderVerdicts } from "./verdict-cards.ts";
-import type { ConfirmItem, Manifest, NetworkConfig, Receipt, TraceEntry } from "./types.ts";
+import type { ConfirmEffect, ConfirmItem, Manifest, NetworkConfig, Receipt, TraceEntry } from "./types.ts";
 import {
   RuntimeMessage,
   NOT_OURS,
@@ -38,6 +38,7 @@ import {
   theirs,
   type SitePhrase,
   type SiteReport,
+  type SiteText,
 } from "./errors.ts";
 import { DEFAULT_LIMITS } from "./limits.ts";
 import {
@@ -1118,6 +1119,26 @@ export function reconcileActions(
 }
 
 /**
+ * THE CARD'S LAST CLAUSE, ONE PER EFFECT, AND THE COMPILER KEEPS THE SET CLOSED.
+ *
+ * This was a ternary chain with a trailing `else`, which is why fix round 1 found
+ * the peer run card asserting "This reads only." about running a stranger's
+ * agents: the plan said `read`, so the chain said read, and a fourth kind of
+ * effect had nowhere to go. A `Record<ConfirmEffect, SiteText>` has no trailing
+ * branch — a member added to the union is a missing property here, named by the
+ * compiler, rather than a wrong sentence for a reader to notice.
+ *
+ * Each clause follows the same shape so the four are read against each other:
+ * what this approval does, in one short sentence, in the deli's own voice.
+ */
+const EFFECT_CLAUSE: Record<ConfirmEffect, SiteText> = {
+  read: ours(". This reads only."),
+  write: ours(". This changes your order."),
+  irreversible: ours(". This cannot be undone."),
+  run_peer_code: ours(". This runs their code in this browser."),
+};
+
+/**
  * The confirmation dialog. The runtime owns confirmation, not the model: this
  * shows the action, its origin, its effect and its exact arguments, and nothing
  * is dispatched until the guest presses a button here.
@@ -1141,9 +1162,7 @@ export function domConfirm(doc: Document, host: HTMLElement): PeerConfirmFn {
           p.description,
           ours(" Destination:"),
           theirs(p.origin),
-          ours(
-            p.effect === "read" ? ". This reads only." : p.effect === "irreversible" ? ". This cannot be undone." : ". This changes your order.",
-          ),
+          EFFECT_CLAUSE[p.effect],
         ]);
         li.append(
           name,

@@ -626,7 +626,6 @@ describe("consent blocks the fetch, rather than announcing it", () => {
     expect(forRun.plans).toHaveLength(1);
     const run = forRun.plans[0]![0]!;
     expect(run.origin).toBe(PEER_ORIGIN);
-    expect(run.effect).toBe("read");
     expect(run.description).toBe(
       "Fetch a published agent network from another site and run its agents here, in this browser, on your own model router. Your provider key is not sent there. Nothing it says can change the verdict beside a dish.",
     );
@@ -645,6 +644,67 @@ describe("consent blocks the fetch, rather than announcing it", () => {
       expect(d).not.toContain(PEER_ORIGIN);
       expect(d).not.toContain(PEER_NAME);
     }
+  });
+
+  /**
+   * INVARIANT: THE EFFECT CLAUSE ON THE CARD DESCRIBES WHAT THE CARD APPROVES.
+   *
+   * This is the test for the worst defect this project has shipped. The run card
+   * told a visitor that a stranger's agents would "run its agents here, in this
+   * browser" and then, in the same sentence, "This reads only." — because the
+   * plan hard-coded `effect: "read"` for both purposes, and the dialog derives
+   * the clause from `effect`. On a project whose whole argument is that a system
+   * must not assert what it cannot back, a consent card contradicting itself in
+   * one breath is the defect that matters most.
+   *
+   * It is asserted on the RENDERED CARD, for BOTH purposes. The old test read
+   * `plan.effect` off the plan object and pinned the wrong value, which is how
+   * the bug survived: a plan-object test cannot see the sentence a person reads.
+   *
+   * BREAKS IF: either purpose's clause changes, the two purposes come to share a
+   * clause, a purpose is added that inherits another's effect, or the run card
+   * says anything about reading only.
+   */
+  const RUN_CLAUSE = "This runs their code in this browser.";
+  const READ_CLAUSE = "This reads only.";
+
+  /** Open the real `domConfirm` card for one load, and read it before answering. */
+  async function openCard(load: (r: Runtime) => Promise<unknown>): Promise<{ text: string; answer: () => void }> {
+    const h = harness();
+    const mount = document.createElement("div");
+    document.body.append(mount);
+    // No `confirm` override: `boot` uses `domConfirm`, so this is the card itself.
+    const runtime = await boot(mount, { base: BASE, fetchImpl: h.fetchImpl, storage: new MemStorage() });
+    const pending = load(runtime).catch(() => undefined);
+    await Promise.resolve();
+    await Promise.resolve();
+    const panel = mount.querySelector<HTMLElement>("[data-confirm]")!;
+    expect(hiddenReason(panel)).toBeNull();
+    return {
+      text: readableText(panel),
+      answer: () => {
+        mount.querySelector<HTMLButtonElement>("[data-confirm-no]")!.click();
+        void pending;
+      },
+    };
+  }
+
+  test("the rendered run card says their code runs here, and never that it reads only", async () => {
+    const card = await openCard((r) => r.loadPeerNetwork(SYMBOLIC));
+    expect(card.text).toContain("run its agents here, in this browser");
+    expect(card.text).toContain(RUN_CLAUSE);
+    expect(card.text).not.toContain(READ_CLAUSE);
+    expect(card.text).not.toContain("This changes your order.");
+    expect(card.text).not.toContain("This cannot be undone.");
+    card.answer();
+  });
+
+  test("the rendered read card says it reads only, and never that their code runs", async () => {
+    const card = await openCard((r) => r.loadPeerNetwork(PEER_REF));
+    expect(card.text).toContain("It is read, not run.");
+    expect(card.text).toContain(READ_CLAUSE);
+    expect(card.text).not.toContain(RUN_CLAUSE);
+    card.answer();
   });
 
   /**

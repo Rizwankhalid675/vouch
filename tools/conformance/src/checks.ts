@@ -929,93 +929,7 @@ export function checkCredentials(artifacts: readonly Fetched[]): CheckResult {
 // What a command line cannot check (§6)
 // ---------------------------------------------------------------------------
 
-
-/**
- * The three §6 checks that quote no document at all.
- *
- * They need a browser, a running agent loop and a live model, and they would need
- * them whatever the network did -- so they read the same in a wholly unreachable
- * run as in a perfect one, and are the same objects in both.
- */
-function browserOnlyChecks(): CheckResult[] {
-  return [
-    declined(
-      "key-isolation",
-      "With a user key active, the second site never receives it and cannot change the caller's router",
-      "§6",
-      `${NO_BROWSER}This is a claim about requests a running page makes with a live credential. It can only be ` +
-        "shown by capturing those requests in a browser; a static read of published files cannot see where a key " +
-        "goes at runtime. The published-file half of §4 — that no credential is in the artifacts themselves — is " +
-        "checked above as `credential-handling`, and is a much weaker statement than this one.",
-      "checker",
-    ),
-    declined(
-      "private-context-at-peer",
-      "Private context is absent at the peer unless a named field is explicitly allowed",
-      "§6",
-      `${NO_BROWSER}What the network declares is checked above as \`private-context-rules\`. Whether the runtime ` +
-        "honours those declarations — that the field really is absent in the request that reaches the peer — is a " +
-        "property of a live invocation, and a declaration is not the behaviour.",
-      "checker",
-    ),
-    declined(
-      "visible-refusals",
-      "An invalid network, a cycle, an over-budget request and a denied origin all stop with a visible error",
-      "§6",
-      `${NO_BROWSER}Each of the four needs a runtime to refuse something and a page to show the refusal. This ` +
-        "tool can check that the artifacts of a *valid* network are valid; it cannot watch an invalid one being " +
-        "refused, and it will not read the presence of a broken fixture on a site as evidence that anything " +
-        "refuses it.",
-      "checker",
-    ),
-  ];
-}
-
-/**
- * Titles for the six §6 checks, in the order §6 lists them, so the unreached and
- * the declined forms cannot drift apart.
- */
-const DECLINED_TITLES: Record<(typeof DECLINED_CHECKS)[number], string> = {
-  "run-default-router": "Run the network with the site's published default router, and the BYOK path too",
-  "grounded-capability": "Call an internal agent and a grounded capability through MCP or a site action",
-  "peer-composition": "After user approval, load an exact named network from a second origin and run it locally",
-  "key-isolation": "With a user key active, the second site never receives it and cannot change the caller's router",
-  "private-context-at-peer": "Private context is absent at the peer unless a named field is explicitly allowed",
-  "visible-refusals":
-    "An invalid network, a cycle, an over-budget request and a denied origin all stop with a visible error",
-};
-
-/**
- * The three §6 checks that would quote a document, built for a document that
- * never answered.
- *
- * They cannot quote it, cannot blame the site for it, and have nowhere to put a
- * finding about it. The three after them need no document at all -- they need a
- * browser, and they would need one whatever the network did -- so they stay
- * ordinary declined checks.
- */
-function unreachedDeclinedChecks(artifact: NoAnswer, what: string): CheckResult[] {
-  const quoting: (typeof DECLINED_CHECKS)[number][] = [
-    "run-default-router",
-    "grounded-capability",
-    "peer-composition",
-  ];
-  return [
-    ...quoting.map((check) =>
-      unreached(
-        check,
-        DECLINED_TITLES[check],
-        "§6",
-        artifact,
-        `${NO_BROWSER}And this check would also have to say what the site declares, which it cannot: it needs ` +
-          `${what}.`,
-      ),
-    ),
-    ...browserOnlyChecks().slice(2),
-  ];
-}
-
-/** The §6 checks this tool declines, in the order §6 lists them. */
+/** The six §6 checks this tool declines, in the order §6 lists them. */
 export const DECLINED_CHECKS = [
   "run-default-router",
   "grounded-capability",
@@ -1025,38 +939,52 @@ export const DECLINED_CHECKS = [
   "visible-refusals",
 ] as const;
 
+export type DeclinedCheckId = (typeof DECLINED_CHECKS)[number];
+
+/** Titles, shared so the declined and unreached forms of a check cannot drift apart. */
+const DECLINED_TITLES: Record<DeclinedCheckId, string> = {
+  "run-default-router": "Run the network with the site's published default router, and the BYOK path too",
+  "grounded-capability": "Call an internal agent and a grounded capability through MCP or a site action",
+  "peer-composition": "After user approval, load an exact named network from a second origin and run it locally",
+  "key-isolation": "With a user key active, the second site never receives it and cannot change the caller's router",
+  "private-context-at-peer": "Private context is absent at the peer unless a named field is explicitly allowed",
+  "visible-refusals":
+    "An invalid network, a cycle, an over-budget request and a denied origin all stop with a visible error",
+};
+
 const NO_BROWSER =
   "This tool is a command line: it has no browser, no running agent loop and no model credential, so it cannot " +
   "observe this. ";
 
-export function declinedChecks(manifest: Fetched, network: Fetched | null): CheckResult[] {
-  // THE LAST INSTANCE OF THE CLASS, and the one the union was cut for.
-  //
-  // Round 3 fixed the `detail` here and left `findings` and `blockedBy` saying the
-  // opposite on the next two lines of the same result:
-  //
-  //   blocked by the checker and by the site: both reasons apply ...
-  //   ... Nothing here is a statement about the site ...
-  //   - manifest declares no llm_router
-  //
-  // Now a request that got no answer has no body to read -- `manifest.json` does
-  // not typecheck until `outcome` is narrowed -- and the result built for it has
-  // no findings field and a `blockedBy` fixed to "checker". Neither line can be
-  // written any more.
-  if (manifest.outcome === "no-answer") {
-    return unreachedDeclinedChecks(manifest, "the site manifest");
-  }
-  if (network !== null && network.outcome === "no-answer") {
-    return [
-      ...unreachedDeclinedChecks(network, "the network definition").slice(0, 2),
-      ...browserOnlyChecks().slice(2),
-    ];
-  }
-  const manifestRead = manifest.json !== undefined;
-  const networkRead = network !== null && network.outcome === "answered" && network.json !== undefined;
+/**
+ * The six §6 checks, as a TOTAL record keyed by their ids.
+ *
+ * A RECORD, NOT A LIST, and that is the fix rather than a detail of it. The list
+ * version was assembled from two builders and two `slice` calls, and one of those
+ * slices was wrong: `browserOnlyChecks().slice(2)` on a three-element array
+ * dropped `key-isolation` and `private-context-at-peer` whenever an artifact got
+ * no answer. A reachable run reported twenty checks and an unreachable one
+ * eighteen -- a SILENT OMISSION, which is the one thing this tool may never do,
+ * because a check that is not listed cannot be read as a pass, a failure or a
+ * declined item.
+ *
+ * `Record<DeclinedCheckId, CheckResult>` is total: leaving one out is a compile
+ * error, naming one twice is a compile error, and there is nothing to slice. The
+ * caller then maps over `DECLINED_CHECKS`, so the order is fixed too.
+ *
+ * The last three depend on NO artifact. They are declined because a shell has no
+ * browser, which is true whatever the network did, so nothing about an artifact
+ * may change what they say -- and they are built identically in every state.
+ */
+export function declinedChecks(manifest: Fetched, network: Fetched | null): Record<DeclinedCheckId, CheckResult> {
   const unread = (what: string) => `unknown (this tool never read the ${what})`;
-  const manifestDoc = (manifest.json ?? {}) as Record<string, unknown>;
-  const router = (manifestDoc["llm_router"] ?? null) as Record<string, unknown> | null;
+  const manifestDoc = manifest.outcome === "answered" ? manifest.json : undefined;
+  const networkDoc = network !== null && network.outcome === "answered" ? network.json : undefined;
+  const manifestNoAnswer = manifest.outcome === "no-answer" ? manifest : null;
+  const networkNoAnswer = network !== null && network.outcome === "no-answer" ? network : null;
+
+  const doc = (manifestDoc ?? {}) as Record<string, unknown>;
+  const router = (doc["llm_router"] ?? null) as Record<string, unknown> | null;
   const routerDefault = (router?.["default"] ?? null) as Record<string, unknown> | null;
   const keyFree =
     router !== null &&
@@ -1065,10 +993,23 @@ export function declinedChecks(manifest: Fetched, network: Fetched | null): Chec
       routerDefault?.["requires_key"] === false ||
       router["requires_key"] === false);
 
-  const routerDetail = !manifestRead
-    ? "This tool never read the site manifest, so what this site declares about a default router is unknown. " +
-      "Nothing here is a statement about the site; see the manifest check above for why it could not be read."
-    : router
+  const mcpCount: number | null =
+    networkDoc !== undefined
+      ? toolRefsOf(networkDoc, new Set(agentsOf(networkDoc).map((a) => a.name))).filter((r) => r.kind === "mcp").length
+      : null;
+  const actions: number | null =
+    manifestDoc !== undefined ? (Array.isArray(doc["actions"]) ? (doc["actions"] as unknown[]).length : 0) : null;
+  const peers: number | null =
+    manifestDoc !== undefined
+      ? Array.isArray(doc["allowed_peers"])
+        ? (doc["allowed_peers"] as unknown[]).length
+        : 0
+      : null;
+  const mcpText = mcpCount === null ? unread("network definition") : `${mcpCount} MCP descriptor(s)`;
+  const actionText = actions === null ? unread("site manifest") : `${actions} action(s)`;
+  const peerText = peers === null ? unread("site manifest") : `${peers} allowed peer origin(s) declared`;
+
+  const routerDetail = router
     ? keyFree
       ? "The manifest does declare a default router that it says needs no visitor key, so the path exists to be " +
         "run; running it is what cannot be done from here."
@@ -1077,50 +1018,54 @@ export function declinedChecks(manifest: Fetched, network: Fetched | null): Chec
         'level is MAY — "A site MAY publish a default router and model that work without a visitor-supplied ' +
         'key" — so a key-required site is neither a pass nor a failure of this check, and this tool will not ' +
         "resolve that silence in either direction."
-    : "The manifest declares no `llm_router` at all, so there is no default router for this check to run — and " +
-      "§4's level is MAY, so that alone is not a failure either.";
+    : manifestDoc === undefined
+      ? "This tool could not read the site manifest, so what this site declares about a default router is unknown."
+      : "The manifest declares no `llm_router` at all, so there is no default router for this check to run — and " +
+        "§4's level is MAY, so that alone is not a failure either.";
 
-  const networkDoc = network !== null && network.outcome === "answered" ? network.json : undefined;
-  const mcpCount: number | null = networkRead
-    ? toolRefsOf(networkDoc, new Set(agentsOf(networkDoc).map((a) => a.name))).filter((r) => r.kind === "mcp").length
-    : null;
-  const actions: number | null = manifestRead
-    ? Array.isArray(manifestDoc["actions"])
-      ? (manifestDoc["actions"] as unknown[]).length
-      : 0
-    : null;
-  const peers: number | null = manifestRead
-    ? Array.isArray(manifestDoc["allowed_peers"])
-      ? (manifestDoc["allowed_peers"] as unknown[]).length
-      : 0
-    : null;
-  const mcpText = mcpCount === null ? unread("network definition") : `${mcpCount} MCP descriptor(s)`;
-  const actionText = actions === null ? unread("site manifest") : `${actions} action(s)`;
-  const peerText = peers === null ? unread("site manifest") : `${peers} allowed peer origin(s) declared`;
+  /** Declined, or unreached when the artifact this one would quote got no answer. */
+  const quoting = (
+    id: DeclinedCheckId,
+    needs: NoAnswer | null,
+    what: string,
+    detail: string,
+    blockedBy: Blocker,
+    findings: readonly string[],
+  ): CheckResult =>
+    needs !== null
+      ? unreached(
+          id,
+          DECLINED_TITLES[id],
+          "§6",
+          needs,
+          `${NO_BROWSER}And this check would also have to say what the site declares, which it cannot: it needs ` +
+            `${what}.`,
+        )
+      : declined(id, DECLINED_TITLES[id], "§6", detail, blockedBy, findings);
 
-  return [
-    declined(
+  return {
+    "run-default-router": quoting(
       "run-default-router",
-      DECLINED_TITLES["run-default-router"],
-      "§6",
+      manifestNoAnswer,
+      "the site manifest",
       `${NO_BROWSER}${routerDetail}`,
-      keyFree ? "checker" : "checker-and-site",
-      router ? [`manifest declares llm_router: ${Object.keys(router).join(", ")}`] : ["manifest declares no llm_router"],
+      keyFree || manifestDoc === undefined ? "checker" : "checker-and-site",
+      router ? [`manifest declares llm_router: ${Object.keys(router).join(", ")}`] : [],
     ),
-    declined(
+    "grounded-capability": quoting(
       "grounded-capability",
-      DECLINED_TITLES["grounded-capability"],
-      "§6",
+      manifestNoAnswer ?? networkNoAnswer,
+      manifestNoAnswer !== null ? "the site manifest" : "the network definition",
       `${NO_BROWSER}What is declared can be read where the document was readable: ${mcpText} in the network and ` +
         `${actionText} in the manifest. A declaration is not a call; whether either one answers, and whether the ` +
         "runtime validates its arguments, needs the page running.",
       (mcpCount ?? 0) + (actions ?? 0) > 0 || mcpCount === null || actions === null ? "checker" : "checker-and-site",
       [`MCP descriptors: ${mcpText}`, `declared site actions: ${actionText}`],
     ),
-    declined(
+    "peer-composition": quoting(
       "peer-composition",
-      DECLINED_TITLES["peer-composition"],
-      "§6",
+      manifestNoAnswer,
+      "the site manifest",
       `${NO_BROWSER}Consent is a browser interaction and local execution is a browser runtime; neither exists ` +
         `here. The link map and allow-list can be read where they were readable (${peerText}), and this tool can ` +
         "be pointed at a peer's own network URL to check that peer's published artifacts — but running the peer " +
@@ -1128,6 +1073,35 @@ export function declinedChecks(manifest: Fetched, network: Fetched | null): Chec
       "checker",
       [`allowed peer origins: ${peerText}`],
     ),
-    ...browserOnlyChecks(),
-  ];
+    // THESE THREE QUOTE NO DOCUMENT. Identical in every state, by construction.
+    "key-isolation": declined(
+      "key-isolation",
+      DECLINED_TITLES["key-isolation"],
+      "§6",
+      `${NO_BROWSER}This is a claim about requests a running page makes with a live credential. It can only be ` +
+        "shown by capturing those requests in a browser; a static read of published files cannot see where a key " +
+        "goes at runtime. The published-file half of §4 — that no credential is in the artifacts themselves — is " +
+        "checked above as `credential-handling`, and is a much weaker statement than this one.",
+      "checker",
+    ),
+    "private-context-at-peer": declined(
+      "private-context-at-peer",
+      DECLINED_TITLES["private-context-at-peer"],
+      "§6",
+      `${NO_BROWSER}What the network declares is checked above as \`private-context-rules\`. Whether the runtime ` +
+        "honours those declarations — that the field really is absent in the request that reaches the peer — is a " +
+        "property of a live invocation, and a declaration is not the behaviour.",
+      "checker",
+    ),
+    "visible-refusals": declined(
+      "visible-refusals",
+      DECLINED_TITLES["visible-refusals"],
+      "§6",
+      `${NO_BROWSER}Each of the four needs a runtime to refuse something and a page to show the refusal. This ` +
+        "tool can check that the artifacts of a *valid* network are valid; it cannot watch an invalid one being " +
+        "refused, and it will not read the presence of a broken fixture on a site as evidence that anything " +
+        "refuses it.",
+      "checker",
+    ),
+  };
 }

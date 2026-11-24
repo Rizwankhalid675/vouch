@@ -29,7 +29,9 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { runChecks } from "../src/index.ts";
+import { runChecks, CHECK_IDS } from "../src/index.ts";
+import { deriveTarget } from "../src/discover.ts";
+import { renderText } from "../src/report.ts";
 import { exitCodeFor } from "../src/report.ts";
 import { isUnreached } from "../src/types.ts";
 import { conformingSite, serve, BASE, NETWORK_URL } from "./fixture.ts";
@@ -79,6 +81,131 @@ describe("the invariant cannot be switched off quietly", () => {
     const fetch = readFileSync(resolve(toolRoot, "src/fetch.ts"), "utf8");
     expect(types).toMatch(/no `findings` field/);
     expect(fetch).toMatch(/COMPILE\s*\n?\s*\*?\s*ERROR|compile error/i);
+  });
+});
+
+describe("the set of checks a run reports does not depend on what answered", () => {
+  // THE ONE THING THIS TOOL MAY NEVER DO. A check that is not listed cannot be
+  // read as a pass, a failure or a declined item -- it is a silent omission, and
+  // the whole product is the difference between those three things being said out
+  // loud.
+  //
+  // Round 4's refactor dropped two of them when the host was unreachable:
+  // `key-isolation` and `private-context-at-peer`, both declined because a command
+  // line has no browser, which is true whatever the network did. A reachable run
+  // reported 20 checks and an unreachable one 18.
+  //
+  // The closed-set test that existed ran on the reachable fixture only, so it
+  // looked exactly where it had been pointed -- the third time on this task. This
+  // one runs over every state there is.
+  const states: [string, (files: Record<string, { throws?: string }>) => void][] = [
+    ["everything answers", () => {}],
+    ["nothing answers", (f) => {
+      for (const url of Object.keys(f)) f[url] = { throws: "ECONNREFUSED" };
+    }],
+    ["only the manifest is unreachable", (f) => {
+      f[`${BASE}agent-manifest.json`] = { throws: "ECONNREFUSED" };
+    }],
+    ["only the network definition is unreachable", (f) => {
+      f[`${BASE}demo.network.json`] = { throws: "EAI_AGAIN" };
+    }],
+    ["only the link map is unreachable", (f) => {
+      f[`${BASE}links.json`] = { throws: "ETIMEDOUT" };
+    }],
+    ["the manifest 404s", (f) => {
+      delete f[`${BASE}agent-manifest.json`];
+    }],
+    ["mixed: a real failure and an unreachable artifact", (f) => {
+      f[`${BASE}links.json`] = { throws: "ECONNREFUSED" };
+      (f[`${BASE}demo.network.json`] as unknown as { body: { tools: { name: string }[] } }).body.tools[1]!.name =
+        "an agent with a space";
+    }],
+  ];
+
+  test("every state reports the same check ids, in the same order", async () => {
+    const seen: Record<string, string[]> = {};
+    for (const [label, mutate] of states) {
+      const files = conformingSite();
+      mutate(files as never);
+      const results = await runChecks(NETWORK_URL, { fetchImpl: serve(files).fetchImpl });
+      seen[label] = results.map((r) => r.check);
+    }
+    // Against the DECLARED order, not merely against each other: comparing runs to
+    // one another would let every state drift together. `CHECK_IDS` is the list the
+    // result record is keyed by, so this asserts the output is that list.
+    for (const [label, ids] of Object.entries(seen)) {
+      expect(ids, `${label}: the reported set of checks differs`).toEqual([...CHECK_IDS]);
+    }
+    // No duplicates.
+    expect(new Set(CHECK_IDS).size).toBe(CHECK_IDS.length);
+    expect(CHECK_IDS.length).toBe(20);
+  });
+
+  test("every state reports every §6 check that needs no artifact at all", async () => {
+    // These two were the ones that vanished. They are declined because a shell has
+    // no browser; nothing about an artifact can change that, so nothing about an
+    // artifact may remove them from the output.
+    const alwaysDeclined = ["key-isolation", "private-context-at-peer", "visible-refusals"];
+    for (const [label, mutate] of states) {
+      const files = conformingSite();
+      mutate(files as never);
+      const results = await runChecks(NETWORK_URL, { fetchImpl: serve(files).fetchImpl });
+      for (const id of alwaysDeclined) {
+        const found = results.find((r) => r.check === id);
+        expect(found, `${label}: ${id} is missing from the output`).toBeTruthy();
+        expect(found!.status, `${label}: ${id}`).toBe("not-demonstrated");
+      }
+    }
+  });
+
+  test("the rendered report lists every check, so nothing is dropped between results and output", async () => {
+    const files = conformingSite();
+    for (const url of Object.keys(files)) files[url] = { throws: "ECONNREFUSED" };
+    const results = await runChecks(NETWORK_URL, { fetchImpl: serve(files).fetchImpl });
+    const text = renderText(results, deriveTarget(NETWORK_URL));
+    for (const result of results) {
+      expect(text, `${result.check} is not in the rendered report`).toContain(result.title);
+    }
+    // ...and the headline counts add up to the number of checks there are.
+    const made = /(\d+) checks made, (\d+) not checked/.exec(text);
+    expect(made).toBeTruthy();
+    expect(Number(made![1]) + Number(made![2])).toBe(results.length);
+  });
+
+  test("the banner's arithmetic closes on the page, in every state that has a banner", async () => {
+    // The banner counted only the checks blocked by a refused request while the
+    // summary counted every check not made, so one line sat outside the banner's
+    // total with nothing saying which or why. After a round spent on exactly this
+    // class of number, a reader who adds them up and gets a different answer has
+    // every reason to distrust the rest -- so the sum is printed, and asserted.
+    const states: [string, (f: Record<string, unknown>) => void][] = [
+      ["nothing answers", (f) => {
+        for (const url of Object.keys(f)) f[url] = { throws: "ECONNREFUSED" };
+      }],
+      ["one artifact unreachable", (f) => {
+        f[`${BASE}links.json`] = { throws: "ETIMEDOUT" };
+      }],
+      ["mixed: a real failure as well", (f) => {
+        f[`${BASE}links.json`] = { throws: "ECONNREFUSED" };
+        (f[`${BASE}demo.network.json`] as { body: { tools: { name: string }[] } }).body.tools[1]!.name = "bad name";
+      }],
+    ];
+    for (const [label, mutate] of states) {
+      const files = conformingSite();
+      mutate(files as never);
+      const results = await runChecks(NETWORK_URL, { fetchImpl: serve(files).fetchImpl });
+      const text = renderText(results, deriveTarget(NETWORK_URL));
+      const notMade = results.filter((r) => r.status === "not-demonstrated").length;
+      const blocked = results.filter(isUnreached).length;
+
+      // The banner names the blocked count...
+      expect(text, label).toMatch(new RegExp(`${blocked} check(s)? could not be made`));
+      // ...and accounts for the remainder, with the sum written out.
+      const sum = new RegExp(`${blocked} \\+ ${notMade - blocked} = ${notMade} not checked`);
+      expect(text, `${label}: the banner's numbers do not visibly add up`).toMatch(sum);
+      // ...and that total is the one the summary line reports.
+      expect(text, label).toContain(`${notMade} not checked`);
+    }
   });
 });
 

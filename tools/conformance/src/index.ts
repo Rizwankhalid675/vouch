@@ -41,6 +41,7 @@ import {
 import type { CheckResult, RunOptions, Target, Unavailable } from "./types.ts";
 
 export { DECLINED_CHECKS, DiscoveryError, deriveTarget };
+export type { DeclinedCheckId } from "./checks.ts";
 export { exitCodeFor, renderJson, renderText, VERSION } from "./report.ts";
 export type { Blocker, CheckResult, CheckStatus, FetchLike, RunOptions, Target } from "./types.ts";
 
@@ -52,6 +53,33 @@ export type { Blocker, CheckResult, CheckStatus, FetchLike, RunOptions, Target }
  * probe makes the CORS result meaningless.
  */
 export const DEFAULT_PROBE_ORIGIN = "https://agentic-web-conformance.invalid";
+
+/**
+ * Every check this tool reports, in the order it reports them.
+ *
+ * One list, used as both the key set of the result record and the output order, so
+ * "the set of checks a run reports does not depend on what answered" is a property
+ * of the types rather than of seven code paths each remembering to be complete.
+ */
+export const CHECK_IDS = [
+  "manifest-reachable",
+  "network-selected",
+  "network-reachable",
+  "links-reachable",
+  "network-identity",
+  "agent-definitions",
+  "two-agent-network",
+  "invocation-schemas",
+  "private-context-rules",
+  "portable-data",
+  "referential-integrity",
+  "https-hosting",
+  "cors-hosting",
+  "credential-handling",
+  ...DECLINED_CHECKS,
+] as const;
+
+export type CheckId = (typeof CHECK_IDS)[number];
 
 /** Runs every check this tool can make, and reports the ones it cannot. */
 export async function runChecks(networkUrl: string, options: RunOptions = {}): Promise<CheckResult[]> {
@@ -143,21 +171,43 @@ export async function runChecksOn(target: Target, options: RunOptions = {}): Pro
                   reason: "the network definition at the location the manifest declares could not be read.",
                 };
 
-  return [
-    checkManifest(target, manifest),
-    checkNetworkSelected(target, manifest),
-    checkNetworkDefinition(manifest, entry, network),
-    checkLinkMap(links, symbolicRefs),
-    checkNetworkIdentity(entry, networkDoc, unavailable),
-    checkAgentDefinitions(networkDoc, unavailable),
-    checkTwoAgentNetwork(networkDoc, unavailable),
-    checkInvocationSchemas(networkDoc, unavailable),
-    checkPrivateContextRules(networkDoc, unavailable),
-    checkPortableData(networkDoc, unavailable),
-    checkReferentialIntegrity(entry, manifest, networkDoc, links, target.networkName, unavailable),
-    checkHttps(target),
-    checkCors(artifacts, probeOrigin, isLoopback(target)),
-    checkCredentials(artifacts),
+  // THE WHOLE SET, AS A TOTAL RECORD, mapped over one canonical order.
+  //
+  // This used to be an array literal with a spread on the end, and round 4's
+  // refactor lost two checks inside that spread: a `slice(2)` on a three-element
+  // array dropped `key-isolation` and `private-context-at-peer` whenever an
+  // artifact got no answer. A reachable run reported twenty checks and an
+  // unreachable one eighteen, and nothing said which two had gone -- a silent
+  // omission, which is the one thing this tool may never do, since a check that is
+  // not listed cannot be read as a pass, a failure or a declined item.
+  //
+  // `Record<CheckId, CheckResult>` is TOTAL. Leaving a check out is a compile
+  // error, naming one twice is a compile error, and `CHECK_IDS` fixes the order,
+  // so the reported set is identical in every state by construction rather than by
+  // seven branches each remembering to be complete.
+  const byId: Record<CheckId, CheckResult> = {
+    "manifest-reachable": checkManifest(target, manifest),
+    "network-selected": checkNetworkSelected(target, manifest),
+    "network-reachable": checkNetworkDefinition(manifest, entry, network),
+    "links-reachable": checkLinkMap(links, symbolicRefs),
+    "network-identity": checkNetworkIdentity(entry, networkDoc, unavailable),
+    "agent-definitions": checkAgentDefinitions(networkDoc, unavailable),
+    "two-agent-network": checkTwoAgentNetwork(networkDoc, unavailable),
+    "invocation-schemas": checkInvocationSchemas(networkDoc, unavailable),
+    "private-context-rules": checkPrivateContextRules(networkDoc, unavailable),
+    "portable-data": checkPortableData(networkDoc, unavailable),
+    "referential-integrity": checkReferentialIntegrity(
+      entry,
+      manifest,
+      networkDoc,
+      links,
+      target.networkName,
+      unavailable,
+    ),
+    "https-hosting": checkHttps(target),
+    "cors-hosting": checkCors(artifacts, probeOrigin, isLoopback(target)),
+    "credential-handling": checkCredentials(artifacts),
     ...declinedChecks(manifest, network),
-  ];
+  };
+  return CHECK_IDS.map((id) => byId[id]);
 }

@@ -167,11 +167,15 @@ The lowest ratio anywhere on a verdict card is **7.36** against a AAA threshold 
 threshold of 4.5. A verdict card that cannot be read is a safety failure rather than a style nit,
 so this is the measurement that most needed making.
 
-**One judgement call, flagged rather than fixed:** the caption carrying *"Not a statement about
-the kitchen, and not medical advice"* renders at **11.84px** (0.74rem against a 16px root). It
-passes AAA on contrast and it is a disclaimer repeated on 34 cards, so small is defensible — but
-it is below the 12px most guidance treats as a floor, and it is the one sentence on the card that
-limits what the verdict means. Worth a deliberate decision, not an accident.
+**One judgement call, raised and decided:** the caption carrying *"Not a statement about the
+kitchen, and not medical advice"* renders at **11.84px** (0.74rem against a 16px root). It passes
+AAA on contrast and it is a disclaimer repeated on 34 cards, so small is defensible — but it is
+below the 12px most guidance treats as a floor, and it is the one sentence on the card that limits
+what the verdict means.
+
+**The owner's decision, 24 November 2026: leave it as designed.** Recorded here because the point
+of raising it was to make it a choice rather than an oversight. Anyone who reads this and disagrees
+is disagreeing with a decision, which is the right thing to be able to do.
 
 **The no-JavaScript path is correct by construction, not by accident.** Checked against the built
 `dist/index.html` (22,911 bytes) rather than in jsdom:

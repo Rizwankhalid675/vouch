@@ -612,6 +612,56 @@ describe("§3.3 and §3.4 hosting", () => {
     expect(check.detail).toMatch(/local development/i);
   });
 
+  test("every shape of local development host counts as loopback, for BOTH checks", async () => {
+    // `myapp.test:5173` is an ordinary local development host. It used to fail
+    // `https-hosting` as "not loopback" -- and far worse, `cors-hosting` PASSED
+    // with the unqualified wording, dropping the "evidence about this machine
+    // only" clause that is the whole point of that sentence. A local pass that
+    // reads like a deployed pass is the exact failure the clause was added for,
+    // so both checks are asserted for every host shape, together.
+    const hosts = [
+      "localhost:5173",
+      "127.0.0.1:4173",
+      "127.1.2.3",
+      "myapp.localhost:3000",
+      "myapp.test:5173",
+      "deep.sub.myapp.test",
+      "0.0.0.0:8080",
+      "[::1]:8000",
+      "[::ffff:127.0.0.1]:8000",
+    ];
+    for (const host of hosts) {
+      const files: Record<string, unknown> = {};
+      for (const [url, file] of Object.entries(conformingSite())) {
+        // Through `new URL`, because that is how the tool resolves an artifact URL
+        // and the parser normalises some hosts (`[::ffff:127.0.0.1]` becomes
+        // `[::ffff:7f00:1]`). Keying the fixture off the raw spelling would make
+        // the fetch miss and hand this test a not-demonstrated it has not earned.
+        files[new URL(url.replace("https://fixture.example", `http://${host}`)).href] = file;
+      }
+      const { results } = await run(files, `http://${host}/agents/demo`);
+      const https = one(results, "https-hosting");
+      expect(https.status, host).toBe("pass");
+      expect(https.detail, host).toMatch(/local development/i);
+      const cors = one(results, "cors-hosting");
+      expect(cors.status, host).toBe("pass");
+      expect(cors.detail, host).toMatch(/loopback host/);
+    }
+  });
+
+  test("a host that merely looks local is not treated as loopback", async () => {
+    // The regex has to stay a regex about loopback, not about the word "local".
+    for (const host of ["localhost.example.com", "mytest.example", "notlocalhost", "127.0.0.1.example.com"]) {
+      const files: Record<string, unknown> = {};
+      for (const [url, file] of Object.entries(conformingSite())) {
+        files[url.replace("https://fixture.example", `http://${host}`)] = file;
+      }
+      const { results } = await run(files, `http://${host}/agents/demo`);
+      expect(one(results, "https-hosting").status, host).toBe("fail");
+      expect(one(results, "cors-hosting").detail, host).not.toMatch(/loopback host/);
+    }
+  });
+
   test("a CORS pass on a loopback host says so, because it is evidence about this machine only", async () => {
     // The same trap as HTTPS, one step further on: CORS is the check most likely to
     // pass locally and fail deployed, because a `_headers` file is a silent no-op on

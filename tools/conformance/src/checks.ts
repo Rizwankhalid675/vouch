@@ -697,7 +697,29 @@ export function checkReferentialIntegrity(
 // Hosting (§3.3, §3.4)
 // ---------------------------------------------------------------------------
 
-const LOOPBACK = /^(localhost|127(\.\d{1,3}){3}|\[::1\]|::1|.+\.localhost)$/i;
+/**
+ * Hosts where plain HTTP is a local development server rather than a deployment.
+ *
+ * §3.3: "Production deployments MUST use HTTPS; loopback HTTP is acceptable for
+ * local development." Two checks read this and they must never disagree, because
+ * a host that `https-hosting` excuses but `cors-hosting` does not recognise gets
+ * a CORS pass worded as though it had been read off a deployed origin -- which is
+ * the one thing that clause exists to prevent.
+ *
+ * `.localhost` and `.test` are both reserved for exactly this by RFC 6761;
+ * `0.0.0.0` is what a dev server prints when it binds every interface; and
+ * `::ffff:127.x.x.x` is how loopback arrives on a dual-stack listener. Anchored
+ * at both ends with a literal dot before the reserved suffixes, so
+ * `localhost.example.com` and `mytest.example` are not local anything.
+ *
+ * The `7f` branch is not obfuscation: `new URL("http://[::ffff:127.0.0.1]/")`
+ * reports its hostname as `[::ffff:7f00:1]`, because the parser normalises the
+ * IPv4-mapped form to hex. Matching only the dotted spelling would miss every
+ * such host after parsing, which is the only place this is ever read. `7f` plus
+ * two hex digits is the whole of 127/8.
+ */
+const LOOPBACK =
+  /^(localhost|127(\.\d{1,3}){3}|0\.0\.0\.0|\[?::1\]?|\[?::ffff:(127(\.\d{1,3}){3}|7f[0-9a-f]{2}:[0-9a-f]{1,4})\]?|.+\.(localhost|test))$/i;
 
 export function checkHttps(target: Target): CheckResult {
   const title = "Served over HTTPS (loopback HTTP allowed for local development)";
@@ -706,7 +728,7 @@ export function checkHttps(target: Target): CheckResult {
   if (url.protocol === "https:") {
     return pass("https-hosting", title, section, "The site base is HTTPS.", [`site base: ${target.base}`]);
   }
-  if (LOOPBACK.test(url.hostname)) {
+  if (isLoopback(target)) {
     return pass(
       "https-hosting",
       title,

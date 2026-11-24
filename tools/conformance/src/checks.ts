@@ -7,11 +7,16 @@
 // the answer needs something a shell does not have, the result is
 // `not-demonstrated` with the reason — never a pass, and never left out.
 
-import type { Fetched } from "./fetch.ts";
-import { describe as describeFetch } from "./fetch.ts";
+import type { Answered, Fetched, NoAnswer } from "./fetch.ts";
+import { answered, describe as describeFetch } from "./fetch.ts";
 import { publishedNames, selectNetwork, type ManifestNetwork } from "./discover.ts";
 import { credentialFindings, formatFinding, portabilityFindings } from "./rules.ts";
 import type { Blocker, CheckResult, Target, Unavailable } from "./types.ts";
+
+const UNREADABLE_MANIFEST: Unavailable = {
+  kind: "unreadable",
+  reason: "the site manifest could not be read.",
+};
 
 const pass = (
   check: string,
@@ -19,7 +24,7 @@ const pass = (
   section: string,
   detail: string,
   findings: readonly string[] = [],
-): CheckResult => ({ check, title, status: "pass", section, detail, findings });
+): CheckResult => ({ kind: "made", check, title, status: "pass", section, detail, findings });
 
 const fail = (
   check: string,
@@ -27,7 +32,7 @@ const fail = (
   section: string,
   detail: string,
   findings: readonly string[],
-): CheckResult => ({ check, title, status: "fail", section, detail, findings });
+): CheckResult => ({ kind: "made", check, title, status: "fail", section, detail, findings });
 
 const declined = (
   check: string,
@@ -36,67 +41,83 @@ const declined = (
   detail: string,
   blockedBy: Blocker,
   findings: readonly string[] = [],
-): CheckResult => ({ check, title, status: "not-demonstrated", section, detail, findings, blockedBy });
+): CheckResult => ({ kind: "declined", check, title, status: "not-demonstrated", section, detail, findings, blockedBy });
 
 /**
- * A check that could not be made because an earlier one failed.
+ * A check not made because a request got no answer.
  *
- * Not a failure: this tool did not look, so it will not claim the site is wrong.
- * Not a pass either, obviously. `blockedBy: "site"` because the reason the tool
- * could not look is on the site's side, and a publisher needs to know that it is
- * not the tool refusing.
+ * THE ONLY WAY TO BUILD ONE, and it takes the failed request itself rather than a
+ * URL and an error a caller could forget or borrow from another artifact. It
+ * builds every channel: there is no `findings` parameter because the type has no
+ * such field, and `blockedBy` is not a parameter at all because a site that
+ * received no request cannot be named as a reason.
+ *
+ * `what` names what the check needed, and may cite only documents that ANSWERED.
  */
-const notReached = (
+const unreached = (
   check: string,
   title: string,
   section: string,
-  because: string,
-  blockedBy: Blocker = "site",
-  unreached = false,
-  unreachedUrl?: string,
+  artifact: NoAnswer,
+  what: string,
 ): CheckResult => ({
-  check,
-  title,
-  status: "not-demonstrated",
-  section,
-  detail: `Not reached: ${because} This check was not made; resolve that first and run again.`,
-  findings: [],
-  blockedBy,
-  ...(unreached ? { unreached: true } : {}),
-  ...(unreachedUrl !== undefined ? { unreachedUrl } : {}),
-});
-
-/**
- * The request never got an answer: no status, no headers, no body.
- *
- * A DNS failure, a refused connection, a blocked proxy, a timeout, a mistyped
- * hostname. **A site cannot be at fault for a request that never arrived**, so
- * this is never a failure and never blamed on the site. It is the one case where
- * `blockedBy: "checker"` means something other than "a shell cannot drive a
- * browser": it means this checker did not get as far as asking.
- *
- * This was a real bug, found by review and not by us. A refused connection
- * produced `FAIL ... It was not [readable]` plus eleven lines reading "blocked by
- * the site", about a site that was serving correctly the whole time. "I could not
- * look" rendered as "I looked and it is wrong" -- the exact confusion every other
- * line of this tool exists to prevent.
- */
-const neverReached = (check: string, title: string, section: string, fetched: Fetched): CheckResult => ({
+  kind: "unreached",
   check,
   title,
   status: "not-demonstrated",
   section,
   detail:
-    "This checker never reached the host, so it has no information about this site at all. Nothing came " +
-    "back: no status, no headers, no body. That is a DNS failure, a refused connection, a proxy in the " +
-    "way, a timeout or a mistyped hostname -- and a site cannot be at fault for a request that never " +
-    "arrived, so this is not reported as its failure. Check the URL, then whether this machine can reach " +
-    "that host at all.",
-  findings: [describeFetch(fetched)],
+    `${what} This checker never reached it: no answer at all from ${artifact.url} (${artifact.error}) -- no ` +
+    "status, no headers, no body. That is a DNS failure, a refused connection, a proxy in the way, a timeout " +
+    "or a mistyped hostname -- and a site cannot be at fault for a request that never arrived, so nothing " +
+    "here is reported as its failure. Check the URL, then whether this machine can reach that host.",
   blockedBy: "checker",
-  unreached: true,
-  unreachedUrl: fetched.url,
+  unreachedUrl: artifact.url,
+  transport: artifact.error,
 });
+
+/**
+ * A check that could not be made because an earlier one could not be made.
+ *
+ * Inherits the right kind from `Unavailable`, which is a union, so an unreached
+ * state cannot be inherited as a site-blamed one. That inheritance was hard-coded
+ * to `"site"` in round 2 and to a hand-passed flag in round 3; now it is a type.
+ */
+const notReached = (check: string, title: string, section: string, unavailable: Unavailable): CheckResult =>
+  unavailable.kind === "unreached"
+    ? unreached(check, title, section, unavailable.artifact, unavailable.what)
+    : declined(
+        check,
+        title,
+        section,
+        `Not reached: ${unavailable.reason} This check was not made; resolve that first and run again.`,
+        "site",
+      );
+
+/** A parsed artifact body, or the result to return instead of reading one. */
+type Gate = { readonly ready: true; readonly doc: unknown } | { readonly ready: false; readonly result: CheckResult };
+
+/**
+ * THE ONE PLACE a content check obtains a document.
+ *
+ * Seven checks need the network definition and each used to take a
+ * `Fetched | null` and decide for itself. Three rounds of this defect were one of
+ * those decisions being wrong. Now the decision is here, once, and a check body
+ * never holds a `Fetched` at all: it gets a parsed document or it gets a result
+ * to return, and there is no third possibility to get wrong.
+ */
+function requireDocument(
+  check: string,
+  title: string,
+  section: string,
+  artifact: Answered | null,
+  unavailable: Unavailable,
+): Gate {
+  if (artifact === null || artifact.json === undefined) {
+    return { ready: false, result: notReached(check, title, section, unavailable) };
+  }
+  return { ready: true, doc: artifact.json };
+}
 
 // ---------------------------------------------------------------------------
 // Presence (§3.2, §3.3)
@@ -106,8 +127,10 @@ const MANIFEST_TITLE = "Site manifest published and readable by a public GET";
 
 export function checkManifest(target: Target, fetched: Fetched): CheckResult {
   const title = MANIFEST_TITLE;
-  // Nothing came back at all. Not the site's failure; see `neverReached`.
-  if (fetched.status === null) return neverReached("manifest-reachable", title, "§3.3", fetched);
+  // Nothing came back at all. Not the site's failure; see `unreached`.
+  if (fetched.outcome === "no-answer") {
+    return unreached("manifest-reachable", title, "§3.3", fetched, "This check needs the site manifest.");
+  }
   // §3.3, hosting rule for agent-manifest.json: "Public GET from the derived site base".
   if (fetched.status !== 200 || fetched.json === undefined) {
     return fail(
@@ -141,22 +164,18 @@ export function checkManifest(target: Target, fetched: Fetched): CheckResult {
 export function checkNetworkSelected(target: Target, manifest: Fetched): CheckResult {
   const title = "The requested network name matches a manifest entry exactly";
   const section = "§3.2";
-  if (manifest.status === null) {
-    return notReached(
-      "network-selected",
-      title,
-      section,
-      "this checker never reached the host, so no manifest was read.",
-      "checker",
-      true,
-    );
+  if (manifest.outcome === "no-answer") {
+    return unreached("network-selected", title, section, manifest, "This check needs the site manifest.");
   }
-  if (manifest.status !== 200 || manifest.json === undefined) {
-    return notReached("network-selected", title, section, "the site manifest could not be read.");
+  if (manifest.json === undefined) {
+    return notReached("network-selected", title, section, UNREADABLE_MANIFEST);
   }
   const networks = (manifest.json as { networks?: unknown }).networks;
   if (!Array.isArray(networks)) {
-    return notReached("network-selected", title, section, "the site manifest has no `networks` array.");
+    return notReached("network-selected", title, section, {
+      kind: "unreadable",
+      reason: "the site manifest has no `networks` array.",
+    });
   }
   const entry = selectNetwork(networks, target.networkName);
   if (!entry) {
@@ -185,26 +204,23 @@ export function checkNetworkDefinition(
 ): CheckResult {
   const title = "Resolved network definition published and readable by a public GET";
   const section = "§3.3";
-  if (manifest.status === null) {
-    return notReached(
+  if (manifest.outcome === "no-answer") {
+    return unreached(
       "network-reachable",
       title,
       section,
-      "this checker never reached the host, so the manifest never named a network definition.",
-      "checker",
-      true,
+      manifest,
+      "This check needs the site manifest, which is where the network definition's location is declared.",
     );
   }
-  if (manifest.status !== 200 || manifest.json === undefined) {
-    return notReached("network-reachable", title, section, "the site manifest could not be read.");
+  if (manifest.json === undefined) {
+    return notReached("network-reachable", title, section, UNREADABLE_MANIFEST);
   }
   if (!entry) {
-    return notReached(
-      "network-reachable",
-      title,
-      section,
-      "no manifest entry matched the requested network name, so there is no declared location to fetch.",
-    );
+    return notReached("network-reachable", title, section, {
+      kind: "unreadable",
+      reason: "no manifest entry matched the requested network name, so there is no declared location to fetch.",
+    });
   }
   if (!network) {
     return fail(
@@ -216,7 +232,9 @@ export function checkNetworkDefinition(
       [`${String(entry.name)}: hocon = ${JSON.stringify(entry.hocon ?? null)}`],
     );
   }
-  if (network.status === null) return neverReached("network-reachable", title, section, network);
+  if (network.outcome === "no-answer") {
+    return unreached("network-reachable", title, section, network, "This check needs the network definition.");
+  }
   if (network.status !== 200 || network.json === undefined) {
     return fail(
       "network-reachable",
@@ -260,7 +278,9 @@ export function checkLinkMap(links: Fetched, symbolicRefs: readonly string[] | n
       : symbolicRefs.length > 0
         ? `This network has ${symbolicRefs.length} symbolic external reference(s) that nothing else resolves (${symbolicRefs.join(", ")}), so the link map is what binds them.`
         : "This network declares no symbolic external reference, so the link map has nothing to bind — but §3.3 lists it among the minimum public files, so its absence is reported rather than waived.";
-  if (links.status === null) return neverReached("links-reachable", title, section, links);
+  if (links.outcome === "no-answer") {
+    return unreached("links-reachable", title, section, links, "This check needs the link map.");
+  }
   if (links.status !== 200 || links.json === undefined) {
     return fail(
       "links-reachable",
@@ -312,15 +332,15 @@ const AGENT_NAME = /^[A-Za-z0-9_-]+$/;
 
 export function checkNetworkIdentity(
   entry: ManifestNetwork | null,
-  network: Fetched | null,
+  network: Answered | null,
   unavailable: Unavailable,
 ): CheckResult {
   const title = "Network identity: a stable name, a short description and a named front agent";
   const section = "§2.1";
-  if (!entry || !network || network.json === undefined) {
-    return notReached("network-identity", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
-  }
-  const doc = network.json as { metadata?: { description?: unknown; name?: unknown; front_man?: unknown } };
+  const gate = requireDocument("network-identity", title, section, network, unavailable);
+  if (!gate.ready) return gate.result;
+  if (!entry) return notReached("network-identity", title, section, UNREADABLE_MANIFEST);
+  const doc = gate.doc as { metadata?: { description?: unknown; name?: unknown; front_man?: unknown } };
   const problems: string[] = [];
   if (!str(entry.front_man) && !str(doc.metadata?.front_man)) {
     problems.push(
@@ -333,7 +353,7 @@ export function checkNetworkIdentity(
         "`metadata.description` carries one",
     );
   }
-  if (agentsOf(network.json).length === 0) {
+  if (agentsOf(gate.doc).length === 0) {
     problems.push("the network defines no agents");
   }
   if (problems.length > 0) {
@@ -351,13 +371,12 @@ export function checkNetworkIdentity(
   ]);
 }
 
-export function checkAgentDefinitions(network: Fetched | null, unavailable: Unavailable): CheckResult {
+export function checkAgentDefinitions(network: Answered | null, unavailable: Unavailable): CheckResult {
   const title = "Agent definitions: unique name, a description, instructions when it uses an LLM";
   const section = "§2.1";
-  if (!network || network.json === undefined) {
-    return notReached("agent-definitions", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
-  }
-  const agents = agentsOf(network.json);
+  const gate = requireDocument("agent-definitions", title, section, network, unavailable);
+  if (!gate.ready) return gate.result;
+  const agents = agentsOf(gate.doc);
   const problems: string[] = [];
   const seen = new Map<string, number>();
   for (const agent of agents) {
@@ -416,13 +435,12 @@ export function checkAgentDefinitions(network: Fetched | null, unavailable: Unav
   );
 }
 
-export function checkTwoAgentNetwork(network: Fetched | null, unavailable: Unavailable): CheckResult {
+export function checkTwoAgentNetwork(network: Answered | null, unavailable: Unavailable): CheckResult {
   const title = "A two-agent network is published (§6's first interoperability check)";
   const section = "§6";
-  if (!network || network.json === undefined) {
-    return notReached("two-agent-network", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
-  }
-  const agents = agentsOf(network.json);
+  const gate = requireDocument("two-agent-network", title, section, network, unavailable);
+  if (!gate.ready) return gate.result;
+  const agents = agentsOf(gate.doc);
   if (agents.length < 2) {
     return fail(
       "two-agent-network",
@@ -437,13 +455,12 @@ export function checkTwoAgentNetwork(network: Fetched | null, unavailable: Unava
   ]);
 }
 
-export function checkInvocationSchemas(network: Fetched | null, unavailable: Unavailable): CheckResult {
+export function checkInvocationSchemas(network: Answered | null, unavailable: Unavailable): CheckResult {
   const title = "Invocation schemas are JSON-Schema compatible in the honoured form";
   const section = "§2.1";
-  if (!network || network.json === undefined) {
-    return notReached("invocation-schemas", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
-  }
-  const agents = agentsOf(network.json);
+  const gate = requireDocument("invocation-schemas", title, section, network, unavailable);
+  if (!gate.ready) return gate.result;
+  const agents = agentsOf(gate.doc);
   const problems: string[] = [];
   let declaredCount = 0;
   for (const agent of agents) {
@@ -490,15 +507,14 @@ export function checkInvocationSchemas(network: Fetched | null, unavailable: Una
 
 const SLY_BLOCKS = ["to_downstream", "from_downstream", "to_upstream", "to_tracing"] as const;
 
-export function checkPrivateContextRules(network: Fetched | null, unavailable: Unavailable): CheckResult {
+export function checkPrivateContextRules(network: Answered | null, unavailable: Unavailable): CheckResult {
   const title = "Private-context fields are named, not allowed in bulk";
   const section = "§2.1";
-  if (!network || network.json === undefined) {
-    return notReached("private-context-rules", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
-  }
+  const gate = requireDocument("private-context-rules", title, section, network, unavailable);
+  if (!gate.ready) return gate.result;
   const problems: string[] = [];
   let namedCount = 0;
-  for (const agent of agentsOf(network.json)) {
+  for (const agent of agentsOf(gate.doc)) {
     const allow = (agent.raw["allow"] ?? null) as Record<string, unknown> | null;
     if (!allow || typeof allow !== "object") continue;
     for (const block of SLY_BLOCKS) {
@@ -546,13 +562,12 @@ export function checkPrivateContextRules(network: Fetched | null, unavailable: U
 // Portability (§2.2) and referential integrity
 // ---------------------------------------------------------------------------
 
-export function checkPortableData(network: Fetched | null, unavailable: Unavailable): CheckResult {
+export function checkPortableData(network: Answered | null, unavailable: Unavailable): CheckResult {
   const title = "Published definition is portable data: no includes, substitutions, env or publisher paths";
   const section = "§2.2";
-  if (!network || network.json === undefined) {
-    return notReached("portable-data", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
-  }
-  const findings = portabilityFindings(network.json);
+  const gate = requireDocument("portable-data", title, section, network, unavailable);
+  if (!gate.ready) return gate.result;
+  const findings = portabilityFindings(gate.doc);
   if (findings.length > 0) {
     return fail(
       "portable-data",
@@ -608,17 +623,16 @@ export function toolRefsOf(network: unknown, agentNames: ReadonlySet<string>): T
 export function checkReferentialIntegrity(
   entry: ManifestNetwork | null,
   manifest: Fetched,
-  network: Fetched | null,
+  network: Answered | null,
   links: Fetched,
   networkName: string,
   unavailable: Unavailable,
 ): CheckResult {
   const title = "Every reference resolves: front agent, in-network agents, link-map bindings, URLs, MCP";
   const section = "§3.1";
-  if (!network || network.json === undefined) {
-    return notReached("referential-integrity", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
-  }
-  const agents = agentsOf(network.json);
+  const gate = requireDocument("referential-integrity", title, section, network, unavailable);
+  if (!gate.ready) return gate.result;
+  const agents = agentsOf(gate.doc);
   const names = new Set(agents.map((a) => a.name).filter((n) => n !== ""));
   const problems: string[] = [];
 
@@ -629,7 +643,7 @@ export function checkReferentialIntegrity(
   // actually ships: an agent gets renamed and one of the two declarations follows.
   // (Found by running this tool against a deliberately broken fixture whose only
   // defect was in the declaration the first version of this check did not read.)
-  const doc = network.json as { metadata?: { front_man?: unknown } };
+  const doc = gate.doc as { metadata?: { front_man?: unknown } };
   const declarations: { where: string; value: string }[] = [];
   if (str(entry?.front_man)) declarations.push({ where: "the manifest entry's `front_man`", value: str(entry?.front_man)! });
   if (str(doc.metadata?.front_man)) {
@@ -670,19 +684,23 @@ export function checkReferentialIntegrity(
   // this check an unreadable link map can excuse; everything else -- a front agent
   // that names no agent, a `/name` the manifest does not publish -- is wrong
   // whatever links.json says, stays a finding, and outranks the unreached artifact.
-  const linksUnreached = links.status === null;
-  const bindings = ((links.json as { networks?: Record<string, unknown> } | undefined)?.networks ?? {})[networkName];
+  // `links` and `manifest` are narrowed before anything is read off either, and
+  // the compiler will not let that be skipped: a `NoAnswer` has no `json`.
+  const linksUnreached = links.outcome === "no-answer";
+  const linksDoc = links.outcome === "answered" ? links.json : undefined;
+  const manifestDoc = manifest.outcome === "answered" ? manifest.json : undefined;
+  const bindings = ((linksDoc as { networks?: Record<string, unknown> } | undefined)?.networks ?? {})[networkName];
   const bound = new Set(
     bindings && typeof bindings === "object" && !Array.isArray(bindings) ? Object.keys(bindings) : [],
   );
   const manifestNames = new Set(
-    Array.isArray((manifest.json as { networks?: unknown } | undefined)?.networks)
-      ? publishedNames((manifest.json as { networks: unknown[] }).networks)
+    Array.isArray((manifestDoc as { networks?: unknown } | undefined)?.networks)
+      ? publishedNames((manifestDoc as { networks: unknown[] }).networks)
       : [],
   );
 
   const unresolvable: string[] = [];
-  for (const ref of toolRefsOf(network.json, names)) {
+  for (const ref of toolRefsOf(gate.doc, names)) {
     if (ref.kind === "internal" || ref.kind === "url" || ref.kind === "mcp") continue;
     if (ref.kind === "external-name") {
       const name = ref.value.slice(1);
@@ -723,19 +741,20 @@ export function checkReferentialIntegrity(
     );
   }
   if (unresolvable.length > 0) {
-    return notReached(
+    // `linksUnreached` is the only way into this branch, but the compiler wants it
+    // said rather than assumed -- which is the point of the whole round.
+    if (links.outcome !== "no-answer") throw new Error("unreachable: unresolvable refs without a failed link map");
+    return unreached(
       "referential-integrity",
       title,
       section,
-      `the link map never answered, so ${unresolvable.length} symbolic reference(s) in this network ` +
-        `(${unresolvable.join(", ")}) can be neither resolved nor reported unresolved. Everything else in this ` +
-        "check -- the front agent, the in-network references, the URLs and MCP descriptors -- did resolve.",
-      "checker",
-      true,
-      links.url,
+      links,
+      `This check needs the link map to resolve ${unresolvable.length} symbolic reference(s) in this network ` +
+        `(${unresolvable.join(", ")}); everything else in it -- the front agent, the in-network references, the ` +
+        "URLs and MCP descriptors -- did resolve.",
     );
   }
-  const refs = toolRefsOf(network.json, names);
+  const refs = toolRefsOf(gate.doc, names);
   return pass("referential-integrity", title, section, `Front agent and all ${refs.length} tool reference(s) resolve.`, [
     `front agent: ${frontMan ?? "(none named)"}`,
     ...refs.map((r) => `${r.at}: ${r.value} (${r.kind})`),
@@ -808,19 +827,16 @@ export function isLoopback(target: Target): boolean {
 export function checkCors(artifacts: readonly Fetched[], probeOrigin: string, loopback: boolean): CheckResult {
   const title = "CORS header present on the real response for every public artifact";
   const section = "§3.4";
-  const reachable = artifacts.filter((a) => a.status === 200);
+  const reachable = artifacts.filter(answered).filter((a) => a.status === 200);
   if (reachable.length === 0) {
-    const neverAnswered = artifacts.every((a) => a.status === null);
-    return notReached(
-      "cors-hosting",
-      title,
-      section,
-      neverAnswered
-        ? "this checker never reached the host, so there was no response to read a header off."
-        : "no public artifact answered a GET with 200, so there was no response to read a header off.",
-      neverAnswered ? "checker" : "site",
-      neverAnswered,
-    );
+    const noAnswerAtAll = artifacts.find((a) => a.outcome === "no-answer");
+    if (noAnswerAtAll !== undefined && artifacts.every((a) => a.outcome === "no-answer")) {
+      return unreached("cors-hosting", title, section, noAnswerAtAll, "This check needs a real HTTP response.");
+    }
+    return notReached("cors-hosting", title, section, {
+      kind: "unreadable",
+      reason: "no public artifact answered a GET with 200, so there was no response to read a header off.",
+    });
   }
   const problems: string[] = [];
   const evidence: string[] = [];
@@ -867,21 +883,21 @@ export function checkCors(artifacts: readonly Fetched[], probeOrigin: string, lo
 }
 
 export function checkCredentials(artifacts: readonly Fetched[]): CheckResult {
-  const title = "No credential published in the manifest, the network definition or the link map";
+  // SCOPED TO WHAT WAS READ. The old title named three artifacts, and the check
+  // passed under it in runs where only two had answered -- with the banner
+  // directly below saying no passing check covered the third.
+  const title = "No credential in the published artifacts this run could read";
   const section = "§4";
-  const readable = artifacts.filter((a) => a.json !== undefined);
+  const readable = artifacts.filter(answered).filter((a) => a.json !== undefined);
   if (readable.length === 0) {
-    const neverAnswered = artifacts.every((a) => a.status === null);
-    return notReached(
-      "credential-handling",
-      title,
-      section,
-      neverAnswered
-        ? "this checker never reached the host, so there was nothing to read."
-        : "no public artifact could be read as JSON.",
-      neverAnswered ? "checker" : "site",
-      neverAnswered,
-    );
+    const noAnswerAtAll = artifacts.find((a) => a.outcome === "no-answer");
+    if (noAnswerAtAll !== undefined && artifacts.every((a) => a.outcome === "no-answer")) {
+      return unreached("credential-handling", title, section, noAnswerAtAll, "This check needs an artifact to read.");
+    }
+    return notReached("credential-handling", title, section, {
+      kind: "unreadable",
+      reason: "no public artifact could be read as JSON.",
+    });
   }
   const problems: string[] = [];
   for (const artifact of readable) {
@@ -913,101 +929,16 @@ export function checkCredentials(artifacts: readonly Fetched[]): CheckResult {
 // What a command line cannot check (§6)
 // ---------------------------------------------------------------------------
 
-/** The §6 checks this tool declines, in the order §6 lists them. */
-export const DECLINED_CHECKS = [
-  "run-default-router",
-  "grounded-capability",
-  "peer-composition",
-  "key-isolation",
-  "private-context-at-peer",
-  "visible-refusals",
-] as const;
 
-const NO_BROWSER =
-  "This tool is a command line: it has no browser, no running agent loop and no model credential, so it cannot " +
-  "observe this. ";
-
-export function declinedChecks(manifest: Fetched, network: Fetched | null): CheckResult[] {
-  // `manifest.json ?? {}` reads an unread document as an empty one, and every
-  // count below then becomes a confident zero about a site nothing contacted:
-  // "The manifest declares no `llm_router` at all", "0 MCP descriptor(s)",
-  // "0 allowed peer origin(s)". A zero is a number and a number is a claim.
-  const manifestRead = manifest.json !== undefined;
-  const networkRead = network?.json !== undefined;
-  const unread = (what: string) => `unknown (this tool never read the ${what})`;
-  const manifestDoc = (manifest.json ?? {}) as Record<string, unknown>;
-  const router = (manifestDoc["llm_router"] ?? null) as Record<string, unknown> | null;
-  const routerDefault = (router?.["default"] ?? null) as Record<string, unknown> | null;
-  const keyFree =
-    router !== null &&
-    (router["publisher_funded"] === true ||
-      router["mock"] === true ||
-      routerDefault?.["requires_key"] === false ||
-      router["requires_key"] === false);
-
-  const routerDetail = !manifestRead
-    ? "This tool never read the site manifest, so what this site declares about a default router is unknown. " +
-      "Nothing here is a statement about the site; see the manifest check above for why it could not be read."
-    : router
-    ? keyFree
-      ? "The manifest does declare a default router that it says needs no visitor key, so the path exists to be " +
-        "run; running it is what cannot be done from here."
-      : "The manifest declares a default router, but nothing in it says that router works without a " +
-        "visitor-supplied key (no `requires_key: false`, no `publisher_funded: true`, no `mock: true`). §4's " +
-        'level is MAY — "A site MAY publish a default router and model that work without a visitor-supplied ' +
-        'key" — so a key-required site is neither a pass nor a failure of this check, and this tool will not ' +
-        "resolve that silence in either direction."
-    : "The manifest declares no `llm_router` at all, so there is no default router for this check to run — and " +
-      "§4's level is MAY, so that alone is not a failure either.";
-
-  const mcpCount: number | null = networkRead
-    ? toolRefsOf(network!.json, new Set(agentsOf(network!.json).map((a) => a.name))).filter((r) => r.kind === "mcp")
-        .length
-    : null;
-  const actions: number | null = manifestRead
-    ? Array.isArray(manifestDoc["actions"])
-      ? (manifestDoc["actions"] as unknown[]).length
-      : 0
-    : null;
-  const peers: number | null = manifestRead
-    ? Array.isArray(manifestDoc["allowed_peers"])
-      ? (manifestDoc["allowed_peers"] as unknown[]).length
-      : 0
-    : null;
-  const mcpText = mcpCount === null ? unread("network definition") : `${mcpCount} MCP descriptor(s)`;
-  const actionText = actions === null ? unread("site manifest") : `${actions} action(s)`;
-  const peerText = peers === null ? unread("site manifest") : `${peers} allowed peer origin(s) declared`;
-
+/**
+ * The three §6 checks that quote no document at all.
+ *
+ * They need a browser, a running agent loop and a live model, and they would need
+ * them whatever the network did -- so they read the same in a wholly unreachable
+ * run as in a perfect one, and are the same objects in both.
+ */
+function browserOnlyChecks(): CheckResult[] {
   return [
-    declined(
-      "run-default-router",
-      "Run the network with the site's published default router, and the BYOK path too",
-      "§6",
-      `${NO_BROWSER}${routerDetail}`,
-      keyFree ? "checker" : "checker-and-site",
-      router ? [`manifest declares llm_router: ${Object.keys(router).join(", ")}`] : ["manifest declares no llm_router"],
-    ),
-    declined(
-      "grounded-capability",
-      "Call an internal agent and a grounded capability through MCP or a site action",
-      "§6",
-      `${NO_BROWSER}What is declared can be read where the document was readable: ${mcpText} in the network and ` +
-        `${actionText} in the manifest. A declaration is not a call; whether either one answers, and whether the ` +
-        "runtime validates its arguments, needs the page running.",
-      (mcpCount ?? 0) + (actions ?? 0) > 0 || mcpCount === null || actions === null ? "checker" : "checker-and-site",
-      [`MCP descriptors: ${mcpText}`, `declared site actions: ${actionText}`],
-    ),
-    declined(
-      "peer-composition",
-      "After user approval, load an exact named network from a second origin and run it locally",
-      "§6",
-      `${NO_BROWSER}Consent is a browser interaction and local execution is a browser runtime; neither exists ` +
-        `here. The link map and allow-list can be read where they were readable (${peerText}), and this tool can ` +
-        "be pointed at a peer's own network URL to check that peer's published artifacts — but running the peer " +
-        "in a caller's browser, after approval, is not something a shell observes.",
-      "checker",
-      [`allowed peer origins: ${peerText}`],
-    ),
     declined(
       "key-isolation",
       "With a user key active, the second site never receives it and cannot change the caller's router",
@@ -1037,5 +968,166 @@ export function declinedChecks(manifest: Fetched, network: Fetched | null): Chec
         "refuses it.",
       "checker",
     ),
+  ];
+}
+
+/**
+ * Titles for the six §6 checks, in the order §6 lists them, so the unreached and
+ * the declined forms cannot drift apart.
+ */
+const DECLINED_TITLES: Record<(typeof DECLINED_CHECKS)[number], string> = {
+  "run-default-router": "Run the network with the site's published default router, and the BYOK path too",
+  "grounded-capability": "Call an internal agent and a grounded capability through MCP or a site action",
+  "peer-composition": "After user approval, load an exact named network from a second origin and run it locally",
+  "key-isolation": "With a user key active, the second site never receives it and cannot change the caller's router",
+  "private-context-at-peer": "Private context is absent at the peer unless a named field is explicitly allowed",
+  "visible-refusals":
+    "An invalid network, a cycle, an over-budget request and a denied origin all stop with a visible error",
+};
+
+/**
+ * The three §6 checks that would quote a document, built for a document that
+ * never answered.
+ *
+ * They cannot quote it, cannot blame the site for it, and have nowhere to put a
+ * finding about it. The three after them need no document at all -- they need a
+ * browser, and they would need one whatever the network did -- so they stay
+ * ordinary declined checks.
+ */
+function unreachedDeclinedChecks(artifact: NoAnswer, what: string): CheckResult[] {
+  const quoting: (typeof DECLINED_CHECKS)[number][] = [
+    "run-default-router",
+    "grounded-capability",
+    "peer-composition",
+  ];
+  return [
+    ...quoting.map((check) =>
+      unreached(
+        check,
+        DECLINED_TITLES[check],
+        "§6",
+        artifact,
+        `${NO_BROWSER}And this check would also have to say what the site declares, which it cannot: it needs ` +
+          `${what}.`,
+      ),
+    ),
+    ...browserOnlyChecks().slice(2),
+  ];
+}
+
+/** The §6 checks this tool declines, in the order §6 lists them. */
+export const DECLINED_CHECKS = [
+  "run-default-router",
+  "grounded-capability",
+  "peer-composition",
+  "key-isolation",
+  "private-context-at-peer",
+  "visible-refusals",
+] as const;
+
+const NO_BROWSER =
+  "This tool is a command line: it has no browser, no running agent loop and no model credential, so it cannot " +
+  "observe this. ";
+
+export function declinedChecks(manifest: Fetched, network: Fetched | null): CheckResult[] {
+  // THE LAST INSTANCE OF THE CLASS, and the one the union was cut for.
+  //
+  // Round 3 fixed the `detail` here and left `findings` and `blockedBy` saying the
+  // opposite on the next two lines of the same result:
+  //
+  //   blocked by the checker and by the site: both reasons apply ...
+  //   ... Nothing here is a statement about the site ...
+  //   - manifest declares no llm_router
+  //
+  // Now a request that got no answer has no body to read -- `manifest.json` does
+  // not typecheck until `outcome` is narrowed -- and the result built for it has
+  // no findings field and a `blockedBy` fixed to "checker". Neither line can be
+  // written any more.
+  if (manifest.outcome === "no-answer") {
+    return unreachedDeclinedChecks(manifest, "the site manifest");
+  }
+  if (network !== null && network.outcome === "no-answer") {
+    return [
+      ...unreachedDeclinedChecks(network, "the network definition").slice(0, 2),
+      ...browserOnlyChecks().slice(2),
+    ];
+  }
+  const manifestRead = manifest.json !== undefined;
+  const networkRead = network !== null && network.outcome === "answered" && network.json !== undefined;
+  const unread = (what: string) => `unknown (this tool never read the ${what})`;
+  const manifestDoc = (manifest.json ?? {}) as Record<string, unknown>;
+  const router = (manifestDoc["llm_router"] ?? null) as Record<string, unknown> | null;
+  const routerDefault = (router?.["default"] ?? null) as Record<string, unknown> | null;
+  const keyFree =
+    router !== null &&
+    (router["publisher_funded"] === true ||
+      router["mock"] === true ||
+      routerDefault?.["requires_key"] === false ||
+      router["requires_key"] === false);
+
+  const routerDetail = !manifestRead
+    ? "This tool never read the site manifest, so what this site declares about a default router is unknown. " +
+      "Nothing here is a statement about the site; see the manifest check above for why it could not be read."
+    : router
+    ? keyFree
+      ? "The manifest does declare a default router that it says needs no visitor key, so the path exists to be " +
+        "run; running it is what cannot be done from here."
+      : "The manifest declares a default router, but nothing in it says that router works without a " +
+        "visitor-supplied key (no `requires_key: false`, no `publisher_funded: true`, no `mock: true`). §4's " +
+        'level is MAY — "A site MAY publish a default router and model that work without a visitor-supplied ' +
+        'key" — so a key-required site is neither a pass nor a failure of this check, and this tool will not ' +
+        "resolve that silence in either direction."
+    : "The manifest declares no `llm_router` at all, so there is no default router for this check to run — and " +
+      "§4's level is MAY, so that alone is not a failure either.";
+
+  const networkDoc = network !== null && network.outcome === "answered" ? network.json : undefined;
+  const mcpCount: number | null = networkRead
+    ? toolRefsOf(networkDoc, new Set(agentsOf(networkDoc).map((a) => a.name))).filter((r) => r.kind === "mcp").length
+    : null;
+  const actions: number | null = manifestRead
+    ? Array.isArray(manifestDoc["actions"])
+      ? (manifestDoc["actions"] as unknown[]).length
+      : 0
+    : null;
+  const peers: number | null = manifestRead
+    ? Array.isArray(manifestDoc["allowed_peers"])
+      ? (manifestDoc["allowed_peers"] as unknown[]).length
+      : 0
+    : null;
+  const mcpText = mcpCount === null ? unread("network definition") : `${mcpCount} MCP descriptor(s)`;
+  const actionText = actions === null ? unread("site manifest") : `${actions} action(s)`;
+  const peerText = peers === null ? unread("site manifest") : `${peers} allowed peer origin(s) declared`;
+
+  return [
+    declined(
+      "run-default-router",
+      DECLINED_TITLES["run-default-router"],
+      "§6",
+      `${NO_BROWSER}${routerDetail}`,
+      keyFree ? "checker" : "checker-and-site",
+      router ? [`manifest declares llm_router: ${Object.keys(router).join(", ")}`] : ["manifest declares no llm_router"],
+    ),
+    declined(
+      "grounded-capability",
+      DECLINED_TITLES["grounded-capability"],
+      "§6",
+      `${NO_BROWSER}What is declared can be read where the document was readable: ${mcpText} in the network and ` +
+        `${actionText} in the manifest. A declaration is not a call; whether either one answers, and whether the ` +
+        "runtime validates its arguments, needs the page running.",
+      (mcpCount ?? 0) + (actions ?? 0) > 0 || mcpCount === null || actions === null ? "checker" : "checker-and-site",
+      [`MCP descriptors: ${mcpText}`, `declared site actions: ${actionText}`],
+    ),
+    declined(
+      "peer-composition",
+      DECLINED_TITLES["peer-composition"],
+      "§6",
+      `${NO_BROWSER}Consent is a browser interaction and local execution is a browser runtime; neither exists ` +
+        `here. The link map and allow-list can be read where they were readable (${peerText}), and this tool can ` +
+        "be pointed at a peer's own network URL to check that peer's published artifacts — but running the peer " +
+        "in a caller's browser, after approval, is not something a shell observes.",
+      "checker",
+      [`allowed peer origins: ${peerText}`],
+    ),
+    ...browserOnlyChecks(),
   ];
 }

@@ -16,7 +16,7 @@
 // any particular origin. It is for other people's sites; ours is one input.
 
 import { deriveTarget, resolveHocon, selectNetwork, DiscoveryError } from "./discover.ts";
-import { getArtifact, type Fetched } from "./fetch.ts";
+import { getArtifact, type Answered, type Fetched } from "./fetch.ts";
 import {
   DECLINED_CHECKS,
   agentsOf,
@@ -69,8 +69,9 @@ export async function runChecksOn(target: Target, options: RunOptions = {}): Pro
   // 1. The manifest, from the base derived from the URL. Always first: §3.2 gives
   //    no other way in, and the network's own location is only knowable from here.
   const manifest = await get(target.manifestUrl);
-  const manifestNetworks = Array.isArray((manifest.json as { networks?: unknown } | undefined)?.networks)
-    ? (manifest.json as { networks: unknown[] }).networks
+  const manifestDoc = manifest.outcome === "answered" ? manifest.json : undefined;
+  const manifestNetworks = Array.isArray((manifestDoc as { networks?: unknown } | undefined)?.networks)
+    ? (manifestDoc as { networks: unknown[] }).networks
     : [];
   const entry = selectNetwork(manifestNetworks, target.networkName);
 
@@ -82,67 +83,64 @@ export async function runChecksOn(target: Target, options: RunOptions = {}): Pro
   // 3. The link map.
   const links = await get(new URL("links.json", target.base).href);
 
-  const agentNames = new Set(agentsOf(network?.json).map((a) => a.name).filter((n) => n !== ""));
+  // THE AVAILABILITY DECISION, MADE ONCE.
+  //
+  // Seven content checks need the network definition. Each used to take a
+  // `Fetched | null` and decide for itself whether it could read it, and three
+  // rounds of this project's longest-running defect were one of those decisions
+  // being wrong. They now receive an `Answered` or nothing at all, so a check
+  // cannot be handed a request that got no answer -- there is no type that would
+  // let it -- and `Unavailable` is a union, so the reason cannot be a site-blaming
+  // one when nothing arrived.
+  const networkDoc: Answered | null = network !== null && network.outcome === "answered" ? network : null;
+  const agentNames = new Set(
+    agentsOf(networkDoc?.json).map((a) => a.name).filter((n) => n !== ""),
+  );
   // NULL, not an empty array: "this network references nothing symbolically" and
   // "I could not read the network" are different inputs and must not produce the
   // same sentence in the link map's detail.
   const symbolicRefs: string[] | null =
-    network?.json !== undefined
-      ? [...new Set(toolRefsOf(network.json, agentNames).filter((r) => r.kind === "symbolic").map((r) => r.value))]
+    networkDoc?.json !== undefined
+      ? [...new Set(toolRefsOf(networkDoc.json, agentNames).filter((r) => r.kind === "symbolic").map((r) => r.value))]
       : null;
 
   const artifacts = [manifest, ...(network ? [network] : []), links];
 
-  // Why a check that needs the network definition could not be made, traced to the
-  // first thing that went wrong rather than to the symptom ("the network could not
-  // be read" sends a publisher looking at a file that was never located) -- and
-  // WHOSE limitation it is, which matters more.
-  //
-  // A request that never got an answer is not the site's fault and must not be
-  // reported as such, so `blockedBy` is computed here rather than hard-coded, and
-  // every downstream check inherits it. That hard-coded "site" was the bug.
-  //
-  // NAME THE ARTIFACT. "No artifact of this site was read" was false whenever the
-  // manifest was read and only the hocon host refused -- which §3.2 expressly
-  // permits to be a different origin -- and six checks had already passed on
-  // artifacts that sentence said were not read.
+  // Traced to the first thing that went wrong rather than to the symptom ("the
+  // network could not be read" sends a publisher looking at a file that was never
+  // located), and NAMING THE ARTIFACT rather than generalising to "the host":
+  // §3.2 expressly permits the network definition to live on another origin, so
+  // "no artifact of this site was read" was false whenever only that one refused.
   const unavailable: Unavailable =
-    manifest.status === null
+    manifest.outcome === "no-answer"
       ? {
-          reason: `the site manifest at ${manifest.url} never answered, so the network definition was never even located.`,
-          blockedBy: "checker",
-          unreached: true,
-          url: manifest.url,
+          kind: "unreached",
+          artifact: manifest,
+          what: "This check needs the network definition, whose location is declared in the site manifest.",
         }
-      : network?.status === null
+      : network !== null && network.outcome === "no-answer"
         ? {
-            reason: `the network definition at ${network.url} never answered. The site manifest was read; it is this one artifact that could not be, and §3.2 permits it to live on another origin.`,
-            blockedBy: "checker",
-            unreached: true,
-            url: network.url,
+            kind: "unreached",
+            artifact: network,
+            what:
+              "This check needs the network definition. The site manifest WAS read; it is this one artifact " +
+              "that could not be, and §3.2 permits it to live on another origin.",
           }
-        : manifest.status !== 200 || manifest.json === undefined
+        : manifest.json === undefined
           ? {
+              kind: "unreadable",
               reason: "the site manifest could not be read, so the network definition was never located.",
-              blockedBy: "site",
-              unreached: false,
             }
           : !entry
             ? {
+                kind: "unreadable",
                 reason: "no manifest entry matched the requested network name, so no network definition was located.",
-                blockedBy: "site",
-                unreached: false,
               }
             : !hoconUrl
-              ? {
-                  reason: "the matching manifest entry declares no usable `hocon` location.",
-                  blockedBy: "site",
-                  unreached: false,
-                }
+              ? { kind: "unreadable", reason: "the matching manifest entry declares no usable `hocon` location." }
               : {
+                  kind: "unreadable",
                   reason: "the network definition at the location the manifest declares could not be read.",
-                  blockedBy: "site",
-                  unreached: false,
                 };
 
   return [
@@ -150,13 +148,13 @@ export async function runChecksOn(target: Target, options: RunOptions = {}): Pro
     checkNetworkSelected(target, manifest),
     checkNetworkDefinition(manifest, entry, network),
     checkLinkMap(links, symbolicRefs),
-    checkNetworkIdentity(entry, network, unavailable),
-    checkAgentDefinitions(network, unavailable),
-    checkTwoAgentNetwork(network, unavailable),
-    checkInvocationSchemas(network, unavailable),
-    checkPrivateContextRules(network, unavailable),
-    checkPortableData(network, unavailable),
-    checkReferentialIntegrity(entry, manifest, network, links, target.networkName, unavailable),
+    checkNetworkIdentity(entry, networkDoc, unavailable),
+    checkAgentDefinitions(networkDoc, unavailable),
+    checkTwoAgentNetwork(networkDoc, unavailable),
+    checkInvocationSchemas(networkDoc, unavailable),
+    checkPrivateContextRules(networkDoc, unavailable),
+    checkPortableData(networkDoc, unavailable),
+    checkReferentialIntegrity(entry, manifest, networkDoc, links, target.networkName, unavailable),
     checkHttps(target),
     checkCors(artifacts, probeOrigin, isLoopback(target)),
     checkCredentials(artifacts),

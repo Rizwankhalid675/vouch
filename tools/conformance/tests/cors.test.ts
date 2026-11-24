@@ -34,6 +34,7 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, test } from "vitest";
 import { runChecks } from "../src/index.ts";
+import { blockerOf, findingsOf, isUnreached } from "../src/types.ts";
 import type { CheckResult } from "../src/types.ts";
 import { conformingSite } from "./fixture.ts";
 import { corsGate, corsRequired, probeLoopbackBind, type BindProbe } from "./loopback.ts";
@@ -180,7 +181,7 @@ describe.skipIf(gate.skip)("§3.3/§3.4 CORS, read off a real response", () => {
     running = await start(() => "*");
     const results = await runChecks(`${running.origin}/agents/demo`);
     const check = corsCheck(results);
-    expect(check.status, check.findings.join("\n")).toBe("pass");
+    expect(check.status, findingsOf(check).join("\n")).toBe("pass");
 
     // The header is only half of it. A server may gate CORS on the request's
     // Origin, so a probe that sends none gets a pass it did not earn. Read what
@@ -198,7 +199,7 @@ describe.skipIf(gate.skip)("§3.3/§3.4 CORS, read off a real response", () => {
     const results = await runChecks(`${running.origin}/agents/demo`);
     const check = corsCheck(results);
     expect(check.status).toBe("fail");
-    const findings = check.findings.join("\n");
+    const findings = findingsOf(check).join("\n");
     expect(findings).toContain("/agents/links.json");
     expect(findings).not.toContain("/agents/agent-manifest.json");
   });
@@ -212,7 +213,7 @@ describe.skipIf(gate.skip)("§3.3/§3.4 CORS, read off a real response", () => {
     const results = await runChecks(`${running.origin}/agents/demo`);
     const check = corsCheck(results);
     expect(check.status).toBe("fail");
-    expect(check.findings.join("\n")).toContain("https://some-other-caller.example");
+    expect(findingsOf(check).join("\n")).toContain("https://some-other-caller.example");
   });
 
   test("a header echoing the probe's own Origin passes, because that is what the header is for", async () => {
@@ -228,7 +229,7 @@ describe.skipIf(gate.skip)("§3.3/§3.4 CORS, read off a real response", () => {
     const results = await runChecks(`${running.origin}/agents/demo`);
     const failed = results.filter((r) => r.status === "fail");
     expect(failed.map((r) => `${r.check}: ${r.detail}`)).toEqual([]);
-    expect(results.find((r) => r.check === "manifest-reachable")!.findings.join("")).toContain(
+    expect(findingsOf(results.find((r) => r.check === "manifest-reachable")!).join("")).toContain(
       `${running.origin}/agents/agent-manifest.json`,
     );
   });

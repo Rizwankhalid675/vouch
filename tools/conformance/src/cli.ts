@@ -61,11 +61,13 @@ EXIT CODES
   1  At least one check failed. A finding about the site.
   2  Bad usage, or a URL this tool cannot read as a network URL.
   3  The tool itself hit an error and did not finish. No verdict was reached.
-  4  This tool never reached the host -- DNS, a refused connection, a proxy, a
-     timeout, a typo in the hostname. No verdict about the site was reached, and
-     nothing in the output is a finding about it. Non-zero because a run that
-     learned nothing should not be green; distinct from 1 because a site cannot be
-     at fault for a request that never arrived.
+  4  The run was INCOMPLETE: at least one artifact never answered -- DNS, a refused
+     connection, a proxy, a timeout, a typo in the hostname. This fires on a single
+     unanswered artifact, so "0 failed, 12 passed ... exit 4" is a real outcome:
+     the checks that were made still stand, and the ones that were not have been
+     verified by nothing. Non-zero because an incomplete run is not a clean bill of
+     health; distinct from 1 because a site cannot be at fault for a request that
+     never arrived.
 `;
 
 interface Args {

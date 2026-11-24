@@ -4,35 +4,53 @@
 
 import type { FetchLike } from "./types.ts";
 
-export interface Fetched {
+/**
+ * What came back from one public GET -- as a discriminated union, deliberately.
+ *
+ * THIS IS THE STRUCTURAL FIX, and it is upstream of four rounds of the same bug.
+ *
+ * It used to be one shape with `status: number | null` and an optional `error`,
+ * so `fetched.json` compiled on a request that never got an answer and quietly
+ * read `undefined`. Every instance of this project's longest-running defect was
+ * that one line: a body read off a request that never arrived, turned into a
+ * statement about the site. Three rounds of "find the reader and guard it" each
+ * left another reader behind, because nothing stopped the next one being written.
+ *
+ * Now there is nothing to read. A `NoAnswer` has no `status`, no `json`, no
+ * headers and no body, and no fields for them, so `fetched.json` is a COMPILE
+ * ERROR until the caller has narrowed on `outcome`. The next instance of this
+ * class cannot be written; the compiler objects before a reviewer has to.
+ */
+export type Fetched = Answered | NoAnswer;
+
+export interface Answered {
+  readonly outcome: "answered";
   readonly url: string;
-  /** HTTP status, or null when the request never completed. */
-  readonly status: number | null;
-  /** The transport error, when there was one. */
-  readonly error?: string;
+  readonly status: number;
   readonly contentType: string | null;
   /** `Access-Control-Allow-Origin` exactly as the server sent it, or null when absent. */
   readonly allowOrigin: string | null;
-  readonly text: string | null;
+  readonly text: string;
   /** The parsed body, when it parsed as JSON. */
   readonly json?: unknown;
   /** Why the body is not usable JSON, when it is not. */
   readonly jsonError?: string;
 }
 
-/**
- * Fetches a public agent artifact the way a browser on another origin would.
- *
- * Two details matter more than they look:
- *
- *  - **The Origin header is sent.** A host may emit
- *    `Access-Control-Allow-Origin` only when a request carries `Origin`. A probe
- *    that omits it reads "no CORS" off a correctly configured host, or worse,
- *    reads a pass off one that would refuse a real caller.
- *  - **No credentials, ever.** §3.4: "Public artifact requests MUST NOT include
- *    the caller's private credentials." Nothing here sends a cookie, an
- *    Authorization header, or a key, and the tool accepts none to send.
- */
+export interface NoAnswer {
+  readonly outcome: "no-answer";
+  readonly url: string;
+  /**
+   * The transport error. This is the ONLY thing known about this request, and a
+   * site cannot be at fault for a request that never arrived, so it is the only
+   * thing anything downstream may say about it.
+   */
+  readonly error: string;
+}
+
+/** Narrowing helper, for the places that filter a list. */
+export const answered = (f: Fetched): f is Answered => f.outcome === "answered";
+
 export async function getArtifact(
   url: string,
   fetchImpl: FetchLike,
@@ -44,46 +62,34 @@ export async function getArtifact(
   try {
     response = await withTimeout(fetchImpl(url, { headers }), timeoutMs, url);
   } catch (err) {
-    return {
-      url,
-      status: null,
-      error: err instanceof Error ? err.message : String(err),
-      contentType: null,
-      allowOrigin: null,
-      text: null,
-    };
+    return { outcome: "no-answer", url, error: err instanceof Error ? err.message : String(err) };
   }
 
   const contentType = response.headers.get("content-type");
   const allowOrigin = response.headers.get("access-control-allow-origin");
-  let text: string | null = null;
+  let text: string;
   try {
     text = await response.text();
   } catch (err) {
+    // The headers arrived and the body did not. That IS an answer -- the status and
+    // the CORS header are real and checkable -- so it is not a `no-answer`.
     return {
+      outcome: "answered",
       url,
       status: response.status,
-      error: `body unreadable: ${err instanceof Error ? err.message : String(err)}`,
       contentType,
       allowOrigin,
-      text: null,
+      text: "",
+      jsonError: `body unreadable: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
-  if (!response.ok) {
-    return { url, status: response.status, contentType, allowOrigin, text };
-  }
+  const base = { outcome: "answered", url, status: response.status, contentType, allowOrigin, text } as const;
+  if (!response.ok) return base;
   try {
-    return { url, status: response.status, contentType, allowOrigin, text, json: JSON.parse(text) };
+    return { ...base, json: JSON.parse(text) };
   } catch (err) {
-    return {
-      url,
-      status: response.status,
-      contentType,
-      allowOrigin,
-      text,
-      jsonError: err instanceof Error ? err.message : String(err),
-    };
+    return { ...base, jsonError: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -97,7 +103,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, url: string): Promise<T
 
 /** A one-line description of what came back, for a finding. */
 export function describe(fetched: Fetched): string {
-  if (fetched.error) return `${fetched.url}: ${fetched.error}`;
+  if (fetched.outcome === "no-answer") return `${fetched.url}: ${fetched.error}`;
   const parts = [`HTTP ${fetched.status}`];
   if (fetched.contentType) parts.push(fetched.contentType.split(";")[0]!.trim());
   if (fetched.jsonError) parts.push(`body is not JSON: ${fetched.jsonError}`);

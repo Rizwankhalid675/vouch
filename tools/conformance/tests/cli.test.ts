@@ -20,6 +20,7 @@
 
 import { describe, expect, test } from "vitest";
 import { cliMain, reportCrash, type CliIo } from "../src/cli.ts";
+import { findingsOf, isUnreached } from "../src/types.ts";
 import type { CheckResult } from "../src/types.ts";
 import { BASE, NETWORK_URL, conformingSite, serve } from "./fixture.ts";
 

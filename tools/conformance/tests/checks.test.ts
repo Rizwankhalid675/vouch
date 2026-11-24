@@ -32,9 +32,13 @@
 import { describe, expect, test } from "vitest";
 import { runChecks, exitCodeFor, renderText, DECLINED_CHECKS } from "../src/index.ts";
 import { deriveTarget } from "../src/discover.ts";
+import { blockerOf, findingsOf, isUnreached, statementsOf } from "../src/types.ts";
 import type { CheckResult } from "../src/types.ts";
 import { portabilityFindings } from "../src/rules.ts";
 import { BASE, NETWORK_URL, conformingSite, serve, siteWithAgents } from "./fixture.ts";
+
+/** Everything a result says, through every channel it has. */
+const saysText = (r: CheckResult) => statementsOf(r).join("\n");
 
 /** One check by id. Throws rather than returning undefined: a missing check is a bug, not a pass. */
 function one(results: readonly CheckResult[], id: string): CheckResult {
@@ -50,7 +54,7 @@ async function run(files: Record<string, unknown>, url = NETWORK_URL) {
   return { results, asked, origins };
 }
 
-const findingsText = (r: CheckResult) => r.findings.join("\n");
+const findingsText = (r: CheckResult) => findingsOf(r).join("\n");
 
 describe("§3.2 discovery: the manifest, never a glob", () => {
   test("the final path component is the network name and the preceding path is the site base", () => {
@@ -162,17 +166,35 @@ describe("§3.3 presence: reachable by public GET", () => {
 
     const manifest = one(results, "manifest-reachable");
     expect(manifest.status).toBe("not-demonstrated");
-    expect(manifest.blockedBy).toBe("checker");
+    expect(blockerOf(manifest)).toBe("checker");
     expect(manifest.detail).toMatch(/never reached|did not reach/i);
-    expect(findingsText(manifest)).toContain("ECONNREFUSED");
+    // The transport error is evidence this result HAS -- an unreached check has a
+    // `transport` and an `unreachedUrl` and no findings, by its type.
+    expect(saysText(manifest)).toContain("ECONNREFUSED");
+    expect(findingsOf(manifest)).toEqual([]);
 
-    // Nothing anywhere in the run may blame the site for this.
+    // Nothing anywhere in the run may blame the site for this, by ANY channel.
+    //
+    // This swept for `blockedBy === "site"`, which `"checker-and-site"` is not --
+    // so it watched one value of one field and let the other value through. Ninth
+    // test on this project to pass while the system was wrong, and it was written
+    // to catch exactly this.
     for (const result of results) {
       expect(result.status, result.check).not.toBe("fail");
-      if (result.blockedBy === "site") {
-        throw new Error(`${result.check} blames the site for a connection that never happened`);
-      }
+      expect(blockerOf(result)?.includes("site"), `${result.check} names the site as a reason`).not.toBe(true);
     }
+    // ...and no unreached result may carry a statement about the site on ANY of its
+    // channels, which is what the detail-only assertions missed.
+    //
+    // The forbidden thing is a VALUE read off a document nothing fetched, not the
+    // word "declares": "this check would have to say what the site declares, which
+    // it cannot" is a statement about the check's own requirement and is fine. My
+    // first version of this banned the word and caught that sentence instead of
+    // the bug.
+    const unreachedText = results.filter(isUnreached).map(saysText).join("\n");
+    expect(unreachedText).not.toMatch(/declares no\b/);
+    expect(unreachedText).not.toMatch(/llm_router/);
+    expect(unreachedText).not.toMatch(/\b0 (MCP|action|allowed)/);
   });
 
   test("an HTTP error IS the site's failure: a 404 and a 500 stay failures, and say so", async () => {
@@ -185,7 +207,7 @@ describe("§3.3 presence: reachable by public GET", () => {
       const manifest = one(results, "manifest-reachable");
       expect(manifest.status, `HTTP ${status}`).toBe("fail");
       expect(findingsText(manifest)).toContain(String(status));
-      expect(one(results, "agent-definitions").blockedBy, `HTTP ${status}`).toBe("site");
+      expect(blockerOf(one(results, "agent-definitions")), `HTTP ${status}`).toBe("site");
     }
   });
 
@@ -195,11 +217,11 @@ describe("§3.3 presence: reachable by public GET", () => {
     const { results } = await run(files);
     const network = one(results, "network-reachable");
     expect(network.status).toBe("not-demonstrated");
-    expect(network.blockedBy).toBe("checker");
-    expect(findingsText(network)).toContain("EAI_AGAIN");
+    expect(blockerOf(network)).toBe("checker");
+    expect(saysText(network)).toContain("EAI_AGAIN");
     // ...and the checks downstream of it inherit the checker, not the site.
-    expect(one(results, "agent-definitions").blockedBy).toBe("checker");
-    expect(one(results, "portable-data").blockedBy).toBe("checker");
+    expect(blockerOf(one(results, "agent-definitions"))).toBe("checker");
+    expect(blockerOf(one(results, "portable-data"))).toBe("checker");
     expect(results.some((r) => r.status === "fail")).toBe(false);
   });
 
@@ -209,8 +231,8 @@ describe("§3.3 presence: reachable by public GET", () => {
     const { results } = await run(files);
     const links = one(results, "links-reachable");
     expect(links.status).toBe("not-demonstrated");
-    expect(links.blockedBy).toBe("checker");
-    expect(findingsText(links)).toContain("ETIMEDOUT");
+    expect(blockerOf(links)).toBe("checker");
+    expect(saysText(links)).toContain("ETIMEDOUT");
     // Its siblings had this line and this one did not, which is the whole reason
     // the fourth artifact path survived round 2: the test looked only where the
     // fix had been applied. Nothing ANYWHERE may blame the site.
@@ -236,8 +258,8 @@ describe("§3.3 presence: reachable by public GET", () => {
 
     const integrity = one(results, "referential-integrity");
     expect(integrity.status).toBe("not-demonstrated");
-    expect(integrity.blockedBy).toBe("checker");
-    expect(integrity.unreached).toBe(true);
+    expect(blockerOf(integrity)).toBe("checker");
+    expect(isUnreached(integrity)).toBe(true);
     expect(integrity.detail).toMatch(/weather_peer/);
     for (const result of results) expect(result.status, result.check).not.toBe("fail");
     expect(exitCodeFor(results)).toBe(4);
@@ -280,18 +302,38 @@ describe("§3.3 presence: reachable by public GET", () => {
     files[`${BASE}agent-manifest.json`] = { throws: "ECONNREFUSED" };
     const { results } = await run(files);
 
+    // ASSERT ON THE WHOLE RESULT, not on one channel of it. A CheckResult makes
+    // statements through four: status, detail, findings and blockedBy. This
+    // asserted on `detail`, against a string the findings array never contained,
+    // and so passed while the very next line of the same result printed
+    // "- manifest declares no llm_router" underneath a detail saying nothing here
+    // is a statement about the site. Tenth test on this project to pass while the
+    // system was wrong.
+    const everything = saysText;
+
     const router = one(results, "run-default-router");
     expect(router.status).toBe("not-demonstrated");
-    expect(router.detail).not.toMatch(/declares no `llm_router` at all/);
+    expect(everything(router)).not.toMatch(/declares no/);
+    expect(everything(router)).not.toMatch(/llm_router/);
+    expect(everything(router)).not.toMatch(/\bsite\b.*blocked|blocked.*\bby the site\b/);
+    expect(blockerOf(router)).toBe("checker");
     expect(router.detail).toMatch(/never read|never reached/i);
 
     const grounded = one(results, "grounded-capability");
-    expect(grounded.detail).not.toMatch(/\b0 MCP descriptor/);
-    expect(grounded.detail).not.toMatch(/\b0 action\(s\) in the manifest/);
+    expect(everything(grounded)).not.toMatch(/\b0 MCP descriptor/);
+    expect(everything(grounded)).not.toMatch(/\b0 action/);
+    expect(blockerOf(grounded)).toBe("checker");
     expect(grounded.detail).toMatch(/never read|never reached|unknown/i);
 
     const peers = one(results, "peer-composition");
-    expect(peers.detail).not.toMatch(/\b0 allowed peer origin/);
+    expect(everything(peers)).not.toMatch(/\b0 allowed peer origin/);
+
+    // And the whole class, swept: nothing derived from an unread document, on any
+    // channel of any result in this run.
+    for (const result of results) {
+      expect(everything(result), result.check).not.toMatch(/declares no/);
+      expect(blockerOf(result)?.includes("site"), result.check).not.toBe(true);
+    }
   });
 
   test("a network that was never read is not a network that references nothing", async () => {
@@ -330,7 +372,7 @@ describe("§3.3 presence: reachable by public GET", () => {
     // The checks that needed the definition say WHICH artifact was not read.
     const agents = one(results, "agent-definitions");
     expect(agents.status).toBe("not-demonstrated");
-    expect(agents.blockedBy).toBe("checker");
+    expect(blockerOf(agents)).toBe("checker");
     expect(agents.detail).not.toMatch(/no artifact of this site was read/);
     expect(agents.detail).toMatch(/network definition/i);
     expect(agents.detail).toMatch(/cdn\.fixture\.example/);
@@ -380,8 +422,8 @@ describe("§3.3 presence: reachable by public GET", () => {
     expect(withoutFailure.filter((r) => r.status === "fail")).toEqual([]);
     // Both runs still report the artifact as never reached: the real failure does
     // not paper over it.
-    expect(one(withFailure, "links-reachable").unreached).toBe(true);
-    expect(one(withoutFailure, "links-reachable").unreached).toBe(true);
+    expect(isUnreached(one(withFailure, "links-reachable"))).toBe(true);
+    expect(isUnreached(one(withoutFailure, "links-reachable"))).toBe(true);
   });
 
   test("the banner does not disclaim a real FAIL that is printed above it", async () => {
@@ -411,7 +453,7 @@ describe("§3.3 presence: reachable by public GET", () => {
     const artifacts = /(\d+) of this site's artifacts never answered/.exec(text);
     expect(artifacts, "the mixed banner does not name an artifact count").toBeTruthy();
     expect(artifacts![1]).toBe("1");
-    expect(results.filter((r) => r.unreached === true).length).toBe(2);
+    expect(results.filter((r) => isUnreached(r) === true).length).toBe(2);
     expect(text).toMatch(/2 checks could not be made/);
   });
 
@@ -436,8 +478,16 @@ describe("§3.3 presence: reachable by public GET", () => {
     const artifactCount = /(\d+) of this site's artifacts/.exec(allText);
     expect(artifactCount, "the banner does not name an artifact count").toBeTruthy();
     expect(artifactCount![1]).toBe("2");
+    // ...and the LIST agrees with the count: one line per artifact that got no
+    // answer, not one per blocked check. I pinned the number and not the list, and
+    // promptly shipped a list that repeated one URL six times -- which is the unit
+    // error the count was fixed for, in the lines directly underneath it.
+    const noAnswerLines = allText.split("\n").filter((l) => l.trim().startsWith("no answer:"));
+    expect(noAnswerLines).toHaveLength(2);
+    expect(new Set(noAnswerLines).size).toBe(2);
+    for (const line of noAnswerLines) expect(line).toMatch(/ECONNREFUSED/);
     // ...and the blocked-check count is reported separately, as checks.
-    const blockedChecks = all.filter((r) => r.unreached === true).length;
+    const blockedChecks = all.filter((r) => isUnreached(r) === true).length;
     expect(blockedChecks).toBeGreaterThan(2);
     expect(allText).toContain(`${blockedChecks} check`);
 
@@ -447,8 +497,9 @@ describe("§3.3 presence: reachable by public GET", () => {
     const some = (await run(oneUnreachable)).results;
     const someText = renderText(some, deriveTarget(NETWORK_URL));
     expect(someText).toMatch(/\b1 of this site's artifacts\b/);
+    expect(someText.split("\n").filter((l) => l.trim().startsWith("no answer:"))).toHaveLength(1);
     // The count of blocked CHECKS is a different number and is reported as checks.
-    const blocked = some.filter((r) => r.unreached === true).length;
+    const blocked = some.filter((r) => isUnreached(r) === true).length;
     expect(blocked).toBeGreaterThan(1);
     expect(someText).toContain(`${blocked} check`);
   });
@@ -1040,7 +1091,7 @@ describe("what the tool declines to check, and why", () => {
     for (const id of DECLINED_CHECKS) {
       const check = one(results, id);
       expect(check.status).toBe("not-demonstrated");
-      expect(check.blockedBy).toBeTruthy();
+      expect(blockerOf(check)).toBeTruthy();
       expect(check.detail.length).toBeGreaterThan(20);
     }
     // The set is closed: a check that quietly stops being reported is the same
@@ -1062,7 +1113,7 @@ describe("what the tool declines to check, and why", () => {
     const { results } = await run(conformingSite());
     const check = one(results, "run-default-router");
     expect(check.status).toBe("not-demonstrated");
-    expect(check.blockedBy).toBe("checker-and-site");
+    expect(blockerOf(check)).toBe("checker-and-site");
     expect(check.detail).toMatch(/requires_key|visitor-supplied key|without a key/i);
   });
 
@@ -1075,7 +1126,7 @@ describe("what the tool declines to check, and why", () => {
     const { results } = await run(files);
     const check = one(results, "run-default-router");
     expect(check.status).toBe("not-demonstrated");
-    expect(check.blockedBy).toBe("checker");
+    expect(blockerOf(check)).toBe("checker");
   });
 
   test("a site that publishes no router metadata at all is still not-demonstrated, never a pass", async () => {
@@ -1092,7 +1143,7 @@ describe("what the tool declines to check, and why", () => {
     const { results } = await run(files);
     const check = one(results, "agent-definitions");
     expect(check.status).toBe("not-demonstrated");
-    expect(check.blockedBy).toBe("site");
+    expect(blockerOf(check)).toBe("site");
     expect(check.detail).toMatch(/manifest/i);
     // The run still fails overall, on the check that actually failed.
     expect(exitCodeFor(results)).toBe(1);

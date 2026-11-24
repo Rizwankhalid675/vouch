@@ -10,6 +10,7 @@
 // the rendered text back and fails if the word PASS ever appears on a declined
 // check's line.
 
+import { findingsOf, isUnreached } from "./types.ts";
 import type { CheckResult, CheckStatus, Target } from "./types.ts";
 
 export const VERSION = "0.1.0";
@@ -28,17 +29,22 @@ const BLOCKER_TEXT = {
 } as const;
 
 /**
- * 0 all clear, 1 something failed, 4 nothing was contacted.
+ * 0 all clear, 1 something failed, 4 the run was incomplete.
  *
- * A not-demonstrated check never fails a build on its own -- except the one kind
- * that means the request never got an answer. For that, 0 would be a false
- * all-clear and 1 a false indictment of a site this checker never reached, so it
- * gets a code of its own: non-zero, because a CI run that learned nothing should
- * not be green, and distinct, because "your site failed a check" and "nothing was
- * contacted" are different things to wake up to.
+ * EXIT 4 IS "INCOMPLETE", NOT "NOTHING WAS CONTACTED". It fires when **any one**
+ * artifact got no answer, which is usually not all of them: an unreachable link
+ * map leaves twelve checks passing and still exits 4. The banner was corrected to
+ * say that and this comment was not, so it defined the code as a sentence the
+ * output had stopped making -- which matters, because a comment and a README are
+ * what a CI owner reads to decide what the number means.
  *
- * A real failure outranks it. A finding is a finding even if some other artifact
- * was unreachable.
+ * Why it is not 0: a run that could not make some of its checks is not a clean
+ * bill of health, and a green CI line would say it was. Why it is not 1: a site
+ * cannot be at fault for a request that never arrived, and 1 means a finding
+ * about the site.
+ *
+ * A real failure outranks it. A finding is a finding even when another artifact
+ * never answered, so a mixed run exits 1 and the banner gives both halves.
  */
 export const EXIT_OK = 0;
 export const EXIT_FAILED = 1;
@@ -46,7 +52,7 @@ export const EXIT_UNREACHED = 4;
 
 export function exitCodeFor(results: readonly CheckResult[]): number {
   if (results.some((r) => r.status === "fail")) return EXIT_FAILED;
-  if (results.some((r) => r.unreached === true)) return EXIT_UNREACHED;
+  if (results.some(isUnreached)) return EXIT_UNREACHED;
   return EXIT_OK;
 }
 
@@ -99,16 +105,16 @@ export function renderText(results: readonly CheckResult[], target: Target): str
   lines.push("");
   for (const result of notMade) {
     lines.push(`  ${LABEL[result.status]}  ${result.section.padEnd(5)} ${result.title}`);
-    if (result.unreached) {
+    if (isUnreached(result)) {
       lines.push(
         "                       blocked by the checker: this run never reached the host, so nothing here is",
       );
       lines.push("                       a statement about the site");
-    } else if (result.blockedBy) {
+    } else if (result.kind === "declined") {
       lines.push(`                       ${BLOCKER_TEXT[result.blockedBy]}`);
     }
     lines.push(...wrap(result.detail, 100, "                       "));
-    for (const finding of result.findings) {
+    for (const finding of findingsOf(result)) {
       lines.push(...wrap(`- ${finding}`, 100, "                       "));
     }
     lines.push("");
@@ -123,8 +129,13 @@ export function renderText(results: readonly CheckResult[], target: Target): str
   // repeated the wrong figure, which is worth knowing about this report -- it is
   // persuasive, so its errors travel. Requests that got no answer is a fact;
   // results wearing the word "artifacts" is not.
-  const unreached = results.filter((r) => r.unreached === true);
-  const unreachedArtifacts = [...new Set(unreached.map((r) => r.unreachedUrl).filter((u): u is string => !!u))];
+  const unreached = results.filter(isUnreached);
+  // Every unreached result names its artifact -- the type requires it -- so this
+  // is a count of requests that got no answer, not a count of our own output. ONE
+  // LINE PER ARTIFACT, not per blocked check: six checks blocked by one refused
+  // request is one refused request, and printing it six times would restate the
+  // unit error the count was fixed for.
+  const unreachedArtifacts = [...new Map(unreached.map((r) => [r.unreachedUrl, r.transport])).entries()];
   const checkWord = unreached.length === 1 ? "check" : "checks";
   if (unreached.length > 0 && failed.length > 0) {
     // THE MIXED STATE, which is real and which a reader needs both halves of. The
@@ -142,7 +153,7 @@ export function renderText(results: readonly CheckResult[], target: Target): str
         : `But ${failed.length} checks that WERE made failed, and those findings above stand.`,
     );
     lines.push("Fix those, and check the network for the artifacts that got no answer.");
-    for (const url of unreachedArtifacts) lines.push(`  no answer: ${url}`);
+    for (const [url, transport] of unreachedArtifacts) lines.push(`  no answer: ${url} — ${transport}`);
   } else if (unreached.length > 0) {
     // NOT "no verdict about the site at all", and not "nothing above is a finding
     // about this site's conformance". Both were the round-3 pattern one step
@@ -156,7 +167,7 @@ export function renderText(results: readonly CheckResult[], target: Target): str
     );
     lines.push("Nothing that was not checked has been verified, and no passing check above covers it.");
     lines.push("Check the URL, then whether this machine can reach that host.");
-    for (const url of unreachedArtifacts) lines.push(`  no answer: ${url}`);
+    for (const [url, transport] of unreachedArtifacts) lines.push(`  no answer: ${url} — ${transport}`);
   } else if (failed.length === 0) {
     lines.push("No check that this tool is able to make has failed. That is not the same as conformance:");
     lines.push(`${notMade.length} of the specification's checks were not made at all. See above for which.`);
@@ -176,7 +187,8 @@ export function renderJson(results: readonly CheckResult[], target: Target): str
         passed: results.filter((r) => r.status === "pass").length,
         failed: results.filter((r) => r.status === "fail").length,
         notChecked: results.filter((r) => r.status === "not-demonstrated").length,
-        neverReached: results.filter((r) => r.unreached === true).length,
+        neverReached: results.filter(isUnreached).length,
+        artifactsNeverAnswered: [...new Set(results.filter(isUnreached).map((r) => r.unreachedUrl))].length,
         exitCode: exitCodeFor(results),
       },
       results,

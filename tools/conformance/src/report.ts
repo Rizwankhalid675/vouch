@@ -137,6 +137,21 @@ export function renderText(results: readonly CheckResult[], target: Target): str
   // unit error the count was fixed for.
   const unreachedArtifacts = [...new Map(unreached.map((r) => [r.unreachedUrl, r.transport])).entries()];
   const checkWord = unreached.length === 1 ? "check" : "checks";
+  // THE ARITHMETIC HAS TO CLOSE ON THE PAGE. The banner counted only the checks
+  // blocked by a refused request, while the summary counted every check not made,
+  // so one line sat outside the banner's total with nothing saying which or why.
+  // After a round spent on exactly this class of number, a reader who adds them up
+  // and gets a different answer has every reason to distrust the rest.
+  const byDesign = notMade.length - unreached.length;
+  const byDesignLines: string[] =
+    byDesign > 0
+      ? [
+          `A further ${byDesign} ${byDesign === 1 ? "is" : "are"} declined by design: ${
+            byDesign === 1 ? "it needs" : "they need"
+          } a browser and a live model, which no run from a shell`,
+          `has. ${unreached.length} + ${byDesign} = ${notMade.length} not checked, which is every line in that section.`,
+        ]
+      : [];
   if (unreached.length > 0 && failed.length > 0) {
     // THE MIXED STATE, which is real and which a reader needs both halves of. The
     // old branch printed "Nothing above is a finding about this site's conformance"
@@ -147,6 +162,7 @@ export function renderText(results: readonly CheckResult[], target: Target): str
       `MIXED RESULT. ${unreachedArtifacts.length} of this site's artifacts never answered, so ` +
         `${unreached.length} ${checkWord} could not be made.`,
     );
+    lines.push(...byDesignLines);
     lines.push(
       failed.length === 1
         ? "But 1 check that WAS made failed, and that finding above stands."
@@ -165,6 +181,7 @@ export function renderText(results: readonly CheckResult[], target: Target): str
       `THIS RUN IS INCOMPLETE. ${unreachedArtifacts.length} of this site's artifacts never answered, so ` +
         `${unreached.length} ${checkWord} could not be made.`,
     );
+    lines.push(...byDesignLines);
     lines.push("Nothing that was not checked has been verified, and no passing check above covers it.");
     lines.push("Check the URL, then whether this machine can reach that host.");
     for (const [url, transport] of unreachedArtifacts) lines.push(`  no answer: ${url} — ${transport}`);

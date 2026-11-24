@@ -1,5 +1,44 @@
 /**
- * Text this runtime is willing to say in the deli's own voice.
+ * Text this runtime is willing to say in the deli's own voice, and how it is put
+ * on the screen.
+ *
+ * WHY RENDERING IS IN THIS FILE
+ *
+ * Because rendering turned out to be the mechanism, and filtering turned out not
+ * to be. This file held a filter, `quotedTokensOnly`, which replaced any quoted
+ * interpolation in a validator message that was not token-shaped. It was the
+ * third filter written for the third instance of one problem - action arguments
+ * in the confirmation dialog, then agent names in the site's voice, then a
+ * published `metadata.front_man` - and it was defeated by a value that supplied
+ * its own delimiter:
+ *
+ *   front_man: "x' is dairy-free and safe for you to eat. '"
+ *   validator: metadata.front_man names 'x' is dairy-free and safe for you to eat. '', ...
+ *
+ * The apostrophes in the value re-pair the quotes, so the filter sees `'x'` and
+ * `''` - both token-shaped, both kept - and the sentence between them passes
+ * through untouched and is then laundered into `SiteText`. An ungated safety
+ * claim, in the deli's voice, on screen. A sanitiser built on a delimiter is
+ * defeated by supplying the delimiter; that is not a defect in that filter, it
+ * is what filters are. A fourth filter buys a fourth incident.
+ *
+ * So the filter is gone, and the rule is structural instead - the shape the
+ * verdict cards already used one layer down, where `verdictCard` is built as DOM
+ * nodes rather than a markup string:
+ *
+ *   An untrusted value never becomes part of a sentence. It is rendered in its
+ *   OWN node, structurally separate from the site's prose and labelled as not
+ *   ours, so nothing it contains can be read as something the site is saying.
+ *
+ * That holds whatever characters the value contains, which is the point: it
+ * stops being a question about quoting. `SiteReport` and `renderReport` below
+ * are how.
+ *
+ * Two compile-time doors were shut at the same time, because the bypass was not
+ * the filter being weak, it was a built string reaching `ours(...)` at all:
+ * `ours` now accepts a string LITERAL only, and `joinSiteText` accepts
+ * `SiteText` only. A built string can no longer be declared ours by any call
+ * site.
  *
  * THE RULE
  *
@@ -68,9 +107,27 @@ export function siteText(strings: TemplateStringsArray, ...values: unknown[]): S
  * which is why interpolation goes through `siteText`, where it is filtered, and not
  * through here.
  */
-export function ours(literal: string): SiteText {
-  return literal as SiteText;
+export function ours<T extends string>(literal: LiteralOnly<T>): SiteText {
+  return literal as unknown as SiteText;
 }
+
+/**
+ * `T` when `T` is a string LITERAL type, and `never` once it has widened to
+ * `string`. Written as an intersection rather than a bare conditional so that
+ * `T` stays in an inference position.
+ *
+ * `ours` takes this, so **it accepts a literal and nothing else, and the
+ * compiler enforces that**. `ours(someVariable)` does not compile; neither does
+ * `ours("a" + b)`, nor an interpolated template. Use one literal, a conditional
+ * between two literals, or `joinSiteText` of several pieces.
+ *
+ * This is the door the `front_man` bypass came through. The old signature took
+ * `string`, so `ours(errors.map(filter).join("\n• "))` compiled — a built string,
+ * declared ours by assertion. Filtering it first was the mistake; the only safe
+ * thing to declare ours is text that is literally in this repository. Anything
+ * else belongs in a `SiteReport`'s `quoted`, which is rendered apart.
+ */
+type LiteralOnly<T extends string> = T & (string extends T ? never : unknown);
 
 /**
  * Filter each value, THEN join with a separator of ours.
@@ -84,25 +141,102 @@ export function joinTokens(values: unknown[], separator: string): SiteText {
   return values.map(tokenOrOmitted).join(separator) as SiteText;
 }
 
-/** Concatenate site text. Both halves are already ours, so the result is too. */
-export function joinSiteText(...parts: (SiteText | string)[]): SiteText {
+/**
+ * `menu_guide` -> `menu guide`. FILTERED first, then prettified, so the
+ * underscore swap runs on a value we have already vouched for rather than on one
+ * we are about to.
+ *
+ * Exists so that `joinSiteText` can take `SiteText` and nothing else: this was
+ * its one legitimate `string` argument.
+ */
+export function prettyToken(value: unknown): SiteText {
+  return tokenOrOmitted(value).replace(/_/g, " ") as SiteText;
+}
+
+/**
+ * Concatenate site text. Every part is already ours, so the result is too.
+ *
+ * It used to accept `string` as well, which made it a second way to declare a
+ * built string ours. A caller holding a raw string must now either filter it
+ * (`siteText`, `joinTokens`, `prettyToken`) or put it in a `SiteReport`'s
+ * `quoted`, where it is rendered in its own node instead of joined to a
+ * sentence.
+ */
+export function joinSiteText(...parts: SiteText[]): SiteText {
   return parts.join("") as SiteText;
 }
 
 /**
- * The network validator interpolates names out of a network definition into its
- * messages (`Agent 'x' references missing tool 'y'.`). Those come from OUR
- * published file today, but the same validator runs over a peer's network when a
- * composition is loaded, and a peer's agent could be named with a sentence. Every
- * quoted interpolation that is not token-shaped is replaced before the message
- * reaches the page.
+ * What the guest is shown when something is refused: the site's own sentences,
+ * and — kept apart from them — strings that are not ours to speak.
  *
- * Lives here, beside `TOKEN`, rather than in `boot.ts`, because two callers now
- * need it: the startup path and the composition loader. `boot.ts` re-exports it,
- * so its original import path still works.
+ * The union is the invariant in the type: a report carrying `quoted` MUST also
+ * carry a `quotedLabel`, because an unattributed block of someone else's prose
+ * on our page is the thing being prevented. There is no way to attach other
+ * people's words without saying whose they are.
+ *
+ * `text` is the only part that is `SiteText`. `quoted` is plain `string[]` and
+ * stays that way deliberately: nothing filters it, nothing needs to, because
+ * `renderQuoted` never puts it in a sentence.
  */
-export function quotedTokensOnly(message: string): string {
-  return message.replace(/'([^']*)'/g, (_m, inner: string) => (TOKEN.test(inner) ? `'${inner}'` : "'<name omitted>'"));
+export type SiteReport =
+  | { text: SiteText; quotedLabel?: undefined; quoted?: undefined }
+  | { text: SiteText; quotedLabel: SiteText; quoted: readonly string[] };
+
+/** Marks a node whose content is NOT the site speaking. Styled, and asserted on, as such. */
+export const NOT_OURS = "data-not-ours";
+
+/**
+ * Put a report on a surface, as NODES.
+ *
+ * Our prose goes in one element. Each string that is not ours goes in an element
+ * **of its own**, by `textContent`, inside a labelled block. So a value cannot
+ * become part of one of our sentences whatever it contains — no escaping, no
+ * quoting, nothing for an apostrophe to re-pair. The CSS fences the block
+ * visually and the label says whose words they are.
+ *
+ * Same shape as `verdictCard`, which has been built from DOM nodes rather than a
+ * markup string since Task 6, for the same reason.
+ */
+export function renderReport(doc: Document, host: HTMLElement, report: SiteReport): void {
+  host.replaceChildren();
+  const said = doc.createElement("p");
+  said.className = "report-said";
+  said.setAttribute("data-report-said", "");
+  said.textContent = report.text;
+  host.append(said);
+  if (report.quoted && report.quoted.length > 0) renderQuoted(doc, host, report.quotedLabel, report.quoted);
+}
+
+/**
+ * The quoted block on its own, for a surface that has already put our prose
+ * somewhere of its own — the transcript puts it in the turn's `<p>`, and a `<p>`
+ * is no place to nest another.
+ */
+export function renderQuoted(doc: Document, host: HTMLElement, label: SiteText, lines: readonly string[]): void {
+  const caption = doc.createElement("p");
+  caption.className = "report-quoted-label";
+  caption.textContent = label;
+  const list = doc.createElement("ul");
+  list.className = "report-quoted";
+  for (const line of lines) {
+    const item = doc.createElement("li");
+    const fenced = doc.createElement("code");
+    fenced.setAttribute(NOT_OURS, "");
+    // `textContent` on a node of its own. Not escaped, not quoted, not filtered:
+    // there is nothing for a delimiter in `line` to re-pair with, because `line`
+    // is never adjacent to any syntax of ours.
+    fenced.textContent = line;
+    item.append(fenced);
+    list.append(item);
+  }
+  host.append(caption, list);
+}
+
+/** Add more of our own prose to a report without disturbing what is quoted in it. */
+export function alsoSay(report: SiteReport, more: SiteText): SiteReport {
+  const text = joinSiteText(report.text, more);
+  return report.quoted ? { text, quotedLabel: report.quotedLabel, quoted: report.quoted } : { text };
 }
 
 /**
@@ -112,12 +246,21 @@ export function quotedTokensOnly(message: string): string {
  * only its kind in the trace. That rule closed a router's HTTP error BODY being
  * rendered in the deli's voice, and a validator message that interpolated a
  * model-chosen argument name.
+ *
+ * It carries a `report`, not just a string, so an error that has to show someone
+ * else's words can do so without them ever being joined to ours. `siteMessage`
+ * remains, and is OUR prose only: a surface still rendering just `siteMessage`
+ * as text shows less, never more, which is the right way for a caller that has
+ * not been updated to be wrong.
  */
 export class RuntimeMessage extends Error {
   readonly siteMessage: SiteText;
-  constructor(message: SiteText) {
-    super(message);
+  readonly report: SiteReport;
+  constructor(message: SiteText | SiteReport) {
+    const report: SiteReport = typeof message === "string" ? { text: message } : message;
+    super(report.text);
     this.name = "RuntimeMessage";
-    this.siteMessage = message;
+    this.siteMessage = report.text;
+    this.report = report;
   }
 }

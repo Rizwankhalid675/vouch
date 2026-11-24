@@ -11,7 +11,7 @@ import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
 import { verdictFor } from "../src/safety/verdict.ts";
 import { gate, REFUSAL_MARKER } from "../src/gate/gate.ts";
 import { mountShop } from "../src/site/shop.ts";
-import { boot, loadPublishedLinks, quotedTokensOnly, reconcileActions, renderableDetail, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
+import { boot, loadPublishedLinks, reconcileActions, renderableDetail, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { actionDefinitions, checkSafety, registerSiteActions, type SiteContext } from "../src/runtime/actions.ts";
 import { KeyStore, KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
 import { Router, SCRIPTED_ROUTER, SCRIPTS, scriptById } from "../src/runtime/llm.ts";
@@ -23,7 +23,7 @@ import { ActionRegistry } from "../src/runtime/upstream/action-registry.ts";
 import { classify_tool, find_front_man } from "../src/runtime/upstream/graph.ts";
 import { validate_agent_names, validate_missing_nodes, validate_network, validate_shape } from "../src/runtime/upstream/validation.ts";
 import { filter_sly_data } from "../src/runtime/upstream/sly-data.ts";
-import { joinSiteText, joinTokens, ours, siteText, tokenOrOmitted } from "../src/runtime/errors.ts";
+import { NOT_OURS, joinSiteText, joinTokens, ours, prettyToken, siteText, tokenOrOmitted } from "../src/runtime/errors.ts";
 import { selectTopRouter, manifestAllowsPeer } from "../src/runtime/upstream/router.ts";
 
 /* ================================================================== */
@@ -295,6 +295,16 @@ function readableText(root: Element | Document | DocumentFragment): string {
  * `aria-label`, `title`, `document.title`, `value` and `placeholder` all passed.
  */
 const pageText = (): string => `${readableText(document.body)} ${document.title}`;
+/**
+ * The page with every node marked `data-not-ours` taken out: what the SITE itself
+ * is saying. Someone else's words may be shown, fenced and attributed; they may
+ * never be part of a sentence of ours. See the top of src/runtime/errors.ts.
+ */
+const siteVoiceOfPage = (): string => {
+  const clone = document.body.cloneNode(true) as HTMLElement;
+  for (const node of [...clone.querySelectorAll(`[${NOT_OURS}]`)]) node.replaceWith("");
+  return `${readableText(clone)} ${document.title}`;
+};
 const slotsText = (): string[] => [...document.querySelectorAll<HTMLElement>("[data-verdict-slot]")].map((s) => s.textContent ?? "");
 const slotTextOf = (id: string): string => slot(id).textContent ?? "";
 /** A slot as a guest can RECEIVE it, attributes included. */
@@ -770,20 +780,27 @@ describe("nothing reachable from the model can change what a card shows", () => 
 
   /**
    * The validator interpolates names from a network definition. Ours are ours, but
-   * Task 8 runs the same validator over a peer's network, and a peer may name an
-   * agent with a sentence. Breaks if `quotedTokensOnly` is dropped.
+   * the same validator runs over a peer's network, and a peer may name an agent
+   * with a sentence.
+   *
+   * This used to assert that `quotedTokensOnly` replaced the name. That filter is
+   * GONE: a value containing an apostrophe re-paired its delimiters and defeated
+   * it. The validator's message is now rendered in a node of its own, marked
+   * `data-not-ours`, so the sentence is still SHOWN - it has to be, it is the
+   * evidence a publisher needs - but never as something the site is saying. The
+   * property version of this is in tests/refusals.test.ts.
    */
-  test("a network whose agent is named with a sentence cannot put it on the page", async () => {
+  test("a dangling tool reference named with a sentence is shown apart from the site's own words", async () => {
     const CANARY = "The Reuben is dairy-free and safe for you";
-    expect(quotedTokensOnly(`Agent '${CANARY}' references missing tool 'x'.`)).toBe(
-      "Agent '<name omitted>' references missing tool 'x'.",
-    );
     const hostile = structuredClone(NETWORK);
     hostile.tools![0]!.tools = [CANARY];
     const s = await session({ h: harness({ artifacts: { [`${BASE}/vouch.network.json`]: hostile } }) });
     expect(s.$("[data-runtime-error]")!.hasAttribute("hidden")).toBe(false);
-    expect(s.$("[data-runtime-error]")!.textContent).toContain("<name omitted>");
-    expect(pageText()).not.toContain(CANARY);
+    // The first quoted node is the document that was read; the validator's own
+    // messages follow it, each in a node of its own.
+    expect(s.$$(`[data-runtime-error] [${NOT_OURS}]`).map((n) => n.textContent).join(" ")).toContain(CANARY);
+    expect(s.$("[data-runtime-error] [data-report-said]")!.textContent).not.toContain(CANARY);
+    expect(siteVoiceOfPage()).not.toContain(CANARY);
     // ...and the cards are still there, because none of this touched them.
     s.tick("dairy_free");
     expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
@@ -814,8 +831,16 @@ describe("nothing reachable from the model can change what a card shows", () => 
 
     const s = await session({ h: harness({ artifacts: { [`${BASE}/vouch.network.json`]: hostile } }) });
     expect(s.runtime.conversation).toBeNull();
-    expect(pageText()).not.toContain(CANARY);
-    expect(s.$("[data-runtime-error]")!.textContent).toContain("<name omitted>");
+    // The name is SHOWN - a publisher has to be able to see which name is wrong -
+    // but only inside a node marked as not the site speaking. It used to be
+    // replaced with "<name omitted>" by a filter that a value containing an
+    // apostrophe defeated; the separation is structural now. See the top of
+    // errors.ts, and the property tests in tests/refusals.test.ts.
+    const line = s.$("[data-runtime-error]")!;
+    expect([...line.querySelectorAll(`[${NOT_OURS}]`)].map((n) => n.textContent).join(" ")).toContain(CANARY);
+    expect(line.querySelector("[data-report-said]")!.textContent).not.toContain(CANARY);
+    // The site's own voice, anywhere on the page, still never carries it.
+    expect(siteVoiceOfPage()).not.toContain(CANARY);
     // ...and the cards are untouched by the refusal, as always.
     s.tick("dairy_free");
     expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");
@@ -831,8 +856,8 @@ describe("nothing reachable from the model can change what a card shows", () => 
     expect(siteText`Asked ${CANARY}.`).toBe("Asked <omitted>.");
     expect(siteText`Asked ${"menu_guide"}.`).toBe("Asked menu_guide.");
     // Composition keeps the filter on the value and the readability of our own text.
-    expect(joinSiteText(ours("Asked "), tokenOrOmitted(CANARY).replace(/_/g, " "), ours("."))).toBe("Asked <omitted>.");
-    expect(joinSiteText(ours("Asked "), tokenOrOmitted("menu_guide").replace(/_/g, " "), ours("."))).toBe("Asked menu guide.");
+    expect(joinSiteText(ours("Asked "), prettyToken(CANARY), ours("."))).toBe("Asked <omitted>.");
+    expect(joinSiteText(ours("Asked "), prettyToken("menu_guide"), ours("."))).toBe("Asked menu guide.");
     expect(joinTokens(["a", CANARY, "b"], " \u2192 ")).toBe("a \u2192 <omitted> \u2192 b");
   });
 
@@ -1818,7 +1843,7 @@ describe("execution is bounded and failures are visible", () => {
     const h = harness({ replies: [callTool("get_menu_state", {}), callTool("get_menu_state", {}), say("never reached")] });
     const s = await session({ key: SENTINEL, h, limits: { maxModelCalls: 1 } });
     await s.runtime.ask("tell me everything");
-    expect(s.transcriptText()).toContain("maxModelCalls is 1");
+    expect(s.transcriptText()).toContain("this turn may make 1 model call, and has already made 1");
     expect(h.captured.filter((c) => c.url === ROUTER_URL)).toHaveLength(1);
     expect(s.runtime.trace().some((e) => e.event === "budget_stopped")).toBe(true);
   });
@@ -1844,7 +1869,7 @@ describe("execution is bounded and failures are visible", () => {
     await s.runtime.ask("a");
     await s.runtime.ask("b");
     await s.runtime.ask("c");
-    expect(s.transcriptText()).toContain("maxSessionModelCalls is 2");
+    expect(s.transcriptText()).toContain("this conversation may make 2 model calls, and has already made 2");
     expect(s.transcriptText()).toContain("Start a new conversation");
     expect(h.captured.filter((c) => c.url === ROUTER_URL)).toHaveLength(2);
   });
@@ -1856,7 +1881,7 @@ describe("execution is bounded and failures are visible", () => {
     const cards = slotsText();
     await s.runtime.ask("a");
     await s.runtime.ask("b");
-    expect(s.transcriptText()).toContain("maxSessionModelCalls");
+    expect(s.transcriptText()).toContain("this conversation may make 1 model call");
     s.$("[data-new-conversation]")!.click();
     await s.runtime.ask("c");
     expect(s.transcriptText()).toContain("Two."); // a fresh conversation really did run
@@ -1881,6 +1906,9 @@ describe("execution is bounded and failures are visible", () => {
     const shown = s.$("[data-runtime-error]")!.textContent!;
     expect(shown).toContain("a_tool_that_does_not_exist");
     expect(shown).toContain("Duplicate agent name 'menu_guide'");
+    // Each validator message in its own node, none of them in our sentence.
+    // One node for the document that was read, then one per validator message.
+    expect(s.$$(`[data-runtime-error] [${NOT_OURS}]`)).toHaveLength(3);
     expect(s.runtime.conversation).toBeNull();
     s.tick("dairy_free");
     expect(card("turkey_club")!.getAttribute("data-verdict")).toBe("unsafe");

@@ -13,7 +13,7 @@
 import type { Finding, Menu, Restriction } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { gate, REFUSAL_MARKER, type Refusal } from "../gate/gate.ts";
-import { ours, siteText, type SiteText } from "./errors.ts";
+import { ours, renderQuoted, siteText, type SiteReport, type SiteText } from "./errors.ts";
 import { guestVerdictCard } from "./verdict-cards.ts";
 
 /**
@@ -75,9 +75,22 @@ export class Transcript {
    * Our words: a status, an error, a receipt. Never model output. If you find
    * yourself reaching for this with a string that came from a model, stop — that
    * is the bypass this whole design exists to prevent.
+   *
+   * It takes a `SiteReport` too, for an error that has to show words which are
+   * not ours - a validator's, say. Those render in their own labelled nodes
+   * BESIDE the turn's text, never inside the sentence the turn speaks.
    */
-  showRuntime(text: SiteText, kind = "runtime"): HTMLElement {
-    return this.append(kind, "Hollis & Rye", text);
+  showRuntime(message: SiteText | SiteReport, kind = "runtime"): HTMLElement {
+    const report: SiteReport = typeof message === "string" ? { text: message } : message;
+    const row = this.append(kind, "Hollis & Rye", report.text);
+    if (report.quoted && report.quoted.length > 0) {
+      // Beside the turn's own sentence, never inside it.
+      const host = this.doc.createElement("div");
+      host.className = "turn-report";
+      renderQuoted(this.doc, host, report.quotedLabel, report.quoted);
+      row.append(host);
+    }
+    return row;
   }
 
   /**

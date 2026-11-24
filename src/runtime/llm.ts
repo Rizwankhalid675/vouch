@@ -18,7 +18,7 @@
  *     match it and add the sentence only this product can add.
  */
 
-import { RuntimeMessage, joinSiteText, ours, siteText, type SiteText } from "./errors.ts";
+import { RuntimeMessage, joinSiteText, ours, siteText, type SiteReport, type SiteText } from "./errors.ts";
 import type { TraceEntry } from "./types.ts";
 import type { ToolSchema } from "./upstream/tool-schema.ts";
 import rawScripts from "../../data/scripted-replies.json" with { type: "json" };
@@ -118,8 +118,14 @@ export function hostOf(url: string): string {
  * degrading the safety, and a visitor reading a setup error is exactly who needs
  * to be told that.
  */
-export function missingKeyMessage(baseUrl: string): SiteText {
-  return siteText`An AI provider key is required for ${hostOf(baseUrl) || "the configured provider"}. Open the model settings above, paste your key, then select Save. Your key stays in this browser and is sent only to that provider. No model call was made. The safety check is not affected: check_safety and the verdict beside each dish are computed here, from the published ingredients, and work with no key at all.`;
+export function missingKeyMessage(baseUrl: string): SiteReport {
+  return {
+    text: ours(
+      "An AI provider key is required for the provider named below. Open the model settings above, paste your key, then select Save. Your key stays in this browser and is sent only to that provider. No model call was made. The safety check is not affected: check_safety and the verdict beside each dish are computed here, from the published ingredients, and work with no key at all.",
+    ),
+    quotedLabel: ours("The provider this key would go to, and nowhere else:"),
+    quoted: [hostOf(baseUrl) || "(none configured)"],
+  };
 }
 
 export interface RouterOptions {
@@ -226,9 +232,9 @@ export class Router {
       // would filter the whole thing away. Only bare tokens are interpolated.
       // `advice` is ours, so it is APPENDED as site text rather than interpolated
       // as a value — `siteText` filters values, and ours has whitespace in it.
-      const advice = ours(
-        " Check the key and the router in the model settings above. The provider's own response is not shown " +
-          "here, because this site does not repeat text it cannot vouch for.",
+      const advice = joinSiteText(
+        ours(" Check the key and the router in the model settings above. The provider's own response is not shown "),
+        ours("here, because this site does not repeat text it cannot vouch for."),
       );
       throw new RuntimeMessage(
         joinSiteText(

@@ -30,11 +30,15 @@
  *     party, and treating it as one would make the published allow-list a list of
  *     origins including yourself, which no publisher writes.
  *  4. **Every refusal is a `RuntimeMessage`**, so the panel can show it in the
- *     deli's voice, and every interpolated value — an origin, a URL, a network
- *     name, a validator message — comes from a peer document and is filtered.
+ *     deli's voice. Values from a peer document are either token-filtered
+ *     through `siteText`/`joinTokens` - which admits no whitespace, so such a
+ *     value cannot form a sentence at all - or, when they are prose, carried as
+ *     a report's `quoted` and rendered in their own nodes. Nothing in here
+ *     builds a string and declares it ours; `ours` no longer compiles for
+ *     anything but a literal.
  */
 
-import { RuntimeMessage, joinSiteText, joinTokens, ours, quotedTokensOnly, siteText, tokenOrOmitted } from "./errors.ts";
+import { RuntimeMessage, joinSiteText, ours, tokenOrOmitted } from "./errors.ts";
 import { BudgetError } from "./limits.ts";
 import type { Manifest, NetworkConfig, TraceEntry } from "./types.ts";
 import { classify_tool } from "./upstream/graph.ts";
@@ -61,15 +65,31 @@ export interface ComposedNetwork {
   config: NetworkConfig;
 }
 
+/*
+ * THE REFUSALS.
+ *
+ * Every one of them is OUR SENTENCE, written out in literals, plus the values it
+ * is about in `quoted` - each in a node of its own. Not one of these messages
+ * interpolates an untrusted value into prose, so there is no delimiter to
+ * supply, no quoting to get right, and nothing a value can contain that makes
+ * it read as something the site is saying. See the note at the top of errors.ts
+ * for the bypass that bought this rule.
+ *
+ * It costs a little punch - "Refused: that origin is not in allowed_peers" with
+ * the origin on the next line, rather than inside the sentence - and it is worth
+ * it. A URL in a sentence looks harmless until the URL is a sentence.
+ */
+
 /** Refused because the target origin is not in the published allow-list. */
 export class DeniedOriginError extends RuntimeMessage {
   constructor(readonly origin: string) {
-    super(
-      joinSiteText(
-        siteText`Refused: ${origin} is not in this site's allowed_peers, so it was not contacted.`,
-        ours(" The allow-list this site publishes is the top-level allowed_peers of agent-manifest.json."),
+    super({
+      text: ours(
+        "Refused: that origin is not in this site's allowed_peers, so it was not contacted. The allow-list this site publishes is the top-level allowed_peers of agent-manifest.json.",
       ),
-    );
+      quotedLabel: ours("The origin that was refused:"),
+      quoted: [origin],
+    });
     this.name = "DeniedOriginError";
   }
 }
@@ -77,12 +97,13 @@ export class DeniedOriginError extends RuntimeMessage {
 /** Refused because the visitor did not approve contacting a third-party origin (§3.2). */
 export class ConsentRefusedError extends RuntimeMessage {
   constructor(readonly origin: string) {
-    super(
-      joinSiteText(
-        siteText`Refused: you did not approve contacting ${origin}, so nothing was fetched.`,
-        ours(" Nothing on this page needs it; the verdict beside each dish is worked out here."),
+    super({
+      text: ours(
+        "Refused: you did not approve contacting that origin, so nothing was fetched. Nothing on this page needs it; the verdict beside each dish is worked out here.",
       ),
-    );
+      quotedLabel: ours("The origin that was not contacted:"),
+      quoted: [origin],
+    });
     this.name = "ConsentRefusedError";
   }
 }
@@ -95,33 +116,46 @@ export class ConsentRefusedError extends RuntimeMessage {
  * refusals with different scopes must not print the same opening phrase.
  */
 export class CompositionCycleError extends RuntimeMessage {
-  constructor(readonly path: string[]) {
-    super(
-      joinSiteText(
-        ours("Composition cycle refused: "),
-        joinTokens(path, " → "),
-        ours(". That chain returns to a network already being composed. No further network was fetched and nothing was run."),
+  constructor(readonly path: readonly string[]) {
+    super({
+      text: ours(
+        "Composition cycle refused: the chain below returns to a network already being composed. No further network was fetched and nothing was run.",
       ),
-    );
+      quotedLabel: ours("The chain, in the order it was followed:"),
+      quoted: path,
+    });
     this.name = "CompositionCycleError";
   }
 }
 
-/** Refused because the fetched definition did not validate. Names each offending field. */
+/**
+ * Refused because the fetched definition did not validate.
+ *
+ * The validator's messages interpolate values out of the published document -
+ * `metadata.front_man names 'x', which is not an agent in this network.` - and
+ * those values belong to whoever published it.
+ *
+ * An earlier version built one string: our sentence, then the messages with
+ * their quoted interpolations filtered, then `ours(...)` over the lot. A
+ * `front_man` of `x' is dairy-free and safe for you to eat. '` re-paired the
+ * filter's own apostrophes and put that sentence on the page in the deli's
+ * voice.
+ */
 export class InvalidNetworkError extends RuntimeMessage {
   constructor(
     readonly url: string,
-    readonly errors: string[],
+    readonly errors: readonly string[],
   ) {
-    super(
-      joinSiteText(
-        siteText`Refused: the network at ${url} is not valid and was not run:`,
-        // Each validator message's own literal text is ours; its quoted
-        // interpolations come from the peer's document and are filtered first.
-        // Same shape as the startup path's handling of the same strings.
-        ours(`\n• ${errors.map(quotedTokensOnly).join("\n• ")}`),
+    super({
+      text: joinSiteText(
+        ours("Refused: the published network below is not valid, so it was not run."),
+        errors.length === 1 ? ours(" The validator reported one problem with it.") : ours(" The validator reported several problems with it."),
       ),
-    );
+      quotedLabel: ours(
+        "The network, then what the validator said about it - copied exactly from the published document and shown apart from our own words, because it is not ours to vouch for:",
+      ),
+      quoted: [url, ...errors],
+    });
     this.name = "InvalidNetworkError";
   }
 }
@@ -132,12 +166,13 @@ export class NoSuchNetworkError extends RuntimeMessage {
     readonly name: string,
     readonly manifestUrl: string,
   ) {
-    super(
-      joinSiteText(
-        siteText`Refused: no network named '${name}' is published in ${manifestUrl}.`,
-        ours(" A runtime must fail here rather than select a different published network, so nothing was run."),
+    super({
+      text: ours(
+        "Refused: no network of that name is published in that manifest. A runtime must fail here rather than select a different published network, so nothing was run.",
       ),
-    );
+      quotedLabel: ours("The name that was asked for, and the manifest that was read:"),
+      quoted: [name, manifestUrl],
+    });
     this.name = "NoSuchNetworkError";
   }
 }
@@ -145,12 +180,13 @@ export class NoSuchNetworkError extends RuntimeMessage {
 /** Refused because the reference is not an http or https URL (§3.2). */
 export class BadReferenceError extends RuntimeMessage {
   constructor(readonly ref: string) {
-    super(
-      joinSiteText(
-        siteText`Refused: '${ref}' is not an http or https network reference, so nothing was fetched.`,
-        ours(" A peer network is named by a URL whose last path component is the network name."),
+    super({
+      text: ours(
+        "Refused: that is not an http or https network reference, so nothing was fetched. A peer network is named by a URL whose last path component is the network name.",
       ),
-    );
+      quotedLabel: ours("What was given:"),
+      quoted: [ref],
+    });
     this.name = "BadReferenceError";
   }
 }

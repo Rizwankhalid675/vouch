@@ -22,7 +22,7 @@
 
 import type { Finding } from "../../contracts.ts";
 import type { Refusal } from "../gate/gate.ts";
-import { RuntimeMessage, joinSiteText, joinTokens, ours, siteText, tokenOrOmitted } from "./errors.ts";
+import { RuntimeMessage, joinSiteText, joinTokens, ours, prettyToken, siteText } from "./errors.ts";
 import { BudgetError, DEFAULT_LIMITS, TurnClock, type Limits } from "./limits.ts";
 import type { ChatMessage, ModelReply, Router } from "./llm.ts";
 import type { Transcript } from "./transcript.ts";
@@ -377,7 +377,7 @@ export class Conversation {
     // Filtered first, then prettified: the underscore swap happens on a value we
     // have already vouched for, not on one we are about to.
     this.deps.transcript.showRuntime(
-      joinSiteText(ours("Asked "), tokenOrOmitted(name).replace(/_/g, " "), ours(".")),
+      joinSiteText(ours("Asked "), prettyToken(name), ours(".")),
       "delegated",
     );
 

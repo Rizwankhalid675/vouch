@@ -111,8 +111,28 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
 .compose .field { margin-top: .6rem; }
 .compose button { font: inherit; margin-top: .5rem; border: 1px solid var(--rule); background: var(--paper); border-radius: 4px; padding: .45rem .8rem; }
 .compose-status { margin: .6rem 0 0; font-size: .85rem; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
-.compose-status[data-compose-kind="refused"] { color: #7d1f14; }
-.compose-status[data-compose-kind="loaded"] { color: var(--ink); }
+.compose-status[data-compose-kind="refused"] .report-said { color: #7d1f14; }
+.compose-status[data-compose-kind="loaded"] .report-said { color: var(--ink); }
+
+/*
+ * Someone else's words on our page.
+ *
+ * An untrusted value is rendered in its own node rather than inside one of our
+ * sentences, so nothing it contains can be read as something the site is saying.
+ * This is what makes that separation legible: the block is fenced, set in
+ * monospace, and captioned with whose words they are. Nothing here is a
+ * sanitiser - the separation is in the DOM, and the styling only shows it.
+ */
+.report-said { margin: 0; white-space: pre-wrap; }
+.report-quoted-label { margin: .5rem 0 .25rem; font-size: .8rem; color: var(--muted); }
+.report-quoted { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; }
+.report-quoted li { font-size: .8rem; }
+.report-quoted [data-not-ours] {
+  display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem;
+  color: #4a3d30; background: #f1ece4; border: 1px dashed var(--rule); border-left: 3px solid var(--rule);
+  border-radius: 3px; padding: .3rem .45rem; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.turn-report { margin-top: .4rem; }
 
 .transcript { display: grid; gap: .75rem; max-height: 26rem; overflow-y: auto; }
 .turn { border-left: 3px solid var(--rule); padding-left: .7rem; }

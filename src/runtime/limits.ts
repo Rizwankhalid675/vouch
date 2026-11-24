@@ -72,8 +72,102 @@ export const DEFAULT_LIMITS: Limits = {
 };
 
 /**
+ * Milliseconds as a person says them: `1000` → "1 second", `62500` → "62.5
+ * seconds". A bare `2000` beside a bare `1000` in a sentence with no unit in it
+ * is a developer log line, and the people who read these strings are a guest and
+ * a judge watching a demo.
+ *
+ * Built the long way round — digits through `siteText`, unit word through `ours`
+ * — because `siteText` filters out anything containing a space and `ours` takes
+ * only a literal. That is the mechanism working rather than being fought: there
+ * is no call in this file that could put an untrusted value in a sentence even
+ * by accident.
+ */
+export function seconds(ms: number): SiteText {
+  const value = ms / 1000;
+  const shown = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return joinSiteText(siteText`${shown}`, shown === "1" ? ours(" second") : ours(" seconds"));
+}
+
+/** A count with its unit: `1` + "model call" / "model calls". */
+function count(n: number, one: SiteText, many: SiteText): SiteText {
+  return joinSiteText(siteText`${n}`, n === 1 ? one : many);
+}
+
+/**
+ * What reaching a budget says, in English.
+ *
+ * Both figures, as the brief required — but named by what they bound rather than
+ * by the field identifier that holds them. `maxComposedNetworks is 2` tells a
+ * guest nothing; "a composition may load 2 published networks" tells them what
+ * stopped. The identifier stays in the trace, which is where a developer looks,
+ * so nothing is lost by taking it out of the sentence.
+ */
+function budgetSentence(budget: keyof Limits, limit: number, spent: number): SiteText {
+  const opener = ours("Execution limit reached: ");
+  switch (budget) {
+    case "maxElapsedMs":
+      return joinSiteText(opener, ours("this turn may take "), seconds(limit), ours(", and has already taken "), seconds(spent), ours("."));
+    case "maxSessionModelCalls":
+      return joinSiteText(
+        opener,
+        ours("this conversation may make "),
+        count(limit, ours(" model call"), ours(" model calls")),
+        ours(", and has already made "),
+        siteText`${spent}`,
+        ours("."),
+      );
+    case "maxModelCalls":
+      return joinSiteText(
+        opener,
+        ours("this turn may make "),
+        count(limit, ours(" model call"), ours(" model calls")),
+        ours(", and has already made "),
+        siteText`${spent}`,
+        ours("."),
+      );
+    case "maxAgentCalls":
+      return joinSiteText(
+        opener,
+        ours("this turn may call "),
+        count(limit, ours(" agent"), ours(" agents")),
+        ours(", and has already called "),
+        siteText`${spent}`,
+        ours("."),
+      );
+    case "maxRounds":
+      return joinSiteText(
+        opener,
+        ours("this turn may take "),
+        count(limit, ours(" round"), ours(" rounds")),
+        ours(" of tool calls, and has already taken "),
+        siteText`${spent}`,
+        ours("."),
+      );
+    case "maxDepth":
+      return joinSiteText(
+        opener,
+        ours("delegation may nest "),
+        count(limit, ours(" level"), ours(" levels")),
+        ours(" deep, and is already "),
+        siteText`${spent}`,
+        ours(" deep."),
+      );
+    case "maxComposedNetworks":
+      return joinSiteText(
+        ours("Refused: a composition may load "),
+        count(limit, ours(" published network"), ours(" published networks")),
+        ours(", and this one has already loaded "),
+        siteText`${spent}`,
+        ours("."),
+      );
+  }
+}
+
+/**
  * Thrown when an execution limit is reached. Carries the budget, its limit and
- * what had been spent, because all three are in the message the guest reads.
+ * what had been spent, because all three are in what the guest reads — the
+ * figures in words, the identifier in the trace.
  */
 export class BudgetError extends RuntimeMessage {
   constructor(
@@ -83,13 +177,13 @@ export class BudgetError extends RuntimeMessage {
   ) {
     super(
       joinSiteText(
-        budget === "maxSessionModelCalls"
-          ? siteText`Execution limit reached: ${budget} is ${limit} and this conversation has already used ${spent}.`
-          : siteText`Execution limit reached: ${budget} is ${limit} and this turn has already used ${spent}.`,
+        budgetSentence(budget, limit, spent),
         ours(" Nothing further was run, and nothing was left half-done."),
         budget === "maxSessionModelCalls"
           ? ours(" Start a new conversation to carry on; the verdict beside each dish is unaffected either way.")
-          : ours(" Ask again, more simply, and this turn starts from a fresh budget."),
+          : budget === "maxComposedNetworks"
+            ? ours(" No network from this composition was run.")
+            : ours(" Ask again, more simply, and this turn starts from a fresh budget."),
       ),
     );
     this.name = "BudgetError";

@@ -24,9 +24,19 @@ import { BudgetError, Conversation, CycleError, type Limits } from "./loop.ts";
 import { Transcript } from "./transcript.ts";
 import { renderVerdicts } from "./verdict-cards.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, Receipt, TraceEntry } from "./types.ts";
-import { RuntimeMessage, TOKEN, joinSiteText, joinTokens, ours, quotedTokensOnly, siteText, tokenOrOmitted, type SiteText } from "./errors.ts";
+import {
+  RuntimeMessage,
+  TOKEN,
+  alsoSay,
+  joinSiteText,
+  ours,
+  renderReport,
+  siteText,
+  tokenOrOmitted,
+  type SiteReport,
+} from "./errors.ts";
 import { DEFAULT_LIMITS } from "./limits.ts";
-import { loadComposition, type ComposedNetwork } from "./composition.ts";
+import { InvalidNetworkError, loadComposition, type ComposedNetwork } from "./composition.ts";
 import { ActionRegistry, type ActionScope, type ConfirmFn } from "./upstream/action-registry.ts";
 import { find_front_man } from "./upstream/graph.ts";
 import { validate_network } from "./upstream/validation.ts";
@@ -385,8 +395,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
 
   /* ---------------- everything below may fail without breaking the above ---------------- */
 
-  const fail = (message: SiteText): void => {
-    errorLine.textContent = message;
+  const fail = (report: SiteReport): void => {
+    renderReport(doc, errorLine, report);
     errorLine.removeAttribute("hidden");
     askInput.disabled = true;
     askBtn.disabled = true;
@@ -441,8 +451,11 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
    * runtime refuse a cycle, and with `manifest` null the allow-list is empty, so
    * cross-origin contact is refused rather than silently permitted.
    */
-  const showCompose = (message: SiteText, kind: "refused" | "loaded"): void => {
-    composeStatus.textContent = message;
+  const showCompose = (report: SiteReport, kind: "refused" | "loaded"): void => {
+    // `renderReport`, not `textContent`: a refusal that has to show a validator's
+    // words puts each of them in its own labelled node rather than in one of our
+    // sentences. See the note at the top of errors.ts.
+    renderReport(doc, composeStatus, report);
     composeStatus.setAttribute("data-compose-kind", kind);
     composeStatus.removeAttribute("hidden");
   };
@@ -464,18 +477,18 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         now,
         maxComposedNetworks: opts.limits?.maxComposedNetworks ?? DEFAULT_LIMITS.maxComposedNetworks,
       });
-      const names = joinTokens(composed.map((c) => c.ref.name), ", ");
+      // Even on success the peers' NAMES stay out of our sentence: they are a
+      // peer's strings, and the rule does not have a happy-path exception.
       showCompose(
-        joinSiteText(
-          siteText`Loaded and validated ${composed.length} published network`,
-          ours(composed.length === 1 ? ": " : "s: "),
-          names,
-          ours(
+        {
+          text: ours(
             composed.length === 1
-              ? ". It has not been run: binding another site's network into the conversation is not part of this build."
-              : ". None of them has been run: binding another site's network into the conversation is not part of this build.",
+              ? "Loaded and validated the published network below. It has not been run: binding another site's network into the conversation is not part of this build."
+              : "Loaded and validated the published networks below. None of them has been run: binding another site's network into the conversation is not part of this build.",
           ),
-        ),
+          quotedLabel: ours("What was loaded, in the order it was composed:"),
+          quoted: composed.map((c) => `${c.ref.name} \u2014 ${c.url}`),
+        },
         "loaded",
       );
     } catch (err) {
@@ -486,8 +499,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       composed = [];
       showCompose(
         err instanceof RuntimeMessage
-          ? err.siteMessage
-          : siteText`Refused: that network could not be loaded (${(err as Error)?.name ?? "Error"}), so nothing was run.`,
+          ? err.report
+          : { text: siteText`Refused: that network could not be loaded (${(err as Error)?.name ?? "Error"}), so nothing was run.` },
         "refused",
       );
       addTrace({ at: now(), event: "composition_refused", detail: { kind: (err as Error)?.name ?? "Error" } });
@@ -510,29 +523,40 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       : (manifest.networks ?? [])[0];
     if (!entry) {
       // Fail closed: never silently run a different published network.
-      throw new RuntimeMessage(
-        siteText`No published network named '${opts.network ?? "(first)"}' in ${manifestUrl}; refusing to run a different one.`,
-      );
+      throw new RuntimeMessage({
+        text: ours("No network of the requested name is published in this site's manifest, so this runtime is refusing to run a different one."),
+        quotedLabel: ours("The name that was asked for, and the manifest that was read:"),
+        quoted: [opts.network ?? "(the manifest's first entry)", manifestUrl],
+      });
     }
 
     const hoconUrl = new URL(entry.hocon, `${base}/`).toString();
     startupStage = "network";
     network = (await fetchPublicArtifact(hoconUrl, fetchImpl)) as NetworkConfig;
-    const errors = validate_network(network).map(quotedTokensOnly);
-    if (errors.length > 0) {
-      // §6: an invalid network is stopped with visible errors, not a blank page.
-      throw new RuntimeMessage(
-        (siteText`The published network at ${hoconUrl} is not valid and was not run:` + `\n• ${errors.join("\n• ")}`) as SiteText,
-      );
-    }
+    const errors = validate_network(network);
+    // §6: an invalid network is stopped with visible errors, not a blank page.
+    // Reported by the same class the composition path uses, so the two surfaces
+    // cannot drift: our sentence in literals, the document and the validator's
+    // own words in nodes of their own.
+    if (errors.length > 0) throw new InvalidNetworkError(hoconUrl, errors);
     const front = find_front_man(network);
-    if (!front) throw new RuntimeMessage(siteText`The published network at ${hoconUrl} declares no front agent.`);
+    if (!front) {
+      throw new RuntimeMessage({
+        text: ours("The published network below declares no front agent, so there is nothing to talk to."),
+        quotedLabel: ours("The network that was read:"),
+        quoted: [hoconUrl],
+      });
+    }
     if (front !== entry.front_man) {
       // The manifest says one thing and the positional rule says another. Both are
       // published, so a visitor cannot tell which a runtime will honour. Refuse.
-      throw new RuntimeMessage(
-        siteText`The manifest names '${entry.front_man}' as the front agent, but the network's first instructed agent is '${front}'. Those must agree before this network can be run.`,
-      );
+      throw new RuntimeMessage({
+        text: ours(
+          "The manifest and the network disagree about which agent is the front agent, and both are published, so a visitor cannot tell which a runtime will honour. Those must agree before this network can be run.",
+        ),
+        quotedLabel: ours("What the manifest names, then what the network's positional rule resolves to:"),
+        quoted: [entry.front_man, front],
+      });
     }
     addTrace({ at: now(), event: "network_loaded", detail: { url: hoconUrl, frontMan: front, agents: (network.tools ?? []).length } });
 
@@ -552,16 +576,22 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     if (mismatch.length > 0) {
       // A declared action that does not exist, or a `commits` flag that lies, is
       // worse than publishing nothing. Refuse to run the agent at all.
-      throw new RuntimeMessage(
-        (ours("The published action catalog and this runtime disagree, so the assistant was not started:") +
-          `\n• ${mismatch.map(quotedTokensOnly).join("\n• ")}`) as SiteText,
-      );
+      // The reconciler's sentences are ours, but they interpolate names out of
+      // the published catalog, so they go through the same door as the
+      // validator's: their own nodes, not ours.
+      throw new RuntimeMessage({
+        text: ours("The published action catalog and this runtime disagree, so the assistant was not started."),
+        quotedLabel: ours("What disagreed, as the reconciler reported it. The names in it come from the published catalog:"),
+        quoted: mismatch,
+      });
     }
     for (const name of registry.catalog(scope).map((e) => e.name)) {
       if ((network.tools ?? []).some((a) => a.name === name)) {
-        throw new RuntimeMessage(
-          siteText`'${name}' is both a registered site action and an agent in the network. Refusing to run an ambiguous catalog.`,
-        );
+        throw new RuntimeMessage({
+          text: ours("One name below is both a registered site action and an agent in the published network. Refusing to run an ambiguous catalog."),
+          quotedLabel: ours("The name that is both:"),
+          quoted: [name],
+        });
       }
     }
     addTrace({
@@ -589,10 +619,13 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       } catch (err) {
         // `selectTopRouter` is upstream's; its message is ours by adoption, but it
         // is still filtered rather than trusted.
-        keyStatus.textContent =
+        renderReport(
+          doc,
+          keyStatus,
           err instanceof RuntimeMessage
-            ? err.siteMessage
-            : siteText`This site publishes no usable AI provider route for the key you supplied.`;
+            ? err.report
+            : { text: ours("This site publishes no usable AI provider route for the key you supplied.") },
+        );
         return null;
       }
       const next = new Router({
@@ -616,11 +649,23 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
           replayed: next.scripted,
         },
       });
-      keyStatus.textContent = next.scripted
-        ? ours("Replaying a recorded reply. No model is called and no key is used. The gate, the checker and the verdict cards all run for real.")
-        : next.needsKey
-          ? missingKeyMessage(next.baseUrl)
-          : siteText`Ready. Requests go to ${next.baseUrl} with your key, and nowhere else.`;
+      renderReport(
+        doc,
+        keyStatus,
+        next.scripted
+          ? {
+              text: ours(
+                "Replaying a recorded reply. No model is called and no key is used. The gate, the checker and the verdict cards all run for real.",
+              ),
+            }
+          : next.needsKey
+            ? missingKeyMessage(next.baseUrl)
+            : {
+                text: ours("Ready. Requests go to the router below with your key, and nowhere else."),
+                quotedLabel: ours("Where requests go:"),
+                quoted: [next.baseUrl],
+              },
+      );
       // A setup error behind a closed disclosure triangle is a setup error nobody
       // reads. §3.4 calls for a CLEAR one, so the disclosure opens itself when
       // there is something to act on. It is never closed from here: a visitor who
@@ -660,7 +705,9 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     saveBtn.addEventListener("click", () => {
       const key = keyInput.value.trim();
       if (!keyStore.available) {
-        keyStatus.textContent = ours("This browser will not let this site store anything, so a key cannot be kept here.");
+        renderReport(doc, keyStatus, {
+          text: ours("This browser will not let this site store anything, so a key cannot be kept here."),
+        });
         return;
       }
       if (key) {
@@ -678,9 +725,9 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       // Rebuild first: starting a keyless router rewrites the status line, and the
       // visitor should be left reading what happened to their key, not a setup error.
       rebuild();
-      keyStatus.textContent = ours(
-        "Your key has been deleted from this browser. The verdict beside each dish is unaffected: it never needed a model.",
-      );
+      renderReport(doc, keyStatus, {
+        text: ours("Your key has been deleted from this browser. The verdict beside each dish is unaffected: it never needed a model."),
+      });
     });
 
     resetBtn.addEventListener("click", () => {
@@ -699,11 +746,18 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     // Same rule as the transcript: only a message this runtime wrote is shown in
     // the site's voice. A malformed artifact throws a SyntaxError whose message
     // quotes the file; that is not ours to repeat.
-    const message =
+    const report: SiteReport =
       err instanceof RuntimeMessage
-        ? err.siteMessage
-        : siteText`The agent could not be started (${(err as Error)?.name ?? "Error"} while loading the ${startupStage}).`;
-    fail((message + "\n\nThe menu, the ingredient lists and the safety verdicts on this page are unaffected: they are worked out here and never call a model.") as SiteText);
+        ? err.report
+        : { text: siteText`The agent could not be started (${(err as Error)?.name ?? "Error"} while loading the ${startupStage}).` };
+    fail(
+      alsoSay(
+        report,
+        ours(
+          "\n\nThe menu, the ingredient lists and the safety verdicts on this page are unaffected: they are worked out here and never call a model.",
+        ),
+      ),
+    );
     addTrace({ at: now(), event: "startup_failed", detail: { stage: startupStage, kind: (err as Error)?.name ?? "Error" } });
   }
 
@@ -733,7 +787,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       // sentence instead of its message. The transcript labels a runtime line
       // "Hollis & Rye", and the deli does not repeat text it cannot vouch for.
       if (err instanceof BudgetError || err instanceof CycleError || err instanceof RuntimeMessage) {
-        transcript.showRuntime(err.siteMessage, "error");
+        transcript.showRuntime(err.report, "error");
         if (err instanceof BudgetError) {
           addTrace({ at: now(), event: "budget_stopped", detail: { budget: err.budget, limit: err.limit } });
         } else if (err instanceof CycleError) {
@@ -741,9 +795,9 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         }
       } else {
         transcript.showRuntime(
-          ours(
-            "Something went wrong talking to the model router, and the reply was not shown. " +
-              "The details are under \u201cWhat this ran\u201d. The verdict beside each dish is unaffected.",
+          joinSiteText(
+            ours("Something went wrong talking to the model router, and the reply was not shown. "),
+            ours("The details are under \u201cWhat this ran\u201d. The verdict beside each dish is unaffected."),
           ),
           "error",
         );
@@ -804,12 +858,6 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     keyStore,
   };
 }
-
-/**
- * Moved to `errors.ts`, beside `TOKEN`, when the composition loader became a
- * second caller. Re-exported here so its original import path still resolves.
- */
-export { quotedTokensOnly } from "./errors.ts";
 
 /**
  * Strings our own code puts in a trace detail that are legitimately prose.

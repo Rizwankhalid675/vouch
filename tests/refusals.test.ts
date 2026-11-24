@@ -20,7 +20,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, test } from "vitest";
-import { RESTRICTIONS } from "../src/safety/canon.ts";
+import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
+import { detectClaims } from "../src/gate/claims.ts";
+import { NOT_OURS } from "../src/runtime/errors.ts";
+import { seconds } from "../src/runtime/limits.ts";
 import { mountShop } from "../src/site/shop.ts";
 import { boot, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
@@ -237,6 +240,60 @@ function visibleTextOf(root: ParentNode, selector: string): string {
   return readableText(el!);
 }
 
+/**
+ * A surface with every `data-not-ours` node taken out: **what the site itself is
+ * saying** there.
+ *
+ * This is the structural fix as a function. Someone else's words may be shown on
+ * our page, fenced and attributed; they may never be part of a sentence of ours.
+ * Whatever is left after removing those nodes is the deli speaking, and a safety
+ * claim in it is the failure this product exists to prevent.
+ */
+function siteVoiceOf(root: ParentNode, selector: string): string {
+  const el = root.querySelector(selector);
+  const why = hiddenReason(el);
+  if (why) throw new Error(`${selector} is not visible to the guest: ${why}`);
+  const clone = el!.cloneNode(true) as Element;
+  for (const node of [...clone.querySelectorAll(`[${NOT_OURS}]`)]) node.replaceWith("");
+  return readableText(clone);
+}
+
+/** The text of each node on a surface that is marked as not the site speaking. */
+function notOursTextOf(root: ParentNode, selector: string): string[] {
+  return [...(root.querySelector(selector)?.querySelectorAll(`[${NOT_OURS}]`) ?? [])].map((n) => n.textContent ?? "");
+}
+
+/**
+ * The WHOLE PAGE in the site's voice: every readable surface, minus every node
+ * marked as not ours. The verdict slots live outside the panel, so a page-wide
+ * check is the only one that cannot be scoped to the wrong element — the mistake
+ * an earlier suite made and paid for.
+ */
+function siteVoiceOfPage(): string {
+  const clone = document.body.cloneNode(true) as HTMLElement;
+  for (const node of [...clone.querySelectorAll(`[${NOT_OURS}]`)]) node.replaceWith("");
+  return `${readableText(clone)} ${document.title}`;
+}
+
+/**
+ * What the site CLAIMS in its own voice, as the project's own detector sees it.
+ *
+ * NOT asserted to be empty, and that is the point: this page is SUPPOSED to make
+ * safety claims — the verdict beside each dish is one, and the menu copy
+ * ("if an item says its ingredients are not listed, ask at the counter") trips
+ * the detector too. Those are the backed claims the whole product exists to
+ * make.
+ *
+ * So the property is a DIFFERENCE, not an absence: an untrusted value must not
+ * change what the site claims. The same page, loaded with a benign value and
+ * with a hostile one, must claim exactly the same things.
+ */
+function claimsInSiteVoice(): string[] {
+  return detectClaims(siteVoiceOfPage(), MENU)
+    .map((c) => `${c.item ?? "-"}:${c.allergen ?? "-"}:${c.claimed}`)
+    .sort();
+}
+
 beforeEach(() => {
   document.documentElement.innerHTML = html;
   mountShop(document);
@@ -342,10 +399,15 @@ describe("refusal 1 — an invalid network is stopped with the offending field o
     const s = await session();
     await s.runtime.loadPeerNetwork("/broken/invalid");
 
-    const shown = s.composeText();
-    expect(shown).toContain("is not valid and was not run");
-    expect(shown).toContain("metadata.front_man names 'concierge'");
-    expect(shown).toContain(`${BROKEN}/invalid.network.json`);
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("is not valid, so it was not run");
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("The validator reported one problem with it");
+    // The document and the validator's words are shown, each in a node of its
+    // own, and neither is in a sentence of ours.
+    expect(notOursTextOf(s.mount, "[data-compose-status]")).toEqual([
+      `${BROKEN}/invalid.network.json`,
+      "metadata.front_man names 'concierge', which is not an agent in this network.",
+    ]);
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).not.toContain("concierge");
     expect(s.runtime.composed()).toEqual([]);
     expect(s.$("[data-compose-status]")!.getAttribute("data-compose-kind")).toBe("refused");
 
@@ -370,7 +432,7 @@ describe("refusal 1 — an invalid network is stopped with the offending field o
     await s.runtime.loadPeerNetwork("/broken/invalid");
     const shown = s.composeText();
     expect(shown).toContain("Refused");
-    expect(shown).not.toContain("invalid.network.json returned HTTP");
+    expect(shown).not.toContain("returned HTTP");
     expect(s.runtime.composed()).toEqual([]);
   });
 
@@ -382,7 +444,8 @@ describe("refusal 1 — an invalid network is stopped with the offending field o
   test("a name no published network has is refused, never swapped for another", async () => {
     const s = await session();
     await s.runtime.loadPeerNetwork("/broken/not-published");
-    expect(s.composeText()).toContain("no network named 'not-published' is published");
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("no network of that name is published in that manifest");
+    expect(notOursTextOf(s.mount, "[data-compose-status]")).toEqual(["not-published", `${BROKEN}/agent-manifest.json`]);
     expect(s.runtime.composed()).toEqual([]);
     // The fixtures' manifest was read, and no definition was fetched from it.
     expect(s.h.count(`${BROKEN}/agent-manifest.json`)).toBe(1);
@@ -407,10 +470,14 @@ describe("refusal 2 — a two-document composition cycle is refused with the pat
     const s = await session();
     await s.runtime.loadPeerNetwork("/broken/cycle-a");
 
-    const shown = s.composeText();
-    expect(shown).toContain("Composition cycle refused");
-    expect(shown).toContain(`${BROKEN}/cycle-a → ${BROKEN}/cycle-b → ${BROKEN}/cycle-a`);
-    expect(shown).toContain("No further network was fetched and nothing was run");
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("Composition cycle refused");
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("No further network was fetched and nothing was run");
+    // The chain, each hop in its own node and in the order it was followed.
+    expect(notOursTextOf(s.mount, "[data-compose-status]")).toEqual([
+      `${BROKEN}/cycle-a`,
+      `${BROKEN}/cycle-b`,
+      `${BROKEN}/cycle-a`,
+    ]);
     expect(s.runtime.composed()).toEqual([]);
 
     // Each document was fetched once. A detector that fetched first would make the
@@ -431,7 +498,11 @@ describe("refusal 2 — a two-document composition cycle is refused with the pat
   test("entering the same loop from the other end is refused too, with its own path", async () => {
     const s = await session();
     await s.runtime.loadPeerNetwork("/broken/cycle-b");
-    expect(s.composeText()).toContain(`${BROKEN}/cycle-b → ${BROKEN}/cycle-a → ${BROKEN}/cycle-b`);
+    expect(notOursTextOf(s.mount, "[data-compose-status]")).toEqual([
+      `${BROKEN}/cycle-b`,
+      `${BROKEN}/cycle-a`,
+      `${BROKEN}/cycle-b`,
+    ]);
   });
 
   /**
@@ -471,7 +542,7 @@ describe("refusal 2 — a two-document composition cycle is refused with the pat
       limits: { maxComposedNetworks: 8 },
     });
     await s.runtime.loadPeerNetwork("/dag/hub");
-    expect(s.composeText()).not.toContain("cycle");
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).not.toContain("cycle");
     expect(s.runtime.composed().map((c) => c.ref.name)).toEqual(["hub", "left", "leaf", "right", "leaf"]);
     expect(s.h.count(`${BASE}/dag/leaf.network.json`)).toBe(2);
   });
@@ -514,8 +585,8 @@ describe("refusal 2 — a two-document composition cycle is refused with the pat
     });
     await s.runtime.loadPeerNetwork("/chain/n1");
     const shown = s.composeText();
-    expect(shown).toContain("maxComposedNetworks is 2");
-    expect(shown).toContain("already used 2");
+    expect(shown).toContain("a composition may load 2 published networks");
+    expect(shown).toContain("has already loaded 2");
     expect(s.runtime.composed()).toEqual([]);
     expect(s.h.count(`${BASE}/chain/n4.network.json`)).toBe(0);
   });
@@ -611,8 +682,8 @@ describe("refusal 3 — an over-budget request stops with the budget and the spe
     const s = await session({ key: SENTINEL, h, limits: { maxModelCalls: 1 } });
     await s.runtime.ask("tell me everything");
     const shown = s.transcriptText();
-    expect(shown).toContain("maxModelCalls is 1");
-    expect(shown).toContain("this turn has already used 1");
+    expect(shown).toContain("this turn may make 1 model call");
+    expect(shown).toContain("has already made 1");
     expect(shown).not.toContain("never reached");
     expect(s.h.count(ROUTER_URL)).toBe(1);
   });
@@ -640,8 +711,11 @@ describe("refusal 3 — an over-budget request stops with the budget and the spe
     const s = await session({ key: SENTINEL, h, limits: { maxElapsedMs: 1000 }, now: () => clock });
     await s.runtime.ask("what have you got?");
     const shown = s.transcriptText();
-    expect(shown).toContain("maxElapsedMs is 1000");
-    expect(shown).toContain("this turn has already used 2000");
+    // Seconds, with the unit, because a guest and a judge read this string.
+    expect(shown).toContain("this turn may take 1 second");
+    expect(shown).toContain("has already taken 2 seconds");
+    expect(shown).not.toContain("maxElapsedMs");
+    expect(shown).not.toContain("1000");
     // The reply that came back late does not get to put its words on the screen.
     expect(shown).not.toContain("Described.");
     expect(s.runtime.trace().some((e) => e.event === "budget_stopped" && e.detail["budget"] === "maxElapsedMs")).toBe(true);
@@ -722,7 +796,8 @@ describe("refusal 4 — a denied origin is refused by name, and a permitted one 
     const before = s.h.urls.length;
     await s.runtime.loadPeerNetwork("https://elsewhere.example/agents/anything");
 
-    expect(s.composeText()).toContain("Refused: https://elsewhere.example is not in this site's allowed_peers");
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("that origin is not in this site's allowed_peers");
+    expect(notOursTextOf(s.mount, "[data-compose-status]")).toEqual(["https://elsewhere.example"]);
     expect(s.h.urls).toHaveLength(before);
     expect(s.plans).toEqual([]);
     expect(s.runtime.composed()).toEqual([]);
@@ -745,8 +820,8 @@ describe("refusal 4 — a denied origin is refused by name, and a permitted one 
     const s = await session({ h });
     await s.runtime.loadPeerNetwork(`${PEER_BASE}/marrow_point`);
 
-    expect(s.composeText()).toContain("Loaded and validated 1 published network");
-    expect(s.composeText()).toContain("marrow_point");
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("Loaded and validated the published network below");
+    expect(notOursTextOf(s.mount, "[data-compose-status]").join(" ")).toContain("marrow_point");
     expect(s.runtime.composed().map((c) => c.ref.name)).toEqual(["marrow_point"]);
     expect(s.h.count(`${PEER_BASE}/marrow_point.network.json`)).toBe(1);
     // The published allow-list really is what permitted it, and only at top level.
@@ -769,7 +844,8 @@ describe("refusal 4 — a denied origin is refused by name, and a permitted one 
 
     expect(s.plans).toHaveLength(1);
     expect(s.plans[0]![0]!.origin).toBe(PEER);
-    expect(s.composeText()).toContain(`you did not approve contacting ${PEER}`);
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("you did not approve contacting that origin");
+    expect(notOursTextOf(s.mount, "[data-compose-status]")).toEqual([PEER]);
     expect(s.h.count(`${PEER_BASE}/agent-manifest.json`)).toBe(0);
     expect(s.runtime.composed()).toEqual([]);
   });
@@ -814,7 +890,8 @@ describe("refusal 5 — a missing key stops the model call with a clear setup er
 
     const shown = s.transcriptText();
     expect(s.h.count(ROUTER_URL)).toBe(0);
-    expect(shown).toContain("An AI provider key is required for api.openai.com");
+    expect(shown).toContain("An AI provider key is required for the provider named below");
+    expect(notOursTextOf(s.mount, "[data-transcript]")).toEqual(["api.openai.com"]);
     expect(shown).toContain("Open the model settings above, paste your key, then select Save");
     expect(shown).toContain("stays in this browser and is sent only to that provider");
     expect(shown).toContain("No model call was made");
@@ -861,7 +938,8 @@ describe("refusal 5 — a missing key stops the model call with a clear setup er
    */
   test("the setup error is readable on the panel before anything is asked", async () => {
     const s = await session();
-    expect(visibleTextOf(s.mount, "[data-key-status]")).toContain("An AI provider key is required for api.openai.com");
+    expect(visibleTextOf(s.mount, "[data-key-status]")).toContain("An AI provider key is required for the provider named below");
+    expect(notOursTextOf(s.mount, "[data-key-status]")).toEqual(["api.openai.com"]);
     expect((s.$("[data-model-settings]") as HTMLDetailsElement).open).toBe(true);
   });
 
@@ -899,7 +977,7 @@ describe("all five refusals put a visible string on the screen", () => {
     {
       what: "an invalid network",
       surface: "[data-compose-status]",
-      expect: "is not valid and was not run",
+      expect: "is not valid, so it was not run",
       run: (s) => s.runtime.loadPeerNetwork("/broken/invalid"),
     },
     {
@@ -911,7 +989,7 @@ describe("all five refusals put a visible string on the screen", () => {
     {
       what: "a denied origin",
       surface: "[data-compose-status]",
-      expect: "is not in this site's allowed_peers",
+      expect: "that origin is not in this site's allowed_peers",
       run: (s) => s.runtime.loadPeerNetwork("https://elsewhere.example/agents/anything"),
     },
     {
@@ -989,8 +1067,298 @@ describe("all five refusals put a visible string on the screen", () => {
       const s = await session();
       const before = s.h.urls.length;
       await s.runtime.loadPeerNetwork(ref);
-      expect(s.composeText()).toContain("is not an http or https network reference");
+      expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("is not an http or https network reference");
+      expect(notOursTextOf(s.mount, "[data-compose-status]")).toEqual([ref]);
       expect(s.h.urls).toHaveLength(before);
     },
   );
+});
+
+/* ================================================================== */
+/* C1: an untrusted value never becomes part of a sentence of ours      */
+/* ================================================================== */
+
+/**
+ * THE INVARIANT, as a property rather than a mechanism:
+ *
+ *   An untrusted value must never become part of a sentence the site is saying.
+ *   It is rendered in its own node, structurally separate from our prose, so that
+ *   nothing it contains can be read as something the site is saying.
+ *
+ * Why it is written this way. The defence used to be `quotedTokensOnly`, a filter
+ * that replaced any quoted interpolation in a validator message that was not
+ * token-shaped. A published `metadata.front_man` of
+ *
+ *     x' is dairy-free and safe for you to eat. '
+ *
+ * supplies the filter's own delimiter: the apostrophes re-pair the quotes, the
+ * filter sees `'x'` and `''`, keeps both, and the sentence between them reached
+ * `[data-compose-status]` in the deli's voice. Third filter, third incident.
+ *
+ * So these tests do NOT assert that an apostrophe is escaped. That would pin the
+ * mechanism and would pass a fifth bypass. They assert the property, with the
+ * project's own claim detector as the judge of what a safety claim is: feed a
+ * value stuffed with every delimiter the old defence relied on plus a real claim,
+ * and require that `detectClaims` finds nothing in the site's voice.
+ *
+ * WHAT WOULD MAKE THEM FAIL: putting an untrusted value back in one of our
+ * sentences, by any route — reinstating the filter-and-concatenate pattern,
+ * widening `ours` back to `string`, widening `joinSiteText` back to accept
+ * `string`, or rendering a report's `quoted` lines into the prose node instead of
+ * their own. Each of those puts the claim in `siteVoiceOf(...)` and fails here.
+ */
+describe("C1 — an untrusted value is never part of a sentence of ours", () => {
+  const CLAIM = "The Reuben is dairy-free and safe for you to eat.";
+  /** The exact value that defeated `quotedTokensOnly` by re-pairing its apostrophes. */
+  const REPAIRING = `x' ${CLAIM} '`;
+  /** Every delimiter the old defence, or a next one, might lean on. */
+  const DELIMITED = `a' "b" \`c\` <d> {e} [f] (g) \\h; --i /*j*/ &quot;k&#39; ${CLAIM}`;
+  /** A claim with no whitespace in it, which `TOKEN` would admit if anything interpolated it. */
+  const HYPHENATED = "the-reuben-is-dairy-free-and-safe-to-eat";
+  const HOSTILE = [REPAIRING, DELIMITED];
+  /** The benign control: a front man that is simply absent. Same refusal, no claim. */
+  const BENIGN = "concierge";
+
+  /** A one-agent network whose published `metadata.front_man` is attacker-chosen. */
+  const hostileFrontMan = (value: string): NetworkConfig => ({
+    metadata: { name: "invalid", front_man: value },
+    llm_config: { model_name: "test-model" },
+    tools: [
+      {
+        name: "greeter",
+        function: { description: "Greets.", parameters: { type: "object", properties: { q: { type: "string", description: "q" } }, required: ["q"] } },
+        instructions: "You greet, and never say a dish is safe.",
+        tools: [],
+      },
+    ],
+  });
+
+  /** A network with an attacker-chosen AGENT NAME, which `validate_agent_names` reports. */
+  const hostileAgentName = (value: string): NetworkConfig => ({
+    metadata: { name: "invalid", front_man: "greeter" },
+    llm_config: { model_name: "test-model" },
+    tools: [
+      {
+        name: "greeter",
+        function: { description: "Greets.", parameters: { type: "object", properties: { q: { type: "string", description: "q" } }, required: ["q"] } },
+        instructions: "You greet, and never say a dish is safe.",
+        tools: [value],
+      },
+      { name: value, instructions: "You are named with a sentence." },
+    ],
+  });
+
+  /**
+   * The hostile values really do reach the validator's own messages. Without
+   * this, every test below could be passing because nothing arrived.
+   */
+  test("the hostile values do reach the validator's messages (otherwise these tests prove nothing)", () => {
+    for (const value of HOSTILE) {
+      expect(validate_network(hostileFrontMan(value)).join(" "), value).toContain("The Reuben is dairy-free");
+      expect(validate_network(hostileAgentName(value)).join(" "), value).toContain("The Reuben is dairy-free");
+    }
+  });
+
+  /** And the retired filter really was defeated by the re-pairing value. */
+  test("the retired filter would have let the re-pairing value through", () => {
+    const retired = (m: string): string =>
+      m.replace(/'([^']*)'/g, (_x, inner: string) => (/^[A-Za-z0-9_.:/#@?&=+~,;()[\]{}$*%!-]*$/.test(inner) ? `'${inner}'` : "'<name omitted>'"));
+    const message = `metadata.front_man names '${REPAIRING}', which is not an agent in this network.`;
+    expect(retired(message)).toContain("is dairy-free and safe for you to eat");
+    expect(detectClaims(retired(message), MENU).length).toBeGreaterThan(0);
+  });
+
+  /* ---- refusal 1: an invalid network, through the real boot and composition ---- */
+
+  /** Load `/broken/invalid` with a given definition and report what the page says. */
+  async function loadInvalid(config: NetworkConfig): Promise<{ voice: string; notOurs: string }> {
+    const h = harness({ artifacts: { [`${BROKEN}/invalid.network.json`]: config } });
+    const s = await session({ h });
+    await s.runtime.loadPeerNetwork("/broken/invalid");
+    expect(s.runtime.composed()).toEqual([]);
+    return {
+      voice: siteVoiceOf(s.mount, "[data-compose-status]"),
+      notOurs: notOursTextOf(s.mount, "[data-compose-status]").join(" "),
+    };
+  }
+
+  test.each(HOSTILE)("a hostile front_man says nothing in our voice: %s", async (value) => {
+    const benign = await loadInvalid(hostileFrontMan(BENIGN));
+    document.documentElement.innerHTML = html;
+    mountShop(document);
+    const hostile = await loadInvalid(hostileFrontMan(value));
+
+    // Our prose is literal, so it is byte-identical either way.
+    expect(hostile.voice).toContain("is not valid, so it was not run");
+    expect(hostile.voice).toBe(benign.voice);
+    expect(hostile.voice).not.toContain("dairy-free");
+    expect(hostile.voice).not.toContain("safe for you");
+    // And the evidence IS shown, in a node that says it is not ours.
+    expect(hostile.notOurs).toContain("The Reuben is dairy-free");
+    expect(benign.notOurs).not.toContain("dairy-free");
+  });
+
+  test.each(HOSTILE)("a hostile AGENT NAME says nothing in our voice: %s", async (value) => {
+    const benign = await loadInvalid(hostileFrontMan(BENIGN));
+    document.documentElement.innerHTML = html;
+    mountShop(document);
+    const hostile = await loadInvalid(hostileAgentName(value));
+    expect(hostile.voice).not.toContain("dairy-free");
+    expect(hostile.voice).toBe(benign.voice);
+    expect(hostile.notOurs).toContain("The Reuben is dairy-free");
+  });
+
+  /** The STARTUP path renders the same validator messages on a different surface. */
+  test.each(HOSTILE)("the startup error line follows the same rule: %s", async (value) => {
+    const hostile = structuredClone(NETWORK);
+    hostile.metadata!.front_man = value;
+    const s = await session({ h: harness({ artifacts: { [`${BASE}/vouch.network.json`]: hostile } }) });
+    expect(s.runtime.conversation).toBeNull();
+    const voice = siteVoiceOf(s.mount, "[data-runtime-error]");
+    expect(voice).toContain("is not valid, so it was not run");
+    expect(voice).not.toContain("dairy-free");
+    expect(notOursTextOf(s.mount, "[data-runtime-error]").join(" ")).toContain("The Reuben is dairy-free");
+    // The claim is nowhere in the site's voice on the whole page.
+    expect(siteVoiceOfPage()).not.toContain("dairy-free and safe for you");
+    // ...and the cards, which are the actual safety channel, are untouched.
+    s.tick("dairy_free");
+    expect(hiddenReason(document.querySelector('[data-verdict-item="reuben"]'))).toBeNull();
+  });
+
+  /* ---- the other four refusals, with the same payload ---- */
+
+  /**
+   * THE GENERAL PROPERTY, and the sharpest form of it available.
+   *
+   * Our refusal prose is written entirely in literals, so **it cannot vary with
+   * the value**. Run the same refusal with a harmless value and with a hostile
+   * one, and the site's voice must be byte-identical. Not "contains no claim" —
+   * identical. A value that reached our sentence by any route would change it.
+   *
+   * None of these interpolates a value into prose any more: the rule has no
+   * exceptions, so a hostile reference, origin or host goes in its own node like
+   * a validator message does.
+   *
+   * `HYPHENATED` is the case that drove that decision. `TOKEN` admits hyphens, so
+   * a value with no whitespace WOULD have survived `siteText` and landed in our
+   * sentence — and the project's own detector reads "https://the-reuben-is-dairy-
+   * free-and-safe-to-eat.example is not in this site's allowed_peers" as a
+   * dairy-free claim about the Reuben. Marginal, and a visitor's own typing
+   * rather than a peer's, but the invariant says never, so it is never.
+   *
+   * BREAKS IF: any of these values is interpolated into our prose again — the
+   * two renderings then differ and the equality fails, whatever the quoting.
+   */
+  const paired: { what: string; benign: string; hostile: string }[] = [
+    { what: "a denied origin", benign: "https://elsewhere.example/agents/x", hostile: `https://${HYPHENATED}.example/agents/x` },
+    { what: "a bad reference", benign: "vouch://scripted", hostile: `vouch://${REPAIRING}` },
+    { what: "a name no network has", benign: "/broken/nope", hostile: `/broken/${encodeURIComponent(CLAIM)}` },
+    {
+      what: "a denied origin whose path also carries delimiters",
+      benign: "https://elsewhere.example/agents/plain",
+      hostile: `https://${HYPHENATED}.example/agents/${encodeURIComponent(REPAIRING)}`,
+    },
+  ];
+
+  test.each(paired)("$what: our sentence is the same whatever the value", async ({ benign, hostile }) => {
+    const voiceFor = async (ref: string): Promise<{ voice: string; notOurs: string }> => {
+      document.documentElement.innerHTML = html;
+      mountShop(document);
+      const s = await session();
+      await s.runtime.loadPeerNetwork(ref);
+      return {
+        voice: siteVoiceOf(s.mount, "[data-compose-status]"),
+        notOurs: notOursTextOf(s.mount, "[data-compose-status]").join(" "),
+      };
+    };
+    const clean = await voiceFor(benign);
+    const nasty = await voiceFor(hostile);
+
+    expect(clean.voice).toContain("Refused");
+    expect(nasty.voice).toBe(clean.voice);
+    // The value is shown, and only where it is marked as not ours.
+    expect(nasty.notOurs).not.toBe(clean.notOurs);
+    expect(nasty.voice).not.toContain(HYPHENATED);
+    expect(nasty.voice).not.toContain("dairy-free");
+  });
+
+  /** A composition cycle shows a chain of resolved URLs; none of it is in our sentence. */
+  test("a composition cycle puts every hop in its own node, and none in our sentence", async () => {
+    const s = await session();
+    await s.runtime.loadPeerNetwork("/broken/cycle-a");
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toBe(
+      "Composition cycle refused: the chain below returns to a network already being composed. " +
+        "No further network was fetched and nothing was run." +
+        "The chain, in the order it was followed:",
+    );
+    expect(notOursTextOf(s.mount, "[data-compose-status]")).toHaveLength(3);
+  });
+
+  /** The missing-key setup error names a host the VISITOR chose. */
+  test("the missing-key setup error's own words do not vary with the router host", async () => {
+    const voiceFor = async (routerUrl: string): Promise<{ voice: string; notOurs: string }> => {
+      document.documentElement.innerHTML = html;
+      mountShop(document);
+      const s = await session({ h: harness({ replies: [] }) });
+      s.mount.querySelector<HTMLInputElement>("[data-router-input]")!.value = routerUrl;
+      s.mount.querySelector<HTMLButtonElement>("[data-key-save]")!.click();
+      await s.runtime.ask("what can I eat?");
+      return {
+        voice: siteVoiceOf(s.mount, "[data-key-status]"),
+        notOurs: notOursTextOf(s.mount, "[data-key-status]").join(" "),
+      };
+    };
+    const clean = await voiceFor("https://api.example/v1");
+    const nasty = await voiceFor(`https://${HYPHENATED}.example/v1`);
+
+    expect(clean.voice).toContain("An AI provider key is required");
+    expect(nasty.voice).toBe(clean.voice);
+    expect(nasty.voice).not.toContain(HYPHENATED);
+    expect(nasty.notOurs).toContain(HYPHENATED);
+  });
+
+  /** An over-budget refusal carries numbers only, so it has no untrusted value at all. */
+  test("an over-budget refusal interpolates nothing but numbers, and says its units", async () => {
+    const h = harness({ replies: [callTools([{ name: "get_menu_state" }]), say("never reached")] });
+    const s = await session({ key: SENTINEL, h, limits: { maxModelCalls: 1 } });
+    await s.runtime.ask("everything");
+    expect(s.transcriptText()).toContain("Execution limit reached");
+    expect(detectClaims(s.transcriptText(), MENU)).toEqual([]);
+    // I1: seconds, with a unit, not raw milliseconds. Pinned, not inferred.
+    expect(seconds(1000)).toBe("1 second");
+    expect(seconds(2000)).toBe("2 seconds");
+    expect(seconds(60_000)).toBe("60 seconds");
+    expect(seconds(1500)).toBe("1.5 seconds");
+  });
+
+  /**
+   * THE REVIEWER'S DEMONSTRATION, re-run end to end.
+   *
+   * This is the exact string that was rendered in the deli's voice. The sentence
+   * the site says is now asserted in full, by equality, so anything creeping back
+   * into it fails here.
+   */
+  test("the reported bypass no longer renders a claim in the site's voice", async () => {
+    const h = harness({ artifacts: { [`${BROKEN}/invalid.network.json`]: hostileFrontMan(REPAIRING) } });
+    const s = await session({ h });
+    await s.runtime.loadPeerNetwork("/broken/invalid");
+
+    // The reviewer's rendering, with the item name in it so the claim detector
+    // has an item to attach to. This whole string used to be our sentence.
+    const theOldRendering =
+      "metadata.front_man names 'x' The Reuben is dairy-free and safe for you to eat. '', which is not an agent in this network.";
+    const said = s.mount.querySelector("[data-compose-status] [data-report-said]")!.textContent!;
+    expect(said).toBe(
+      "Refused: the published network below is not valid, so it was not run. The validator reported one problem with it.",
+    );
+    expect(said).not.toContain(theOldRendering);
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).not.toContain("dairy-free");
+    expect(siteVoiceOfPage()).not.toContain("dairy-free and safe for you to eat");
+    // The validator's own words, intact, in their own node, attributed.
+    expect(notOursTextOf(s.mount, "[data-compose-status]")).toEqual([
+      `${BROKEN}/invalid.network.json`,
+      theOldRendering,
+    ]);
+    expect(visibleTextOf(s.mount, "[data-compose-status]")).toContain("not ours to vouch for");
+  });
 });

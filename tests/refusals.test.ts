@@ -2,8 +2,10 @@
 //
 // §6's seventh interoperability check: "Stop an invalid network, a composition
 // cycle, an over-budget request, and a denied origin with visible errors." Plus
-// §3.4's "a missing key MUST stop the model call with a clear setup error", which
-// is a fifth refusal of exactly the same shape and belongs with these four.
+// §4's "a missing key MUST stop the model call with a clear setup error" — Tenet
+// Three, "Static BYOK option", spec line 369, NOT §3.4, which is Browser Origin
+// Requirements and says nothing about keys — which is a fifth refusal of exactly
+// the same shape and belongs with these four.
 //
 // TWO RULES THIS FILE FOLLOWS, BOTH PAID FOR
 //
@@ -884,12 +886,12 @@ describe("refusal 4 — a denied origin is refused by name, and a permitted one 
 });
 
 /* ================================================================== */
-/* Refusal 5: a missing key (§3.4)                                     */
+/* Refusal 5: a missing key (§4, spec line 369)                        */
 /* ================================================================== */
 
 describe("refusal 5 — a missing key stops the model call with a clear setup error", () => {
   /**
-   * INVARIANT (§3.4, a MUST): with a router that requires a key and no key
+   * INVARIANT (§4, a MUST): with a router that requires a key and no key
    * present, the model call does not happen and the visitor sees a setup message
    * that names the host, says what to do, says where the key stays, and says that
    * the safety check needs no key at all.
@@ -975,7 +977,7 @@ describe("refusal 5 — a missing key stops the model call with a clear setup er
 
 describe("all five refusals put a visible string on the screen", () => {
   /**
-   * INVARIANT: each of the five refusals §6 and §3.4 require is readable on the
+   * INVARIANT: each of the five refusals §6 and §4 require is readable on the
    * page, on an element that is not hidden by `hidden`, `aria-hidden`, inline
    * `display`/`visibility`/`opacity`, or a collapsed `<details>`.
    *

@@ -3,7 +3,8 @@
  * here. This file is where the entry's idea lives, so none of it is adapted.
  *
  * The names, purposes, effects and argument schemas are already published in
- * `public/agent-manifest.json`, in §2.1's own field names. They are the public
+ * `public/agent-manifest.json`, in §3.1's own field names (Minimum Runtime Behavior,
+ * spec line 203 — not §2.1, which names neither `purpose` nor `effect`). They are the public
  * contract; boot.ts cross-checks the names, the effects AND the argument schemas
  * against that file at start-up and refuses to run if any of them disagree,
  * because a declared action that does not exist, or a published effect or schema

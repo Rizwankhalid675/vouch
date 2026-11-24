@@ -35,7 +35,7 @@
   "deployment": {
     "mode": "static"
   },
-  "//actions": "Optional metadata: §3.3 lists action descriptions among the manifest's optional blocks. It is published in §2.1's field names — name, purpose, effect, JSON Schema — so a runtime that reads action descriptions finds what it expects. Each `parameters` is the schema the runtime validates against, with its id enums removed: the valid ids are this site's own menu and restriction data, the runtime checks against that data directly, and a copy of it here would be a second published file that had to agree forever. The runtime refuses to start if these schemas and its own disagree.",
+  "//actions": "Optional metadata: §3.3 lists action descriptions among the manifest's optional blocks. It is published in §3.1's field names — name, purpose, effect, JSON Schema — so a runtime that reads action descriptions finds what it expects. That sentence is spec line 203, under §3.1 Minimum Runtime Behavior: \"Support same-site registered actions described by name, purpose, JSON Schema, effect, and handler\". This note said §2.1 until this round, and §2.1 is Minimum Network Content and contains neither the word purpose nor the word effect, so a reader who checked the section this artifact named found nothing. Each `parameters` is the schema the runtime validates against, with its id enums removed: the valid ids are this site's own menu and restriction data, the runtime checks against that data directly, and a copy of it here would be a second published file that had to agree forever. The runtime refuses to start if these schemas and its own disagree.",
   "actions": [
     {
       "name": "get_menu_state",

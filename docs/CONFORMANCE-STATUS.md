@@ -87,7 +87,8 @@ Figures, commands and the one-letter trap that briefly cost this claim a wrong w
 
 **3 — An internal agent and a grounded capability.** Four registered site actions
 (`get_menu_state`, `check_safety`, `add_to_cart`, `checkout_demo_order`), each published with
-`name`, `purpose`, `effect` and a JSON Schema in `parameters` — §2.1's own field names. The check
+`name`, `purpose`, `effect` and a JSON Schema in `parameters` — §3.1's own field names (Minimum
+Runtime Behavior, spec line 203; §2.1 is Minimum Network Content and contains neither word). The check
 reads "via MCP **or** a registered local site action", so shipping no MCP server is not a gap.
 
 `check_safety` is the one that carries the argument: it is the only source of a safety verdict and

@@ -219,12 +219,13 @@ describe("agent-manifest.json (§3.3)", () => {
   });
 
   /**
-   * THE CATALOG SPEAKS §2.1's VOCABULARY, AND THAT IS PINNED AS A PROPERTY.
+   * THE CATALOG SPEAKS §3.1's VOCABULARY, AND THAT IS PINNED AS A PROPERTY.
    *
    * §3.3 lists `action` metadata among the manifest's OPTIONAL blocks, so
    * publishing it at all is voluntary and no requirement is at stake. What is at
    * stake is whether a runtime that reads action descriptions finds the fields
-   * §2.1 names for them — "Support same-site registered actions described by
+   * §3.1 names for them — Minimum Runtime Behavior, spec line 203, cited as §2.1
+   * in five places until this round — "Support same-site registered actions described by
    * name, purpose, JSON Schema, effect, and handler" — rather than a private
    * word of ours. It said `commits` until fix round 1.
    *
@@ -772,5 +773,74 @@ describe("docs/LIMITS.md §3 says the allergens restrictions.json actually track
 
   test("§3 points at the policy file rather than restating it as its own authority", () => {
     expect(limitsMd).toContain("`data/restrictions.policy.md` is the authority");
+  });
+});
+
+/**
+ * THE SECTION A CITATION NAMES IS THE SECTION THAT CONTAINS THE QUOTE.
+ *
+ * Two citations were wrong across eight places, one of them inside the published
+ * `agent-manifest.json`:
+ *
+ *  - the action field names were credited to **§2.1** (Minimum Network Content),
+ *    which contains neither the word `purpose` nor the word `effect`. The quoted
+ *    sentence is spec line 203, under **§3.1** Minimum Runtime Behavior.
+ *  - the missing-key refusal was credited to **§3.4** (Browser Origin
+ *    Requirements), which says nothing about keys. It is **§4**, Tenet Three,
+ *    "Static BYOK option", spec line 369.
+ *
+ * Neither is a claim about the product, which is why nine review passes read past
+ * them: they cost a reader who checks, and this project's whole argument is aimed
+ * at that reader. So the pair is held to the pinned specification itself — both
+ * halves, the section that has the sentence and the section that does not, because
+ * only the second half catches a citation moved to a third wrong number.
+ *
+ * BREAKS IF: either citation is changed back, or the pinned spec is replaced by a
+ * revision that moves either sentence — in which case the figure to fix is the
+ * section number everywhere, and this test names the files.
+ */
+describe("the spec sections this project cites are the ones that carry the quotes", () => {
+  const spec = readFileSync(resolve(import.meta.dirname, "..", "docs/mvp-spec-2026-11-23.md"), "utf8");
+  const src = (p: string): string => readFileSync(resolve(import.meta.dirname, "..", p), "utf8");
+
+  /** One numbered section of the pinned spec, up to the next heading of any level. */
+  const section = (heading: string): string => {
+    const start = spec.indexOf(heading);
+    expect(start, heading).toBeGreaterThan(-1);
+    const rest = spec.slice(start + heading.length);
+    const end = rest.search(/\n#{2,3} /);
+    return end === -1 ? rest : rest.slice(0, end);
+  };
+
+  const ACTION_FIELDS = "Support same-site registered actions described by name, purpose, JSON Schema, effect,";
+  const MISSING_KEY = "a missing key MUST stop the model call\n    with a clear setup error";
+
+  test("the action field names are in §3.1 and not in §2.1", () => {
+    expect(section("### 3.1 Minimum Runtime Behavior")).toContain(ACTION_FIELDS);
+    const s21 = section("### 2.1 Minimum Network Content");
+    expect(s21).not.toContain(ACTION_FIELDS);
+    expect(s21).not.toMatch(/\bpurpose\b/);
+    expect(s21).not.toMatch(/\beffect\b/);
+  });
+
+  test("the missing-key MUST is in §4 and not in §3.4", () => {
+    expect(section("## 4. Tenet Three: Pluggable Inference")).toContain(MISSING_KEY);
+    const s34 = section("### 3.4 Browser Origin Requirements");
+    expect(s34).not.toContain("missing key");
+    expect(s34).not.toMatch(/\bkey\b/);
+  });
+
+  test("every place that cites either sentence names the right section", () => {
+    // The published artifact, which is the one that ships.
+    expect(manifest["//actions"]).toContain("§3.1's field names");
+    expect(manifest["//actions"]).not.toMatch(/published in §2\.1/);
+    // And the five code and document sites.
+    expect(src("docs/LIMITS.md")).toContain("### 4.1 The `actions` block is optional metadata, published in §3.1's field names");
+    expect(src("docs/CONFORMANCE-STATUS.md")).toContain("§3.1's own field names");
+    expect(src("src/runtime/actions.ts")).toContain("§3.1's own field names");
+    for (const p of ["src/runtime/llm.ts", "tests/refusals.test.ts"]) {
+      expect(src(p), p).not.toMatch(/§3\.4's "a missing key/);
+      expect(src(p), p).toContain('§4\'s "a missing key MUST stop');
+    }
   });
 });

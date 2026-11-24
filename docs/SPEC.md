@@ -138,9 +138,12 @@ item 1, and `docs/DECISIONS.md` for why they came out.
 
 ### 4.6 The community tool — `agentic-web-conformance`
 
-A standalone, MIT-licensed CLI that takes the URL of any agentic website and
-runs the §6 checks against it, printing pass / fail / not-demonstrated per check.
-Published as its own repo, usable by every other entrant.
+A standalone, **Apache-2.0**-licensed CLI that takes the URL of any agentic
+website and runs the §6 checks against it, printing pass / fail /
+not-demonstrated per check. It lives in this repository at `tools/conformance/`
+with its own `package.json`, licence and NOTICE, so it is legally shareable —
+but it is **not published anywhere yet**, and a judge cannot score a tool they
+cannot find (`docs/OWNER-TODO.md` item 4).
 
 Potential Impact names this explicitly — *"any tools or services the Entrant
 built and shared with the community"* — and the README's own Testing section

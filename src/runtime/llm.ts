@@ -106,8 +106,10 @@ export function hostOf(url: string): string {
 }
 
 /**
- * The setup error for a real router with no key — §3.4's "a missing key MUST stop
- * the model call with a clear setup error", and the fifth of the five refusals
+ * The setup error for a real router with no key — §4's "a missing key MUST stop
+ * the model call with a clear setup error" (Tenet Three, "Static BYOK option", spec
+ * line 369; it is NOT §3.4, which is Browser Origin Requirements), and the fifth of
+ * the five refusals
  * this build has to make visible.
  *
  * "Clear" is doing work there. It names the host, says exactly what to do about

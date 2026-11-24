@@ -44,6 +44,22 @@ export { DECLINED_CHECKS, DiscoveryError, deriveTarget };
 export type { DeclinedCheckId } from "./checks.ts";
 export { exitCodeFor, renderJson, renderText, VERSION } from "./report.ts";
 export type { Blocker, CheckResult, CheckStatus, FetchLike, RunOptions, Target } from "./types.ts";
+/*
+ * The three narrowing helpers the README tells a stranger to use.
+ *
+ * They were documented and not exported, so `import { findingsOf } from
+ * "agentic-web-conformance"` threw `does not provide an export named
+ * 'findingsOf'` — in the one public-facing document of the one thing this project
+ * offers the community. Re-exported rather than struck from the README, because
+ * narrowing `CheckResult` by hand is exactly the work a consumer should not have
+ * to redo: `findingsOf` is the only safe way to read findings off a result that
+ * may not have the field.
+ *
+ * `tools/conformance/tests/invariants.test.ts` now reads the names out of the
+ * README and imports each from this file, so the pair cannot drift again.
+ */
+export { blockerOf, findingsOf, isUnreached } from "./types.ts";
+export type { DeclinedCheck, MadeCheck, UnreachedCheck } from "./types.ts";
 
 /**
  * A synthetic origin for the `Origin` header on every artifact request.

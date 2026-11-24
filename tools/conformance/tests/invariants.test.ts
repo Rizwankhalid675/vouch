@@ -258,3 +258,40 @@ describe("the invariant holds at runtime, where --json consumers live", () => {
     expect(results.filter(isUnreached).length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * WHAT THE README TELLS A STRANGER TO IMPORT, IMPORTED.
+ *
+ * `README.md` documented `findingsOf`, `blockerOf` and `isUnreached` as helpers
+ * to use, and **none of the three was exported from the package entry point**. A
+ * named import of any of them throws `does not provide an export named …`. This
+ * is the only public-facing document of the only thing this project offers the
+ * community, and nothing anywhere ran the import it recommends.
+ *
+ * The names are READ OUT OF THE README rather than listed here, so documenting a
+ * fourth helper without exporting it fails this test, and so does exporting three
+ * while the sentence names four.
+ *
+ * BREAKS IF: a helper is documented and not exported, or the sentence that names
+ * them is rewritten into a shape this cannot find — which fails loudly on the
+ * match, not quietly by checking nothing.
+ */
+describe("the README's own import instructions", () => {
+  const readme = readFileSync(resolve(toolRoot, "README.md"), "utf8");
+
+  test("every helper the README names is exported from the package entry point", async () => {
+    const sentence = readme.match(/Use the\s+((?:`[A-Za-z0-9_]+`(?:,\s*|\s+and\s+)?)+)\s*helpers/);
+    expect(sentence, "the README's 'Use the … helpers' sentence was not found").not.toBeNull();
+    const named = [...sentence![1]!.matchAll(/`([A-Za-z0-9_]+)`/g)].map((m) => m[1]!);
+    expect(named.length).toBeGreaterThan(0);
+
+    // The entry point `package.json` publishes, by the path it publishes it at.
+    const pkg = JSON.parse(readFileSync(resolve(toolRoot, "package.json"), "utf8")) as { exports: Record<string, string> };
+    const entryPath = pkg.exports["."]!;
+    const entry = (await import(resolve(toolRoot, entryPath))) as Record<string, unknown>;
+
+    const missing = named.filter((n) => !Object.hasOwn(entry, n));
+    expect(missing, `${entryPath} provides no export named ${missing.join(", ")}`).toEqual([]);
+    for (const n of named) expect(typeof entry[n], n).toBe("function");
+  });
+});

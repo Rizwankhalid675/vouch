@@ -1122,8 +1122,9 @@ could reasonably assume more:
 ### 2.9 The refusal demonstration, and what it costs
 
 §6's seventh check — "stop an invalid network, a composition cycle, an over-budget
-request, and a denied origin with visible errors" — plus §3.4's missing-key setup
-error make **five** refusals, each of which must put a string on screen. Three of them
+request, and a denied origin with visible errors" — plus §4's missing-key setup
+error (Tenet Three, "Static BYOK option", spec line 369; §3.4 is Browser Origin
+Requirements and says nothing about keys) make **five** refusals, each of which must put a string on screen. Three of them
 are properties of *loading* a network rather than of a conversation, so the panel
 carries a "Load a published agent network" control: a judge types a reference and
 watches the refusal, rather than taking it on trust from a console.
@@ -1271,7 +1272,7 @@ most expensively.
 
 ## 4. What we publish, in whose vocabulary, and what we deliberately leave out
 
-### 4.1 The `actions` block is optional metadata, published in §2.1's field names
+### 4.1 The `actions` block is optional metadata, published in §3.1's field names
 
 `agent-manifest.json` carries an `actions` array describing the four site actions. Two
 things about it should not be inferred:
@@ -1286,11 +1287,18 @@ because a catalog nobody can read is not a catalog.
 the earlier claim about it is retracted.** This document and `docs/DECISIONS.md` used to
 say the shape was a legitimate extension of ours, on the grounds that §3.3 fixes no
 shape. The first half of that is still true. The second half stopped being the honest
-description when the block was rewritten to use §2.1's own words for a runtime's action
-descriptions: **`name`, `purpose`, `effect`, and a real JSON Schema in `parameters`**.
-§2.1 asks a runtime to support actions "described by name, purpose, JSON Schema,
-effect, and handler", and we previously published `commits` where the specification
-says `effect`, with no argument schema at all.
+description when the block was rewritten to use the specification's own words for a
+runtime's action descriptions: **`name`, `purpose`, `effect`, and a real JSON Schema in
+`parameters`**. **§3.1** — Minimum Runtime Behavior, spec line 203, not §2.1 — asks a
+runtime to "Support same-site registered actions described by name, purpose, JSON
+Schema, effect, and handler", and we previously published `commits` where the
+specification says `effect`, with no argument schema at all.
+
+The section number was wrong in five places including the published manifest, and it was
+the kind of wrong that wastes a reader's time rather than misleading them about the
+product: §2.1 is Minimum Network Content and contains neither the word `purpose` nor the
+word `effect`, so a reader who did what the text invited — check §2.1 — found nothing.
+It is §3.1, line 203.
 
 That was not merely a vocabulary mismatch. **The consent card's effect sentence was
 hard-coded**, because the published catalog carried no effect for it to derive one
@@ -1304,7 +1312,7 @@ that is left vague. The comparison was with the four `*_agentified` example mani
 `cognizant-ai-labs/agentic-web` — the event's spec-and-starter repository, not the
 `nsdeploy` repository `PROVENANCE.md` pins. All four publish `actions` as an object of
 `{version, module, bridge, agentTools}`: runtime wiring, not a described catalog. So
-nothing there contradicts our shape; §2.1's own field names are the authority, and the
+nothing there contradicts our shape; §3.1's own field names are the authority, and the
 point was that we were not using them.
 
 The four other optional keys those example manifests carry and we do not — `brand`,

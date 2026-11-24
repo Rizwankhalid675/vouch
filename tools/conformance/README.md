@@ -1,8 +1,14 @@
 # agentic-web-conformance
 
 A command-line conformance checker for the [Open Agentic Web MVP
-profile](https://github.com/cognizant-ai-lab/nsdeploy) — the minimum interoperable behaviour a site
-needs to publish a portable multi-agent network that any browser runtime can load and run.
+profile](https://github.com/cognizant-ai-labs/agentic-web/blob/main/docs/worldwide_agentic_web_mvp_spec.md)
+— the minimum interoperable behaviour a site needs to publish a portable multi-agent network that
+any browser runtime can load and run.
+
+Two organisation names differ by one letter, so this document names each. The profile this tool
+checks against is in **`cognizant-ai-labs/agentic-web`** (plural), at
+`docs/worldwide_agentic_web_mvp_spec.md`. **`cognizant-ai-lab/nsdeploy`** (singular) is a *reference
+runtime*, not the specification; this tool does not check against it and does not depend on it.
 
 Point it at one of your published networks. It reads the artifacts a peer's browser runtime would
 read, checks what can be checked from a shell, and **tells you plainly which checks it did not
@@ -296,8 +302,10 @@ npm run test:cors     # demands a real server; fails rather than skipping
 ```
 
 So, honestly: **as of 24 November 2026 those five are verified by manual runs outside the restricted
-environment — they pass — and by the CI workflow, which demands them.** They become automatic
-evidence once that workflow has a remote to run on. Everything else in the suite runs everywhere.
+environment — they pass — and by nothing else.** `.github/workflows/ci.yml` runs them, and that
+workflow **has never run**: this repository has no remote. Every "CI runs it" claim here is about
+the file, not about a run that happened. They become automatic evidence once that workflow has a
+remote to run on. Everything else in the suite runs everywhere.
 
 A test count is the kind of number that goes stale quietly, so: `npx vitest run tools/conformance`
 prints the current one.

@@ -701,3 +701,76 @@ describe("upstream provenance is self-consistent (Apache-2.0 §4, and our own st
     expect(listed).toEqual([...ADAPTED].sort());
   });
 });
+
+/**
+ * THE ALLERGEN BOUNDARY, HELD TO THE DATA THAT DRAWS IT.
+ *
+ * `LIMITS.md` §3 is the only place a guest can learn which allergens this site speaks
+ * to and which it does not, and the §2.6 test exists because a sentence in that file
+ * went stale four times with 495 tests green. This one exists because the same file
+ * now carries a list that a data change can falsify, and the failure mode is worse
+ * than a wrong number: a reader with a chickpea allergy acting on a boundary we had
+ * since moved.
+ *
+ * Two assertions, in both directions:
+ *  - every tracked allergen id is named in §3.1, and §3.1 names no id that is not
+ *    tracked (so adding a twelfth restriction fails here until the document follows);
+ *  - §3.2's declined ingredients are exactly the ones `restrictions.policy.md`
+ *    declines, so the limits document and the policy file cannot tell two stories.
+ *
+ * This build extended the tracked set twice, mustard then celery. It will be extended
+ * again, and this is what makes that an edit rather than a discrepancy.
+ */
+describe("docs/LIMITS.md §3 says the allergens restrictions.json actually tracks", () => {
+  const limitsMd = readFileSync(resolve(import.meta.dirname, "..", "docs/LIMITS.md"), "utf8");
+  const policy = readFileSync(resolve(import.meta.dirname, "..", "data/restrictions.policy.md"), "utf8");
+  const section = (heading: string): string => {
+    const start = limitsMd.indexOf(`### ${heading}`);
+    expect(start, heading).toBeGreaterThan(-1);
+    const rest = limitsMd.slice(start + heading.length);
+    const end = rest.indexOf("\n### ");
+    return end === -1 ? rest : rest.slice(0, end);
+  };
+  /** Every `backticked` token in a section, which is how §3 names an allergen id. */
+  const ticked = (text: string): string[] => [...text.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]!);
+
+  const tracked = [...new Set(RESTRICTIONS.flatMap((r) => r.avoid))];
+
+  test("§3.1 names every tracked allergen id, and names no id that is not tracked", () => {
+    const named = ticked(section("3.1 The tracked set, and the rule that draws it"));
+    for (const id of tracked) expect(named, id).toContain(id);
+    // The other direction: an id left in the document after being dropped from the
+    // data fails here. Non-id backticked tokens in that section are filenames and
+    // identifiers, so only names that look like allergen ids are compared back.
+    const idish = named.filter((n) => tracked.includes(n) || /^[a-z]+(_[a-z]+)?$/.test(n));
+    for (const n of idish) {
+      if (n.endsWith("_free") || n.includes(".") || n === "avoid" || n === "trackedAllergens") continue;
+      expect(tracked, `§3.1 names \`${n}\`, which nothing in restrictions.json avoids`).toContain(n);
+    }
+  });
+
+  test("§3.1's restriction and allergen counts are the ones the data holds", () => {
+    const text = section("3.1 The tracked set, and the rule that draws it");
+    expect(text).toContain(`**${RESTRICTIONS.length} published restrictions over ${tracked.length} tracked allergen ids**`);
+  });
+
+  test("§3.2's declined ingredients are exactly the ones the policy file declines", () => {
+    const declined = policy
+      .slice(policy.indexOf("Deliberately not tracked:"))
+      .split("\n")[0]!
+      .replace("Deliberately not tracked:", "")
+      .split(",")
+      .map((s) => s.trim().replace(/\.$/, ""))
+      .filter(Boolean);
+    expect(declined.length).toBeGreaterThan(0);
+    const text = section("3.2 What is outside the set, named rather than left to be discovered");
+    for (const ingredient of declined) expect(text, ingredient).toContain(ingredient);
+    // And the count, so a seventh exclusion added to the policy cannot be silently
+    // absent from the document that publishes the boundary.
+    expect(text).toContain(`All ${declined.length === 6 ? "six" : String(declined.length)} are real sensitivities`);
+  });
+
+  test("§3 points at the policy file rather than restating it as its own authority", () => {
+    expect(limitsMd).toContain("`data/restrictions.policy.md` is the authority");
+  });
+});

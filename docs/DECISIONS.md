@@ -107,10 +107,20 @@ default, so its first clause is not demonstrable here without a visitor key — 
 specification does not do is say that a BYOK-only site conforms, or that it fails. That silence
 is the actual situation, and naming it is better than resolving it in our own favour.
 
-Upstream corroborates the reading: its runtime now gates publisher funding behind an explicit
-`llm_router.publisher_funded === true`, and run against our published manifest it reports
-`publisherFunded: false` with no error. Our manifest therefore makes no claim that the site pays
-for inference — which is the claim it would be easiest to make by accident.
+Upstream corroborates the reading, by a route that can be re-run: its real `selectTopRouter`,
+run against our published manifest in five configurations, returns our published default with no
+key and upgrades to `byok_router` with one, and never throws. So the manifest is runnable by the
+reference consumer in both modes. Our manifest therefore makes no claim that the site pays for
+inference — which is the claim it would be easiest to make by accident.
+
+**One sentence here was withdrawn on 24 November 2026.** It said upstream's runtime "now gates
+publisher funding behind an explicit `llm_router.publisher_funded === true`" and reported
+`publisherFunded: false` against our manifest. That could not be reproduced: the key appears
+nowhere in `cognizant-ai-lab/nsdeploy` at the pinned revision or at `main` `71b5037`, nor in
+`cognizant-ai-lab/neuro-san` at `main` `a5537db`. `publisher_funded` **is** a key our own
+conformance CLI looks for, which is the likeliest source of the mix-up. Recorded rather than
+deleted, because the pattern it belongs to is already recorded above: a claim cited from memory
+rather than from a run.
 
 A strict reader may still score the check unmet. That remains the correct way to lose a point,
 and it is the same three-valued judgement our own conformance CLI makes: `not-demonstrated`,

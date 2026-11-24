@@ -6,6 +6,22 @@ not at the end. The README may not claim anything this file contradicts.
 Task 10 owns this document. Task 6 opened it with the two sections it is
 responsible for: what was taken from upstream, and the runtime's own limits.
 
+**If you read four things here, read these.** They are the limits with the shortest
+path to harming someone, rather than the ones that were hardest to write:
+
+- [§3](#3-what-the-checker-tracks-and-what-it-does-not) — **which allergens this site
+  tracks, and the ones it does not.** The set was extended twice during this build and
+  should not be read as settled.
+- [§2.1](#21-the-gate-withholds-true-statements-and-more-of-them-than-you-would-expect)
+  and [§2.1a](#21a-what-still-leaks-through-the-gate-and-which-of-its-two-defences-is-weaker)
+  — the gate withholds **true** warnings as well as false ones, and what still leaks
+  through it is an open-ended class rather than a list. Both are survivable for one
+  reason: the verdict card beside each dish never passes through the gate.
+- [§2.5a](#25a-6-check-2-is-met-byok-only-and-the-specification-is-silent-on-whether-that-conforms)
+  — the one interoperability check this entry does not claim to pass.
+- [§2.0](#20-what-a-verdict-card-can-and-cannot-be-moved-by) — why the verdict cards
+  are the thing everything else here leans on, and the one time that was got wrong.
+
 ---
 
 ## 1. What is ours and what is not
@@ -148,6 +164,119 @@ booting with every artifact fetch failing.
 A fourth, smaller case: a sentence reciting real prices ("They are $11.00 and
 $11.50") was withheld as `not_derivable`. Prices are published data, so this is a
 false positive in the derivation check.
+
+### 2.1a What still leaks through the gate, and which of its two defences is weaker
+
+§2.1 is about what the gate withholds that it should not. This section is the other
+direction: what it lets through that it should not. **Do not read a number into it.**
+The honest answer is a class with no boundary. The figure that would make this section
+comfortable to read — "three known leaks" — is the one this project has already caught
+itself about to publish **twice**: accurate after round 1 of Task 3's hardening and
+wrong after round 3, both times carried forward by repeating an earlier finding instead
+of re-checking it. It is not printed here, in either direction.
+
+**The two defences, and the weaker one named.** A sentence is held to the allow-list
+when it mentions the menu or follows a sentence that did; a sentence is read as a
+safety *claim* — at any level, mentioning an item or not — when it carries a word on
+one of two lists in `src/gate/claims.ts`: the claim vocabulary (`DIRECT`) and the
+anaphora list (`ANAPHORA`).
+
+> **The claim vocabulary is the weaker of the two defences.** Three rounds of
+> hardening ended with this diagnostic, and it is published because it tells a
+> reader exactly where to push: of nine concrete leaks found against an `unsafe`
+> verdict, **seven closed by adding a single word — `clean` — to the vocabulary**,
+> one needed a new anaphora entry, and one ("A good pick.") matched neither and
+> needed a new evaluative-noun trigger written for it. A defence that a one-word
+> edit moves by seven is a defence sized by whoever last thought of a word.
+
+What makes shipping this defensible is not the lists. It is §2.0: the verdict card
+renders beside the dish from the menu and the guest's restrictions, so a leaked
+"Spotless." sits next to a card that reads **unsafe**. That is a claim that the gate
+failing is *survivable*. It is not a claim that the gate is airtight, and nothing in
+this build should be read as one.
+
+**The residual, as a class rather than a count.** Round 1 of Task 3's review accepted
+three specific residuals the allow-list inversion did not close:
+
+- **(a)** an opening affirmation with no prior item mention and no prior refusal —
+  "Of course it is.";
+- **(b)** an item referred to by an alias sharing no word with any menu name;
+- **(c)** a claim two sentences after an item mention, with a sentence in between,
+  since adjacency is tracked one segment at a time.
+
+Round 3 then closed part of that surface and **restated the remainder as one
+open-ended class**: a sentence at level 1 carrying an evaluative word on neither list
+and no back-reference — "A lovely pick.", "Spotless." Rounds stopped there, on the
+reasoning that each patch closes instances while the class stays open.
+
+**Which of the three the hardenings did and did not close**, established by running
+the shipped gate rather than by reading the ledger twice. Every string below was put
+through `gate()` with the real menu and the real `unsafe` findings for *Dairy-free*:
+
+| Probe | Result |
+|---|---|
+| (a) `"Of course it is."` | **passes** |
+| (a) `"Of course it is clean."` | withheld |
+| (a) `"Yes."` / `"Absolutely."` | withheld |
+| (b) `"Our signature is clean."` | withheld |
+| (b) `"Our signature is lovely."` | **passes** |
+| (c) `"The Turkey club is on the menu. It costs $11.00. It is clean."` | withheld |
+| (c) `"The Turkey club is on the menu. It costs $11.00. Spotless."` | **passes** |
+| (c) with an *unrelated* middle sentence instead | withheld (the middle sentence is itself refused, which re-arms the strict level) |
+
+So: **none of the three was converted into a closed set, and none of the three
+remains open on its own terms.** Each is now reachable through exactly one door — a
+sentence whose evaluative or affirming word is on neither list — which is the round-3
+class, arrived at from three directions. Round 3 narrowed the reassurance surface; it
+did not turn an open class into a count, and this document will not print one. The
+size of the class is the size of English's evaluative vocabulary minus two word
+lists, and nobody on this project can state that number.
+
+One asymmetry inside (c) is worth having: a **derivable** middle sentence breaks the
+chain and a **refused** one preserves it. That is the direction to be wrong in — an
+unrelated sentence keeps the next one under suspicion — but it means the leak needs
+the model to say something factual in between, which is the easier of the two things
+to arrange.
+
+**The price of erring this way, since fail-closed is not free.** All four of these
+are withheld as `item_unresolved` although none mentions a menu item: "We keep a
+clean kitchen.", "The deli has a clean modern look.", "A great option for lunch.",
+"Good choice of sides." The first two are the direct cost of the word `clean` that
+closed seven leaks. Published rather than discovered, because a judge will type
+something like one of them.
+
+### 2.1b The tool-reference allow-list, and the two things it cannot catch
+
+A safety verdict comes from one place, `check_safety`, and no agent's `tools` list may
+reach it. Enforcing that by *rejecting suspicious names* failed twice in review: a name
+test cannot tell an in-network agent under a bland alias (`dietary_helper`) from a
+real one, and it cannot tell an MCP descriptor exposing a tool called `is_it_ok` from a
+harmless one. So the check was inverted into an **allow-list** — `AGENTS` and
+`ALLOWED_KINDS` in `tests/artifacts.test.ts` — which names the four agents this network
+has and the two reference *kinds* it permits (an in-network agent, and a symbolic name
+bound in `links.json`). A bare URL, an MCP descriptor and an unbound name all fail,
+whatever they are called. Permitting one means editing the list in the commit that
+justifies it, which is where the decision belongs. The name patterns are kept as a
+second net.
+
+**Two things it does not catch, and the gate is the control for both.**
+
+1. **An author who adds a name to the allow-list *and* writes instructions asserting
+   safety.** The allow-list governs what may be referenced, not what the referenced
+   thing says. A deliberate edit plus deliberate prose defeats it by construction, and
+   nothing short of reading the commit would see that.
+2. **Anything inside a peer.** The allow-list is evaluated against *this* site's
+   published network. A peer network's own agents, their instructions and their tool
+   references are chosen by another publisher, and §5 of the specification says what
+   they are: "Peer-network definitions MUST be treated as untrusted input to the
+   caller's inference model." We do not inspect them for this property and could not
+   usefully try.
+
+In both cases the control is the gate, and behind the gate the verdict cards. There is
+also a boundary worth stating plainly: **this allow-list is a build-time tripwire, not
+a runtime control.** It runs in the test suite against the published artifacts. It
+would catch the published network drifting; it stops nothing at runtime, and it is not
+a reason to believe a claim that reached the page.
 
 ### 2.2 `Refusal.claimed` is sometimes meaningless
 
@@ -475,6 +604,80 @@ A real deployment would need both.
   header on the static deployment yet; that is a gap.
 - A browser that refuses storage is reported, not crashed into, but the key then
   cannot be kept between page loads.
+
+### 2.5a §6 check 2 is met BYOK-only, and the specification is silent on whether that conforms
+
+This is the entry's weakest conformance claim, so it is stated here in the document
+whose job is to disclose exactly this. It has three parts, and the order matters
+because two of the three are routinely got the wrong way round.
+
+**One: the requirement level is MAY.** Quoted from the pinned spec rather than
+recalled:
+
+> §4: "A site **MAY** publish a default router and model, including a fixed endpoint
+> operated or funded by the publisher."
+>
+> §4, Default inference: "A site **MAY** publish a default router and model that work
+> without a visitor-supplied key."
+
+Declining an option is not non-conformance. We **do** publish a default router and
+model — `llm_router` names the protocol (`openai-compatible`), the endpoint
+(`https://api.openai.com/v1`) and the model (`gpt-4o-mini`). What we decline is the
+key-free part, and `default.requires_key` is published as `true` so that nobody has to
+infer it. This site ships no model and pays for no inference; it does not pretend
+otherwise anywhere.
+
+**Two: of check 2's two clauses, we satisfy the second in full and cannot demonstrate
+the first.** §6, check 2, verbatim:
+
+> "Load and run that network in a browser with the site's published default router and
+> model; **if BYOK is offered, also demonstrate the user-selected path.**"
+
+The user-selected path is demonstrable and demonstrated. The first clause is **not
+demonstrable here without a visitor key**, because the published default router
+requires one.
+
+**Three: the specification nowhere says a BYOK-only site conforms, nor that it fails.**
+That silence is the real situation and this document will not resolve it in our own
+favour. A strict reader may mark check 2 unmet. That is the correct way to lose a
+point: on a disclosed limit, not on a surprise.
+
+**How our own checker scores it: `not-demonstrated`, never `pass`.** The CLI's reason,
+in its own words, is the three-part statement above compressed:
+
+> "The manifest declares a default router, but nothing in it says that router works
+> without a visitor-supplied key (no `requires_key: false`, no `publisher_funded:
+> true`, no `mock: true`). §4's level is MAY … so a key-required site is neither a pass
+> nor a failure of this check, and this tool will not resolve that silence in either
+> direction."
+
+A conformance tool that scored its author's own weakest claim as a pass would be
+worthless, so it does not.
+
+**One corroboration offered, and one withdrawn.**
+
+*Offered, because it is checkable:* upstream's real `selectTopRouter`
+(`nsdeploy/runtime/engine.js` at the pinned revision) was run against
+`public/agent-manifest.json` in five configurations. With no key it returns our
+published default; with a visitor key it upgrades to `byok_router` and reports
+`upgradedToByok: true`; with an explicit router override it honours the override;
+`"demo"` is correctly not treated as a real key. No configuration throws. So the
+manifest is *runnable by the reference consumer* in both modes — which is a different
+and smaller claim than "the default path runs without a key", and it is the one we
+are entitled to.
+
+*Withdrawn:* an earlier draft of this project's notes corroborated the reading by
+saying that upstream's current runtime gates publisher funding behind an explicit
+`llm_router.publisher_funded === true`, and reports `publisherFunded: false` against
+our manifest. **That could not be reproduced.** `publisher_funded` and
+`publisherFunded` appear nowhere in `cognizant-ai-lab/nsdeploy` at the pinned revision
+or at `main` (`71b5037`), and nowhere in `cognizant-ai-lab/neuro-san` at `main`
+(`a5537db`); a case-insensitive search for "funded" across both repositories returns
+only the word "refunded" in two example files. `publisher_funded` **is** a key *our
+own* conformance CLI looks for, which is the likeliest source of the confusion. The
+substance of the point survives without it and is checkable directly: our manifest
+publishes no `publisher_funded` key at all, so it makes no claim that this site pays
+for inference. The unverifiable sentence is removed rather than softened.
 
 ### 2.6 Execution bounds
 
@@ -842,3 +1045,189 @@ Three honest costs:
   `<details>`, because a refusal behind a closed disclosure triangle is a refusal
   nobody sees — the same reasoning that now makes the model-settings disclosure open
   itself when the router needs a key.
+
+---
+
+## 3. What the checker tracks, and what it does not
+
+This is a food-safety checker, so the boundary of the allergen set it speaks to is the
+most important limit in this document. **An untracked allergen is precisely the thing
+this product must not be quiet about**, and for most of this build's life this file was
+quiet about it: the word "allergen" did not appear once.
+
+`data/restrictions.policy.md` is the authority. It exists as a separate file because
+`data/restrictions.json` is a bare array whose loader rejects anything else, so the
+policy could not live in the data as a comment — and relaxing that loader so it could
+would have traded a safety property for a convenience.
+
+### 3.1 The tracked set, and the rule that draws it
+
+The rule, verbatim from the policy file:
+
+> "The tracked set is the EU-14 major allergens intersected with what this menu's
+> ingredient data actually contains."
+
+Today that is **11 published restrictions over 12 tracked allergen ids**: `dairy`,
+`egg`, `fish`, `gluten`, `peanut`, `tree_nut`, `shellfish`, `soy`, `sesame`, `mustard`,
+`celery` — and `pork`, which is not an allergen at all but a dietary restriction we
+chose to support. `nut_free` is the one restriction that covers two ids (`peanut` and
+`tree_nut`), which matters below.
+
+There is one source of truth for that list and it is `data/restrictions.json`:
+`trackedAllergens` is the union of every restriction's `avoid` list, and an allergen is
+named in an item's **Contains** line because something avoids it, not because a view
+hard-codes it. A hard-coded exception is exactly what went wrong once — see §3.3.
+
+### 3.2 What is outside the set, named rather than left to be discovered
+
+**Deliberately not tracked, although they are in this menu's ingredients:** chickpeas,
+horseradish, garlic, cocoa, sauerkraut, cabbage. All six are real sensitivities for
+real people and none is on the EU-14 or the US major-allergen lists. The reasoning was
+that a boundary we can state and defend beats a longer list we cannot — **but someone
+with a chickpea allergy should learn our limit from this page rather than from a plate
+of falafel**, which is the whole reason this section exists.
+
+**EU-14 members this build does not track:** sulphites and lupin, and the EU's separate
+*crustaceans* and *molluscs* categories, which we collapse into one `shellfish` id.
+None of the four appears anywhere in this menu's ingredient data, which is what the
+intersection rule means in practice — but "absent from our data" is not "safe", and a
+menu that grew would reopen each of them.
+
+**`shellfish` is tracked and no menu item reaches it.** That is deliberate, not a data
+error: it is the zero-hit case an exhaustive sweep needs, so that "no conflict found"
+is exercised for a restriction with nothing behind it.
+
+**Where the boundary meets the gate**, and these are consequences of fail-closed rather
+than bugs:
+
+- A claim naming no mappable allergen — "safe for you", "vegan", "sugar-free" — **can
+  never be backed by a finding**, so it is always withheld.
+- "nut-free" requires **both** `peanut` and `tree_nut` to be covered before it can be
+  backed.
+- A claim naming an allergen outside the tracked set refuses rather than being
+  checked. Refusing is the right answer; it is still a refusal, and **the guest gets
+  no verdict on that allergen from anywhere on this site.**
+
+Run against the shipped gate with only *Dairy-free* selected, those three read:
+
+| Claim | Refusal reason |
+|---|---|
+| "The Falafel wrap is chickpea-free." | `not_checked` |
+| "The Falafel wrap is safe for you." | `not_checked` |
+| "The Falafel wrap is vegan." | `not_checked` |
+| "The Falafel wrap is sugar-free." | `not_checked` |
+| "The Falafel wrap is nut-free." | `not_checked` — `peanut` and `tree_nut` are tracked but not *selected* |
+| "The Falafel wrap is garlic-free." | `ingredient_subject` — garlic is an ingredient *name* in this menu, so the gate reads the sentence as a claim about an ingredient, not an allergen |
+| "The Falafel wrap is dairy-free." | *passes* — backed by a finding |
+
+The `garlic-free` row is the one to notice: an untracked thing that happens to be a
+named ingredient refuses for a different stated reason than one that does not. Both
+refuse, and the refusal text differs; a reader should not conclude from a
+`not_checked` message that every untracked allergen produces it.
+
+### 3.3 The set is not stable, and that is the finding
+
+It was extended **twice during this build**, both times because an allergen turned out
+to be reachable only by derivation on at least one dish:
+
+1. **Mustard.** It is never a top-level ingredient in this data. Two dishes reach it
+   and both only by derivation: `potato_salad` through
+   `potato_salad_mix` → `yellow_mustard` → `mustard`, and `pastrami_on_rye` through
+   `pastrami` → `spice_rub` → `mustard` and again through
+   `yellow_mustard` → `mustard`. A hard-coded exception had been making it visible;
+   when that went, mustard vanished from both Contains lines, which reopened — for
+   mustard — exactly the invisible-derived-allergen hole that had already been closed
+   for dairy. `mustard_free` was added, and the fix keeps the one-source-of-truth rule.
+2. **Celery.** Found by the measurement demanded after the first fix — *which other
+   allergens in the ingredient table are reachable but untracked?* — rather than by
+   another report. It is EU-14 and reachable in the chicken salad sandwich, the matzo
+   ball soup and the chicken noodle soup. It was top-level in two of the three and
+   derived in one. `celery_free` was added on the same reasoning.
+
+That measurement, re-run against the data as it stands on 24 November 2026, finds
+**32 reachable-but-untracked leaf ingredients** — 43 leaf ingredients are reachable
+from some dish, 11 of them are tracked, and the remaining 32 are the plain foods and
+sub-recipe components the six named above are drawn from. No ingredient id is missing.
+`shellfish` is the twelfth tracked id and is reached by nothing, as §3.2 says.
+
+**Two things follow, and they are the reason this section is written as a limit rather
+than as a changelog.** First, derivation is where this hides: an allergen reached only
+through a sub-recipe is invisible to anyone reading a top-level ingredient list, which
+is the thing the checker exists to do and the thing a person cannot do by eye. Second,
+a set extended twice in one build is a set that will be extended again, so **the number
+11 should be read as today's figure and not as a boundary anyone has settled.**
+
+### 3.4 This document is now pinned to that data
+
+Because the failure above was a document disagreeing with the data it describes,
+`tests/artifacts.test.ts` asserts that §3.1's list of tracked allergen ids is exactly
+`trackedAllergens(RESTRICTIONS)`, and that §3.2's six declined ingredients are exactly
+the ones `data/restrictions.policy.md` declines. A twelfth restriction, or a change of
+mind about horseradish, fails a test until this section follows. Prose is what has gone
+stale four times in this file; these two sentences are the ones that could do it again
+most expensively.
+
+---
+
+## 4. What we publish, in whose vocabulary, and what we deliberately leave out
+
+### 4.1 The `actions` block is optional metadata, published in §2.1's field names
+
+`agent-manifest.json` carries an `actions` array describing the four site actions. Two
+things about it should not be inferred:
+
+**It is not required.** §3.3's manifest row lists what a manifest must carry and then
+what it may: "One or more networks with name, front_man, and hocon; top-site LLM router
+metadata; peer policy; **optional** brand, MCP, linking, deployment, action, theme, and
+coded-tool metadata." Action metadata is in the optional group. We publish it anyway,
+because a catalog nobody can read is not a catalog.
+
+**Its field names are the specification's, not ours — and this changed mid-build, so
+the earlier claim about it is retracted.** This document and `docs/DECISIONS.md` used to
+say the shape was a legitimate extension of ours, on the grounds that §3.3 fixes no
+shape. The first half of that is still true. The second half stopped being the honest
+description when the block was rewritten to use §2.1's own words for a runtime's action
+descriptions: **`name`, `purpose`, `effect`, and a real JSON Schema in `parameters`**.
+§2.1 asks a runtime to support actions "described by name, purpose, JSON Schema,
+effect, and handler", and we previously published `commits` where the specification
+says `effect`, with no argument schema at all.
+
+That was not merely a vocabulary mismatch. **The consent card's effect sentence was
+hard-coded**, because the published catalog carried no effect for it to derive one
+from. Using the specification's field names fixed a real defect and is better for that
+reason — not because we had been failing a requirement. §3.3's optional listing is why
+this is an improvement rather than a correction of non-conformance, and both halves
+are said here so that neither can be quoted alone.
+
+The four other optional keys upstream's own example manifests carry and we do not —
+`brand`, `MCP`, `linking`, `theme` — are in the same optional group, so their absence
+is not a gap either. They are absent because this entry does not publish capabilities
+it has not built.
+
+### 4.2 A published schema does not snapshot the site's own data
+
+The published `parameters` schemas **deliberately enumerate no menu item ids and no
+restriction ids.** An earlier version did: `check_safety` snapshotted all 34 item ids
+*and* all 11 restriction ids, and `add_to_cart` the 34 again. That made
+`agent-manifest.json` a second copy of the menu which had to agree with the first one
+forever — the same defect as two allow-lists telling different stories, with a longer
+fuse, because it was harmless until the day a dish was added.
+
+The rule now, stated as an invariant rather than as a mechanism: **a published schema
+does not snapshot the site's own data, and a published contract that disagrees with the
+code must fail something as early as something can fail, without a data change being
+able to trip it.** `reconcileActions` refuses to start if a published schema reappears
+with an enumeration in it, and `withoutEnums` in `src/runtime/actions.ts` is the single
+definition of what gets published, so the published copy is the code's schema minus its
+enums and cannot drift from it.
+
+The restriction-id enum was offered back on the grounds that 11 ids are more stable
+than 34. It stayed dropped, and the second of the three reasons is the one worth
+keeping: **the tracked-restriction list is empirically not stable** — §3.3 — so the
+dataset that *felt* stable is the one this build extended twice.
+
+**The cost, stated rather than hidden: an agent reading our manifest gets no enumerated
+hint for menu item ids or restriction ids.** It must ask, or be corrected by the
+runtime's validation, which checks arguments against the actual data and is stricter
+than any published enum could be. The enum was never the check; it was a weaker second
+copy of one.

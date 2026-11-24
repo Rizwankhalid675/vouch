@@ -50,10 +50,22 @@ the real situation and we name it rather than resolving it in our own favour.
 Our own conformance checker scores this `not-demonstrated` with the reason — never a quiet pass.
 A strict reader may mark it unmet, and that is the correct way to lose a point.
 
-Corroboration, since it was checked rather than assumed: upstream's current runtime gates
-publisher funding behind an explicit `llm_router.publisher_funded === true`. Run against our
-published manifest it reports `publisherFunded: false` with no error, so the manifest makes no
-claim that this site pays for inference — the claim it would be easiest to make by accident.
+Corroboration, since it was checked rather than assumed: upstream's real `selectTopRouter`
+(`nsdeploy/runtime/engine.js` at the pinned revision) was run against `public/agent-manifest.json`
+in five configurations and none throws — with no key it returns our published default, and with a
+visitor key it upgrades to `byok_router` and reports `upgradedToByok: true`. So the manifest is
+runnable by the reference consumer in both modes, which is a smaller claim than "the default path
+runs without a key" and is the one we are entitled to. Our manifest publishes no
+`publisher_funded` key at all, so it makes no claim that this site pays for inference — the claim
+it would be easiest to make by accident. Figures and commands in `docs/RESULTS.md` §3.3.
+
+**A corroboration that used to sit here has been withdrawn.** This file said upstream's current
+runtime gates publisher funding behind an explicit `llm_router.publisher_funded === true` and
+reports `publisherFunded: false` against our manifest. It could not be reproduced: that key
+appears nowhere in `cognizant-ai-lab/nsdeploy` at the pin or at `main` `71b5037`, nor in
+`cognizant-ai-lab/neuro-san` at `main` `a5537db`. `publisher_funded` **is** a key our own
+conformance CLI looks for, which is the likeliest source of the mix-up. The reading it was
+offered to support does not depend on it.
 
 **3 — An internal agent and a grounded capability.** Four registered site actions
 (`get_menu_state`, `check_safety`, `add_to_cart`, `checkout_demo_order`), each published with

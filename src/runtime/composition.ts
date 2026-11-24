@@ -54,7 +54,7 @@
  *     anything but a literal.
  */
 
-import { RuntimeMessage, joinSiteText, ours, tokenOrOmitted } from "./errors.ts";
+import { RuntimeMessage, joinSiteText, ours } from "./errors.ts";
 import { BudgetError } from "./limits.ts";
 import type { Manifest, NetworkConfig, TraceEntry } from "./types.ts";
 import { classify_tool } from "./upstream/graph.ts";

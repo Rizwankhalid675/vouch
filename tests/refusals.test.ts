@@ -22,7 +22,7 @@ import { resolve } from "node:path";
 import { beforeEach, describe, expect, test } from "vitest";
 import { MENU } from "../src/safety/canon.ts";
 import { detectClaims } from "../src/gate/claims.ts";
-import { NOT_OURS, QUOTED_CHARS_MAX, QUOTED_LINES_MAX, ours, renderQuoted } from "../src/runtime/errors.ts";
+import { NOT_OURS, QUOTED_CHARS_MAX, QUOTED_LINES_MAX, SITE_DATUM, ours, renderQuoted } from "../src/runtime/errors.ts";
 import { seconds } from "../src/runtime/limits.ts";
 import { mountShop } from "../src/site/shop.ts";
 import { boot, domConfirm, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
@@ -1486,18 +1486,25 @@ describe("a foreign value is bounded for display, and the bound is not the defen
 
   /**
    * INVARIANT, and the one that matters most here: **the cap is a UI measure, not
-   * a security control.** Raising it to absurdity must not change what the site
-   * says, because what keeps a value out of our voice is the structural
-   * separation, which does not care about length.
+   * a security control.** What keeps a value out of our voice is the structural
+   * separation, which does not care about length, so changing where the cut falls
+   * must not change what the site says.
    *
-   * Asserted by rendering the same hostile value with no practical cap at all
-   * and checking our prose is byte-identical to the capped rendering.
+   * Asserted by rendering the same claim twice — once long enough for the cap to
+   * bite, once already inside it, so the cut falls in a different place and, in
+   * the long case, mid-claim — and requiring the site's voice to be identical
+   * apart from the shortening note.
    *
-   * BREAKS IF: someone makes the cap load-bearing — e.g. by truncating at a
-   * length chosen to cut a claim in half, so that the safety property depends on
-   * the number. Then the two renderings differ in the site's voice.
+   * A NOTE ON THE OLD TITLE, which the reviewer was right to flag: it said this
+   * breaks if someone "truncates at a length chosen to cut a claim in half". It
+   * does not, and cannot — cutting a claim in half leaves our voice unchanged,
+   * which is precisely the property being asserted. The old title described an
+   * exercise the test never performed and an outcome it would never report. What
+   * the test does assert is below, and what it BREAKS ON is: the cap becoming
+   * load-bearing, i.e. any change that lets the length of a value affect our
+   * prose.
    */
-  test("the cap can be raised to absurdity without changing what the site says", () => {
+  test("where the cut falls does not change what the site says", () => {
     const claim = "The Reuben is dairy-free and safe for you to eat. ".repeat(40);
     const capped = document.createElement("div");
     const uncapped = document.createElement("div");
@@ -1581,9 +1588,15 @@ describe("the confirmation dialog speaks in the site's voice, and its values do 
         arguments: { item: "reuben" },
       },
     ]);
-    const marked = host.querySelector(`[${NOT_OURS}]`);
-    expect(marked).not.toBeNull();
-    expect(marked!.textContent).toContain("reuben");
+    // Several values in the dialog are nodes now - the action name, the origin and
+    // the arguments - so look for the one carrying the argument.
+    const marked = [...host.querySelectorAll(`[${NOT_OURS}]`)].map((n) => n.textContent ?? "");
+    expect(marked.some((t) => t.includes("reuben"))).toBe(true);
+    // And our own sentence in the dialog carries no value at all.
+    const ourWords = host.cloneNode(true) as HTMLElement;
+    for (const n of [...ourWords.querySelectorAll(`[${NOT_OURS}], [${SITE_DATUM}]`)]) n.replaceWith("");
+    expect(ourWords.textContent).not.toContain("reuben");
+    expect(ourWords.textContent).not.toContain("deli.example");
     host.querySelector<HTMLButtonElement>("[data-confirm-no]")!.click();
   });
 });

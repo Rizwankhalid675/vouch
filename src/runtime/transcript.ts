@@ -13,7 +13,7 @@
 import type { Finding, Menu, Restriction } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { gate, REFUSAL_MARKER, type Refusal } from "../gate/gate.ts";
-import { ours, renderQuoted, siteText, type SiteReport, type SiteText } from "./errors.ts";
+import { datum, ours, renderPhrase, renderQuoted, theirs, type SitePhrase, type SiteReport, type SiteText } from "./errors.ts";
 import { guestVerdictCard } from "./verdict-cards.ts";
 
 /**
@@ -39,10 +39,42 @@ export function claimedLabel(claimed: string): string {
  * shown" (SPEC 4.4) without re-publishing an unverified assertion two inches
  * below the place it was withheld from.
  */
-export function refusalLine(r: Refusal, menu: Menu = MENU): string {
+/**
+ * THE FOURTH C1-PRIME SURFACE.
+ *
+ * This used to return a built `string` that was assigned to `li.textContent`,
+ * which put a model-chosen phrase and a published dish name inside one of our
+ * sentences - and did it on a path that bypassed `SiteText` entirely, so none of
+ * the compile-time machinery saw it.
+ *
+ * It returns a PHRASE now. The dish names are our published data (`datum`), the
+ * claimed phrase is the model's (`theirs`), and `r.why` is the gate's own prose,
+ * which is written in this repository. `claimedLabel`'s bound is kept: a phrase
+ * may be named, a sentence may not ride in as one, and now it cannot anyway,
+ * because it lands in a node.
+ */
+export function refusalPhrase(r: Refusal, menu: Menu = MENU): SitePhrase {
   const named = r.items.map((id) => menu.items.find((i) => i.id === id)?.name ?? id);
-  const about = named.length > 0 ? ` about the ${named.join(", ")}` : "";
-  return `Withheld a claim${about} ("${claimedLabel(r.claimed)}"). ${r.why}`;
+  const parts: (SiteText | ReturnType<typeof theirs>)[] = [ours("Withheld a claim")];
+  if (named.length > 0) {
+    parts.push(ours(" about the "));
+    for (const [i, name] of named.entries()) {
+      if (i > 0) parts.push(ours(", "));
+      parts.push(datum(name));
+    }
+  }
+  parts.push(ours(" \u2014 the phrase was "), theirs(claimedLabel(r.claimed)), ours(". "), whyText(r.why));
+  return parts;
+}
+
+/**
+ * The gate's reason, as site text. The gate is in this repository and its
+ * reasons are literals it wrote, so they are ours - but `Refusal.why` is typed
+ * `string`, and `ours` takes a literal only, so the trust is stated here in one
+ * place rather than assumed at the call site.
+ */
+function whyText(why: string): SiteText {
+  return why as SiteText;
 }
 
 export interface ShownResult {
@@ -80,6 +112,26 @@ export class Transcript {
    * not ours - a validator's, say. Those render in their own labelled nodes
    * BESIDE the turn's text, never inside the sentence the turn speaks.
    */
+  /**
+   * Our prose with values in nodes between the words. The only way a runtime
+   * value reaches a transcript line, now that nothing will interpolate one.
+   */
+  showPhrase(phrase: SitePhrase, kind = "runtime"): HTMLElement {
+    const row = this.doc.createElement("div");
+    row.className = `turn turn-${kind}`;
+    row.setAttribute("data-turn", kind);
+    const label = this.doc.createElement("p");
+    label.className = "turn-who";
+    label.textContent = "Hollis & Rye";
+    const body = this.doc.createElement("p");
+    body.className = "turn-text";
+    renderPhrase(this.doc, body, phrase);
+    row.append(label, body);
+    this.log.append(row);
+    this.log.scrollTop = this.log.scrollHeight;
+    return row;
+  }
+
   showRuntime(message: SiteText | SiteReport, kind = "runtime"): HTMLElement {
     const report: SiteReport = typeof message === "string" ? { text: message } : message;
     const row = this.append(kind, "Hollis & Rye", report.text);
@@ -106,10 +158,20 @@ export class Transcript {
     if (meta?.source === "scripted") {
       // Say so, visibly. A replayed reply presented as a live one would be the
       // exact dishonesty this project is about.
+      // A FIFTH surface of the same class, found by the textContent sweep rather
+      // than by the compiler: `scriptLabel` is our own fixture's label, but it was
+      // interpolated into our sentence, which is the pattern and not the trust
+      // level that matters. It is a node now.
       const tag = this.doc.createElement("p");
       tag.className = "replay-tag";
       tag.setAttribute("data-replayed", "true");
-      tag.textContent = `Replayed reply, not a live model call${meta.scriptLabel ? `: ${meta.scriptLabel}` : ""}.`;
+      renderPhrase(
+        this.doc,
+        tag,
+        meta.scriptLabel
+          ? [ours("Replayed reply, not a live model call:"), datum(meta.scriptLabel)]
+          : [ours("Replayed reply, not a live model call.")],
+      );
       row.prepend(tag);
     }
     this.showRefusals(result.refusals);
@@ -142,7 +204,8 @@ export class Transcript {
     for (const r of refusals) {
       const li = this.doc.createElement("li");
       li.setAttribute("data-refusal-reason", r.reason);
-      li.textContent = refusalLine(r, this.menu);
+      // A phrase rendered as nodes, not a built string assigned to textContent.
+      renderPhrase(this.doc, li, refusalPhrase(r, this.menu));
       ul.append(li);
     }
     block.append(h, ul);
@@ -156,9 +219,11 @@ export class Transcript {
       if (!card) continue;
       const wrap = this.doc.createElement("div");
       wrap.className = "refusal-verdict";
+      // Already a dedicated node; marked so that the "what is the site's own
+      // prose" sweep in the tests can tell data from prose here too.
       const name = this.doc.createElement("p");
       name.className = "refusal-verdict-name";
-      name.textContent = this.menu.items.find((i) => i.id === id)?.name ?? id;
+      renderPhrase(this.doc, name, [datum(this.menu.items.find((i) => i.id === id)?.name ?? id)]);
       wrap.append(name, card);
       cards.append(wrap);
     }

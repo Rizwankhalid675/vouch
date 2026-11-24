@@ -27,13 +27,16 @@ import type { ConfirmItem, Manifest, NetworkConfig, Receipt, TraceEntry } from "
 import {
   RuntimeMessage,
   NOT_OURS,
-  TOKEN,
+  SITE_DATUM,
   alsoSay,
   joinSiteText,
   ours,
   renderReport,
   siteText,
-  tokenOrOmitted,
+  datum,
+  renderPhrase,
+  theirs,
+  type SitePhrase,
   type SiteReport,
 } from "./errors.ts";
 import { DEFAULT_LIMITS } from "./limits.ts";
@@ -388,7 +391,13 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     // surface and a future call site will forget. This one refuses to print any
     // string that is not token-shaped or on the allow-list, so forgetting costs a
     // "<text omitted>" rather than an ungated sentence in the DOM.
-    li.textContent = `${entry.event} — ${JSON.stringify(renderableDetail(entry.detail))}`;
+    // THE SECOND C1-PRIME SURFACE. This was one built string in `textContent`,
+    // with `renderableDetail` token-filtering any value that might be prose -
+    // the same premise `prettyToken` broke. The event name is ours and the
+    // detail is a value, so they are now two nodes, and no filtering is needed:
+    // the detail cannot be read as our prose whatever it contains. It is also
+    // more useful, because nothing is replaced with "<text omitted>" any more.
+    renderPhrase(doc, li, [ours(""), datum(entry.event), ours(" "), theirs(JSON.stringify(entry.detail))]);
     traceList.append(li);
   };
 
@@ -431,13 +440,13 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
           ? `The order was started and its result never came back, so we cannot tell you whether it went through. ` +
             `It has NOT been tried again, and it will not be: repeating a write we cannot account for could place ` +
             `a second order. Check your order before trying once more yourself.`
-          : `"${action}" was started and its result never came back, so we cannot tell you whether it took effect. ` +
+          : `The action named below was started and its result never came back, so we cannot tell you whether it took effect. ` +
             `It has NOT been tried again, and it will not be: repeating something we cannot account for could do it twice. ` +
             `Check your order before trying once more yourself.`,
       ),
-      // `r.error` is a handler's message. Ours all interpolate enum-validated ids,
-      // but the next handler added will not know that, so it is filtered here.
-      el(doc, "p", { class: "verdict-source" }, siteText`Request ${r.requestId}. ${r.error ?? ""}`.trim()),
+      // The request id is ours; `r.error` is a handler's message, and a handler
+      // we have not written yet will not know the rule. Both are nodes.
+      sourceLine(doc, r),
     );
     outcomePanel.append(card);
     outcomePanel.removeAttribute("hidden");
@@ -508,7 +517,11 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       showCompose(
         err instanceof RuntimeMessage
           ? err.report
-          : { text: siteText`Refused: that network could not be loaded (${(err as Error)?.name ?? "Error"}), so nothing was run.` },
+          : {
+              text: ours("Refused: that network could not be loaded, so nothing was run."),
+              quotedLabel: ours("The kind of failure, as the browser reported it:"),
+              quoted: [(err as Error)?.name ?? "Error"],
+            },
         "refused",
       );
       addTrace({ at: now(), event: "composition_refused", detail: { kind: (err as Error)?.name ?? "Error" } });
@@ -757,7 +770,11 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     const report: SiteReport =
       err instanceof RuntimeMessage
         ? err.report
-        : { text: siteText`The agent could not be started (${(err as Error)?.name ?? "Error"} while loading the ${startupStage}).` };
+        : {
+            text: ours("The agent could not be started. What failed, and the step it failed at, are below."),
+            quotedLabel: ours("The kind of failure, then the startup step it happened at:"),
+            quoted: [(err as Error)?.name ?? "Error", startupStage],
+          };
     fail(
       alsoSay(
         report,
@@ -880,30 +897,20 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
 }
 
 /**
- * Strings our own code puts in a trace detail that are legitimately prose.
- * Everything else must be token-shaped (no whitespace) to be rendered.
+ * The unknown-outcome card's source line: a request id of ours, and a handler's
+ * own error message, each in a node.
+ *
+ * `r.error` comes from an action handler. Ours interpolate enum-validated ids,
+ * but the next handler added will not know that, and this is the surface where
+ * that mattered.
  */
-const SAFE_TRACE_TEXT = new Set(["local BYOK (not shown)", "none", "<text omitted>"]);
-
-/**
- * A trace detail with every string that could be prose replaced. Recursive, because
- * details nest (`arguments`, `argumentKeys`, `actions`). Numbers and booleans pass
- * through: they cannot carry a sentence.
- */
-export function renderableDetail(value: unknown): unknown {
-  if (typeof value === "string") {
-    return SAFE_TRACE_TEXT.has(value) || TOKEN.test(value) ? value : "<text omitted>";
-  }
-  if (Array.isArray(value)) return value.map(renderableDetail);
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) {
-      // A KEY can be model-chosen too (a trace of an arguments object).
-      out[TOKEN.test(k) ? k : "<key omitted>"] = renderableDetail(v);
-    }
-    return out;
-  }
-  return value;
+function sourceLine(doc: Document, r: Receipt): HTMLElement {
+  const line = el(doc, "p", { class: "verdict-source" });
+  const parts: SitePhrase = r.error
+    ? [ours("Request"), datum(r.requestId), ours(" The handler said:"), theirs(r.error)]
+    : [ours("Request"), datum(r.requestId)];
+  renderPhrase(doc, line, parts);
+  return line;
 }
 
 /**
@@ -960,14 +967,24 @@ export function domConfirm(doc: Document, host: HTMLElement): ConfirmFn {
       const ul = el(doc, "ul");
       for (const p of plan) {
         const li = el(doc, "li", { "data-confirm-action": p.action });
-        li.append(
-          el(doc, "strong", {}, p.action),
-          el(
-            doc,
-            "span",
-            {},
-            ` — ${p.description} Destination: ${p.origin}. This ${p.effect === "read" ? "reads only" : p.effect === "irreversible" ? "cannot be undone" : "changes your order"}.`,
+        const name = el(doc, "strong", {});
+        renderPhrase(doc, name, [datum(p.action)]);
+        const detail = el(doc, "span", {});
+        // THE THIRD C1-PRIME SURFACE. `Destination: ${p.origin}` and `${p.action}`
+        // were interpolated into this sentence. Both are nodes now; `p.description`
+        // is already `SiteText`, so it is the one part that may be prose.
+        renderPhrase(doc, detail, [
+          ours(" \u2014 "),
+          p.description,
+          ours(" Destination:"),
+          theirs(p.origin),
+          ours(
+            p.effect === "read" ? ". This reads only." : p.effect === "irreversible" ? ". This cannot be undone." : ". This changes your order.",
           ),
+        ]);
+        li.append(
+          name,
+          detail,
           // The arguments are the caller's values, not our words, and they are
           // rendered in a node of their own. Marked as such for the same reason
           // the quoted block is: the dialog speaks in the deli's voice, and this

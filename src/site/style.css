@@ -138,6 +138,24 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
   color: #4a3d30; background: #f1ece4; border: 1px dashed var(--rule); border-left: 3px solid var(--rule);
   border-radius: 3px; padding: .3rem .45rem; white-space: pre-wrap; overflow-wrap: anywhere;
 }
+/*
+ * A value shown INLINE, between our words.
+ *
+ * Nothing is interpolated into a sentence any more: a runtime value is always a
+ * node. `code.not-ours` is a stranger's string, `code.site-datum` our own
+ * published data shown as a value. Both read as quoted rather than as the deli
+ * talking, which is the honest shape of the thing - we are quoting, and it should
+ * look like quoting.
+ */
+code.not-ours, code.site-datum {
+  display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .85em; padding: 0 .28em; margin: 0 .12em; border-radius: 3px;
+  max-width: 100%; overflow-wrap: anywhere; vertical-align: baseline;
+}
+code.not-ours { background: #f1ece4; border: 1px dashed var(--rule); color: #4a3d30; }
+code.site-datum { background: #ece7f0; border: 1px solid var(--rule); color: #3d3348; }
+.trace code.not-ours, .trace code.site-datum { font-size: .95em; margin: 0 .15em 0 0; }
+
 .report-shortened { display: block; margin-top: .2rem; font-size: .72rem; color: var(--muted); font-style: italic; }
 .turn-report { margin-top: .4rem; }
 

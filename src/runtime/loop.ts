@@ -22,7 +22,7 @@
 
 import type { Finding } from "../../contracts.ts";
 import type { Refusal } from "../gate/gate.ts";
-import { RuntimeMessage, joinSiteText, joinTokens, ours, prettyToken, siteText } from "./errors.ts";
+import { RuntimeMessage, datum, joinSiteText, ours, theirs, type SitePhrase } from "./errors.ts";
 import { BudgetError, DEFAULT_LIMITS, TurnClock, type Limits } from "./limits.ts";
 import type { ChatMessage, ModelReply, Router } from "./llm.ts";
 import type { Transcript } from "./transcript.ts";
@@ -44,7 +44,11 @@ export type { Limits } from "./limits.ts";
  */
 export class CycleError extends RuntimeMessage {
   constructor(readonly path: string[]) {
-    super(joinSiteText(ours("Delegation cycle refused: "), joinTokens(path, " → "), ours(". The call was not made.")));
+    super({
+      text: ours("Delegation cycle refused: an agent appeared in its own ancestry. The call was not made."),
+      quotedLabel: ours("The delegation path, in the order it was followed:"),
+      quoted: path,
+    });
     this.name = "CycleError";
   }
 }
@@ -309,7 +313,10 @@ export class Conversation {
         );
         this.deps.trace({ at: this.now(), event: "action_arguments", detail: { action: name, arguments: validated } });
         if (got === null) {
-          this.deps.transcript.showRuntime(siteText`You declined "${name}". Nothing was done.`, "declined");
+          // `name` is model-proposed. It is a registered action's name, so it is
+          // one of ours by the time it gets here - but the model chose which, and
+          // the rule has no "it is probably fine" branch.
+          this.deps.transcript.showPhrase([ours("You declined "), datum(name), ours(". Nothing was done.")], "declined");
           this.deps.onReceipts?.(name, null);
           return `DECLINED: the guest did not approve ${name}. It did not run.`;
         }
@@ -376,10 +383,19 @@ export class Conversation {
     // startup, so this is the second of two nets rather than the only one.
     // Filtered first, then prettified: the underscore swap happens on a value we
     // have already vouched for, not on one we are about to.
-    this.deps.transcript.showRuntime(
-      joinSiteText(ours("Asked "), prettyToken(name), ours(".")),
-      "delegated",
-    );
+    /*
+     * THE C1-PRIME SURFACE.
+     *
+     * This was `joinSiteText(ours("Asked "), prettyToken(name), ours("."))`, and
+     * `prettyToken` swapped underscores for spaces AFTER the filter had approved
+     * the name for having none. An agent named
+     * `the_reuben_is_dairy_free_and_safe_to_eat` rendered as
+     * "Hollis & Rye - Asked the reuben is dairy free and safe to eat."
+     *
+     * The name now goes in a node. It reads as quoting a stranger because that is
+     * what it is.
+     */
+    this.deps.transcript.showPhrase([ours("Asked:"), theirs(name)], "delegated");
 
     const messages: ChatMessage[] = [
       { role: "system", content: this.systemPrompt(name) },

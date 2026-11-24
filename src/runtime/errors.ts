@@ -69,43 +69,50 @@
 export type SiteText = string & { readonly __siteText: unique symbol };
 
 /**
- * Token-shaped: an id, a name, a URL, a host, a number, a status. No whitespace,
- * so no sentence. Shared with the trace renderer, which applies the same test.
- */
-export const TOKEN = /^[A-Za-z0-9_.:/#@?&=+~,;()[\]{}$*%!-]*$/;
-
-/** How long an interpolated token may be before it stops looking like one. */
-const TOKEN_MAX = 120;
-
-/** What replaces an interpolated value we are not willing to print. */
-export const OMITTED = "<omitted>";
-
-export function tokenOrOmitted(value: unknown): string {
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  const s = String(value ?? "");
-  return s.length <= TOKEN_MAX && TOKEN.test(s) ? s : OMITTED;
-}
-
-/**
- * Compose site text. The literal parts are ours by construction — they are written
- * in this repository — and every `${value}` is token-filtered.
+ * Compose site text from literals and NUMBERS.
  *
- *   siteText`Asked ${name}.`   →   "Asked menu_guide." | "Asked <omitted>."
+ * It used to take `unknown` and token-filter each value, on the premise that a
+ * string with no whitespace in it cannot form a sentence. `prettyToken` then
+ * swapped underscores for spaces on the way out, and handed the whitespace back:
+ *
+ *   agent name: the_reuben_is_dairy_free_and_safe_to_eat
+ *   rendered:   Hollis & Rye — Asked the reuben is dairy free and safe to eat.
+ *
+ * That name passes `validate_agent_names` (it matches `^[A-Za-z0-9_.:-]+$` and is
+ * under 64 characters), passed the filter, and our OWN claim detector reads the
+ * result as `reuben:dairy:dairy free`. Fourth instance of one problem, after
+ * action arguments, agent names and `front_man` via quote re-pairing.
+ *
+ * So the capability is gone rather than repaired. **A value cannot be
+ * interpolated into a sentence at all**, because there is no longer a function
+ * that will do it: `siteText` accepts `number` and nothing else, and the compiler
+ * enforces that. A number has no letters and no spaces, so no number forms a
+ * sentence — `NaN` and `Infinity` included.
+ *
+ * Anything else that must be shown goes in a NODE, via `theirs` or `datum` and
+ * `renderPhrase`. There is one way to show a value, and it is structural.
+ *
+ *   siteText`Limit ${16}.`        →   "Limit 16."
+ *   siteText`Asked ${name}.`      →   does not compile
  */
-export function siteText(strings: TemplateStringsArray, ...values: unknown[]): SiteText {
+export function siteText(strings: TemplateStringsArray, ...values: number[]): SiteText {
   let out = strings[0] ?? "";
-  for (let i = 0; i < values.length; i += 1) out += tokenOrOmitted(values[i]) + (strings[i + 1] ?? "");
+  for (let i = 0; i < values.length; i += 1) out += String(values[i]) + (strings[i + 1] ?? "");
   return out as SiteText;
 }
 
 /**
  * Mark a string literal written in this repository as site text.
  *
- * Only ever call this with a literal, or with the output of a function in this
- * repository that itself builds with `siteText`. Calling it on a value that came
- * from a model, a peer, a provider or a published artifact defeats the mechanism —
- * which is why interpolation goes through `siteText`, where it is filtered, and not
- * through here.
+ * **It accepts a literal and nothing else, and the compiler enforces that.**
+ * `ours(someVariable)` does not compile; neither does `ours("a" + b)`, nor an
+ * interpolated template, nor an `any`, nor a `` `${string}` `` template-literal
+ * type, nor a generic wrapper that keeps `T` in an inference position.
+ *
+ * This is the door the `front_man` bypass came through. The old signature took
+ * `string`, so `ours(errors.map(filter).join("\n• "))` compiled — a built string,
+ * declared ours by assertion. Filtering it first was the mistake; the only safe
+ * thing to declare ours is text that is literally in this repository.
  */
 export function ours<T extends string>(literal: LiteralOnly<T>): SiteText {
   return literal as unknown as SiteText;
@@ -115,42 +122,86 @@ export function ours<T extends string>(literal: LiteralOnly<T>): SiteText {
  * `T` when `T` is a string LITERAL type, and `never` once it has widened to
  * `string`. Written as an intersection rather than a bare conditional so that
  * `T` stays in an inference position.
- *
- * `ours` takes this, so **it accepts a literal and nothing else, and the
- * compiler enforces that**. `ours(someVariable)` does not compile; neither does
- * `ours("a" + b)`, nor an interpolated template. Use one literal, a conditional
- * between two literals, or `joinSiteText` of several pieces.
- *
- * This is the door the `front_man` bypass came through. The old signature took
- * `string`, so `ours(errors.map(filter).join("\n• "))` compiled — a built string,
- * declared ours by assertion. Filtering it first was the mistake; the only safe
- * thing to declare ours is text that is literally in this repository. Anything
- * else belongs in a `SiteReport`'s `quoted`, which is rendered apart.
  */
 type LiteralOnly<T extends string> = T & (string extends T ? never : unknown);
 
 /**
- * Filter each value, THEN join with a separator of ours.
+ * How much of a foreign value is shown, and how many of them.
  *
- * The order matters. `siteText`${list.join(" \u2192 ")}`` filters the joined
- * string, which contains our separator and therefore whitespace, so the whole
- * thing is replaced. Filtering first keeps every element honest and lets the
- * separator be as readable as we like, because the separator is ours.
+ * **These are UI measures. They are NOT a security control, and nothing should
+ * ever be written that depends on them for safety.** What keeps a value out of
+ * the site's voice is the structural separation above, which does not care how
+ * long the string is or how many there are — raise these to a million and the
+ * safety property is identical. They exist so that a peer cannot use our refusal
+ * panel as a billboard, which is a layout problem.
+ *
+ * This distinction is written down because this project has already been bitten
+ * by a defence that everyone trusted for the wrong reason: `quotedTokensOnly`
+ * was read as the thing keeping a peer's prose out of the deli's voice, and it
+ * was defeated by one apostrophe. If a later reader decides the cap is the
+ * defence and raises it, nothing breaks — and that is the point.
  */
-export function joinTokens(values: unknown[], separator: string): SiteText {
-  return values.map(tokenOrOmitted).join(separator) as SiteText;
-}
+export const QUOTED_CHARS_MAX = 240;
+export const QUOTED_LINES_MAX = 12;
 
 /**
- * `menu_guide` -> `menu guide`. FILTERED first, then prettified, so the
- * underscore swap runs on a value we have already vouched for rather than on one
- * we are about to.
+ * A value rendered in a node of its own, never inside a sentence.
  *
- * Exists so that `joinSiteText` can take `SiteText` and nothing else: this was
- * its one legitimate `string` argument.
+ * Two kinds, because attribution has to be truthful and "not ours" would be a lie
+ * about our own menu:
+ *
+ *  - `theirs(v)` — a stranger's string: a peer's agent name, a model's phrase, a
+ *    provider's code. Marked `data-not-ours`, and the tests' notion of "the
+ *    site's voice" is the page with every one of these removed.
+ *  - `datum(v)` — our own published data shown as a value: a dish name, a request
+ *    id, an action name. Marked `data-site-data`. Still a node, so it still
+ *    cannot form a sentence; the separate attribute exists so a caption can say
+ *    whose words a block is without lying.
+ *
+ * Both carry the same guarantee, which is the only one that matters: the value is
+ * a node, so nothing it contains can be read as part of our prose.
  */
-export function prettyToken(value: unknown): SiteText {
-  return tokenOrOmitted(value).replace(/_/g, " ") as SiteText;
+export interface ValueNode {
+  readonly value: string;
+  readonly ours: boolean;
+}
+
+export function theirs(value: unknown): ValueNode {
+  return { value: String(value ?? ""), ours: false };
+}
+
+export function datum(value: unknown): ValueNode {
+  return { value: String(value ?? ""), ours: true };
+}
+
+/** Our prose and the values it is about, in reading order. */
+export type SitePhrase = readonly (SiteText | ValueNode)[];
+
+/** Marks a node whose content is NOT the site speaking. */
+export const NOT_OURS = "data-not-ours";
+/** Marks a node holding the site's own data, shown as a value rather than as prose. */
+export const SITE_DATUM = "data-site-data";
+
+/**
+ * Render a phrase: our prose as text, every value as its own `<code>`.
+ *
+ * Inline-block nodes, so the line still reads as a line. The point is not how it
+ * looks; it is that there is no code path by which `value` becomes part of a
+ * string we have called ours.
+ */
+export function renderPhrase(doc: Document, host: HTMLElement, phrase: SitePhrase): void {
+  host.replaceChildren();
+  for (const part of phrase) {
+    if (typeof part === "string") {
+      host.append(doc.createTextNode(part));
+      continue;
+    }
+    const node = doc.createElement("code");
+    node.className = part.ours ? "site-datum" : "not-ours";
+    node.setAttribute(part.ours ? SITE_DATUM : NOT_OURS, "");
+    node.textContent = part.value.slice(0, QUOTED_CHARS_MAX);
+    host.append(node);
+  }
 }
 
 /**
@@ -183,9 +234,6 @@ export type SiteReport =
   | { text: SiteText; quotedLabel?: undefined; quoted?: undefined }
   | { text: SiteText; quotedLabel: SiteText; quoted: readonly string[] };
 
-/** Marks a node whose content is NOT the site speaking. Styled, and asserted on, as such. */
-export const NOT_OURS = "data-not-ours";
-
 /**
  * Put a report on a surface, as NODES.
  *
@@ -213,24 +261,6 @@ export function renderReport(doc: Document, host: HTMLElement, report: SiteRepor
  * somewhere of its own — the transcript puts it in the turn's `<p>`, and a `<p>`
  * is no place to nest another.
  */
-/**
- * How much of a foreign value is shown, and how many of them.
- *
- * **These are UI measures. They are NOT a security control, and nothing should
- * ever be written that depends on them for safety.** What keeps a value out of
- * the site's voice is the structural separation above, which does not care how
- * long the string is or how many there are — raise these to a million and the
- * safety property is identical. They exist so that a peer cannot use our refusal
- * panel as a billboard, which is a layout problem.
- *
- * This distinction is written down because this project has already been bitten
- * by a defence that everyone trusted for the wrong reason: `quotedTokensOnly`
- * was read as the thing keeping a peer's prose out of the deli's voice, and it
- * was defeated by one apostrophe. If a later reader decides the cap is the
- * defence and raises it, nothing breaks — and that is the point.
- */
-export const QUOTED_CHARS_MAX = 240;
-export const QUOTED_LINES_MAX = 12;
 
 export function renderQuoted(doc: Document, host: HTMLElement, label: SiteText, lines: readonly string[]): void {
   const caption = doc.createElement("p");

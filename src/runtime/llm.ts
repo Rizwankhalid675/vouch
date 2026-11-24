@@ -236,14 +236,14 @@ export class Router {
         ours(" Check the key and the router in the model settings above. The provider's own response is not shown "),
         ours("here, because this site does not repeat text it cannot vouch for."),
       );
-      throw new RuntimeMessage(
-        joinSiteText(
-          code
-            ? siteText`The model router at ${hostOf(this.baseUrl)} returned HTTP ${resp.status}, provider code ${code}.`
-            : siteText`The model router at ${hostOf(this.baseUrl)} returned HTTP ${resp.status}.`,
-          advice,
-        ),
-      );
+      // The host is the visitor's router and the code is the provider's own
+      // string; neither goes in a sentence of ours. Our prose names the status,
+      // which is a number, and the rest is quoted.
+      throw new RuntimeMessage({
+        text: joinSiteText(siteText`The model router returned HTTP ${resp.status}.`, advice),
+        quotedLabel: ours("The router that answered, and the error code it gave, if any:"),
+        quoted: code ? [hostOf(this.baseUrl), code] : [hostOf(this.baseUrl)],
+      });
     }
     const json = (await resp.json()) as {
       model?: string;
@@ -264,7 +264,13 @@ export class Router {
    */
   private replay(): ModelReply {
     const script = scriptById(this.scriptId);
-    if (!script) throw new RuntimeMessage(siteText`No recorded reply named '${this.scriptId}'.`);
+    if (!script) {
+      throw new RuntimeMessage({
+        text: ours("No recorded reply is published under the name below."),
+        quotedLabel: ours("The name that was asked for:"),
+        quoted: [this.scriptId],
+      });
+    }
     const turn = script.turns[this.scriptStep];
     this.scriptStep += 1;
     this.onTrace({

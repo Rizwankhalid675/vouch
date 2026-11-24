@@ -100,8 +100,9 @@ export const DEFAULT_LIMITS: Limits = {
  */
 export function seconds(ms: number): SiteText {
   const value = ms / 1000;
-  const shown = Number.isInteger(value) ? String(value) : value.toFixed(1);
-  return joinSiteText(siteText`${shown}`, shown === "1" ? ours(" second") : ours(" seconds"));
+  // One decimal place, as a NUMBER, because `siteText` takes numbers only now.
+  const rounded = Number.isInteger(value) ? value : Math.round(value * 10) / 10;
+  return joinSiteText(siteText`${rounded}`, rounded === 1 ? ours(" second") : ours(" seconds"));
 }
 
 /** A count with its unit: `1` + "model call" / "model calls". */

@@ -173,13 +173,15 @@ the DOM was then enumerated and classified, and the rule they all follow now is:
 | Action argument *values* | `add_to_cart({item: "the Reuben is dairy-free"})` printed that in the confirmation dialog | every id argument is an `enum` of published ids, so it fails validation before a dialog is drawn |
 | Router HTTP error *body* | a 400 whose body was prose rendered as "Hollis & Rye — …" | the body is never put in the message; only a token-shaped provider error code survives |
 | Action argument *keys*, and validator messages | `{"The Reuben is dairy-free": 1}` reached the rendered trace twice | the trace records only schema-declared keys plus a count, and a classification instead of the validator's message |
-| Network validator interpolations | `Agent 'x' references missing tool 'y'` — ours today, a peer's once one is published | **was** a filter on quoted interpolations; that filter was defeated and is gone. The message is now rendered in a node of its own, marked `data-not-ours` — see §2.2b |
+| Network validator interpolations | `Agent 'x' references missing tool 'y'` — ours today, a peer's once one is published | the message is rendered in a node of its own, marked `data-not-ours`. The filter that used to do this was defeated — §2.2b |
+| A published agent's name in the **delegation notice** | `Asked the reuben is dairy free and safe to eat.` — the token filter passed the underscored name and `prettyToken` then put the spaces back | the name is a node; `prettyToken` and every other filter are deleted — §2.2b |
+| The **rendered trace**, the **confirmation dialog's** origin and action name, the **refusal line's** claimed phrase, the **replay tag's** label | all interpolated a runtime value into one of our sentences | each is a phrase of our prose plus value nodes — §2.2b |
 | The claimed phrase in a refusal | model text, named deliberately (SPEC 4.4) | filtered for meaningless tokens *and* bounded to a phrase |
 | The confirmation dialog's `description` | a plain `string` built by concatenation; correct only while every author remembered to filter | `ConfirmItem.description` is `SiteText`, so the dialog's prose is ours by type. Values go in `arguments`, which the dialog renders in its own `data-not-ours` node |
 | A published agent's **name** | `Hollis & Rye — Asked The Reuben is dairy-free and safe for you.` Ours are tokens; a **peer's are not**, and Task 8 loads a peer network from a second origin | the network is refused at startup (`validate_agent_names`), **and** the notice token-filters the name anyway |
 | The startup catch | a malformed artifact's `SyntaxError` quotes the file | only a `RuntimeMessage` is shown; anything else becomes our own sentence plus a kind |
-| The unknown-outcome card's source line | a handler's raw `error` | token-filtered |
-| The key-status line | `selectTopRouter`'s message | token-filtered |
+| The unknown-outcome card's source line | a handler's raw `error` | a node (`theirs`), beside a node for our request id — §2.2b |
+| The key-status line | `selectTopRouter`'s message | only a `RuntimeMessage`'s own report is shown; the router host is a node — §2.2b |
 
 ### 2.2b The filter that was defeated, and the rule that replaced it
 
@@ -232,16 +234,77 @@ string.
   byte-identical. Our prose is literal, so it cannot vary with the value; anything
   that reached our sentence by any route changes it and fails.
 
-**Applied without exception**, which is more than the reported case needed. Every
-refusal's prose is literal and every value it names sits in its own node: the
-validator's messages, the document URL, a denied origin, each hop of a cycle
-chain, a bad reference, a requested network name, the router host in the
-missing-key setup error, and the names of networks that loaded successfully. The
-case that settled it: `TOKEN` admits hyphens, so a host like
-`the-reuben-is-dairy-free-and-safe.example` would have survived `siteText` and
-landed in our sentence — and this project's own claim detector reads that sentence
-as a dairy-free claim about the Reuben. Marginal, and a visitor's own typing
-rather than a peer's, but the invariant says *never*.
+### What was swept, and how — a correction
+
+**This section said "Applied without exception". That was false**, and it is the third
+overstatement this document has carried. Four surfaces were still interpolating a
+runtime value into one of our sentences when it was written, and one of them was
+live and exploitable:
+
+```
+agent name: the_reuben_is_dairy_free_and_safe_to_eat
+rendered:   Hollis & Rye — Asked the reuben is dairy free and safe to eat.
+```
+
+That name matches `validate_agent_names`' `^[A-Za-z0-9_.:-]+$`, is under 64
+characters, and passed the token filter — and then **`prettyToken` swapped its
+underscores for spaces**, handing back the whitespace the filter's whole premise
+rested on. Our own `detectClaims` reads the result as `reuben:dairy:dairy free`.
+Fourth instance of one problem, and 324 tests passed with it live.
+
+So the **capability** is gone, not the function. There is no longer anything that
+will put a runtime value in a sentence:
+
+| Was | Now |
+|---|---|
+| `siteText` took `unknown` and token-filtered each value | takes `number` and nothing else; a number has no letters and no spaces, so no number is a sentence |
+| `tokenOrOmitted`, `prettyToken`, `joinTokens`, `TOKEN` | **deleted** |
+| `renderableDetail` filtered trace strings | **deleted**; the trace detail is a node, so the trace now omits nothing and is a better diagnostic |
+| values interpolated into prose | `theirs(v)` / `datum(v)` + `renderPhrase`, which render each value as its own `<code>` |
+
+**How the sweep was done, because "we looked again" is what failed three times.**
+Two passes, and the second exists because the first cannot see everything:
+
+1. **The type system enumerated the surfaces.** Narrowing `siteText` to `number`,
+   `ours` to a string literal and `joinSiteText` to `SiteText`, and deleting the four
+   filters, turned every site into a compile error. `tsc` named **13** in `src/`, and
+   each was converted deliberately. This pass cannot be forgotten or skipped, which
+   is the point of doing it with types rather than with attention.
+2. **A grep for the class the types cannot see:** `textContent =`, `createTextNode`,
+   and `el(...)` called with a non-literal text argument. This is how the fourth
+   surface escaped three earlier sweeps — `refusalLine` returned a plain `string`
+   assigned to `li.textContent` and never touched `SiteText` at all, so no amount of
+   tightening `SiteText` would have found it. The grep found 10 sites; 5 build a
+   string containing a runtime value, and 4 of those are now phrases.
+
+**The surfaces converted in this round**, all four the reviewer named plus one the
+grep found:
+
+- the delegation notice (`loop.ts`) — the live one;
+- the rendered trace (`boot.ts`);
+- the confirmation dialog's action name and `Destination:` origin (`boot.ts`);
+- the refusal line's dish names and claimed phrase (`transcript.ts`);
+- the replayed-reply tag's fixture label (`transcript.ts`), found by the grep.
+
+**The exceptions that remain, named rather than claimed away.** Both are in
+`verdict-cards.ts`:
+
+- `Checked against: ${names.join(", ")}.` interpolates restriction display names.
+- The reason line assigns `cardReason(f, menu)`, a string built from menu data.
+
+They are left for two reasons, and the second is the stronger. First, every value in
+them originates in this repository's own data files (`data/menu.json`,
+`data/restrictions.json`, through `src/safety/canon.ts`) and there is no runtime path
+by which a model, a peer or a provider sets one. Second, §2.0 asserts the cards' whole
+readable surface **byte-for-byte** against an independent computation from `verdictFor`
++ `cardLines`; restructuring their DOM would mean rewriting the assertion that protects
+the product's central claim, to reduce a risk that has no path to it. If a card ever
+displays a value from outside the repository, this exception stops being defensible and
+must be revisited. That is a condition, not a hope — it is checkable by grepping
+`verdict-cards.ts` for anything it did not get from `canon.ts`.
+
+**So: not "without exception". Two named exceptions, with a stated condition under
+which each becomes a defect.**
 
 **One promise was relaxed to do this, deliberately, and the tension with §2.2 is
 resolved rather than left open.** The filter used to replace a hostile value with
@@ -284,25 +347,25 @@ type SiteText = string & { readonly __siteText: unique symbol };
 ```
 
 `Transcript.showRuntime`, the startup error line and the key status take `SiteText`
-and nothing else. Only two functions produce it: `ours(...)` for a literal written
-in this repository, and the `` siteText`...` `` tagged template, whose literal parts
-are ours by construction and whose every `${value}` is **token-filtered** — anything
-with whitespace in it is replaced with `<omitted>` rather than printed. A call site
-that passes a raw string does not compile.
+and nothing else. Only two functions produce it: `ours(...)` for a string **literal**
+written in this repository, and the `` siteText`...` `` tagged template, whose literal
+parts are ours by construction and whose every `${value}` must be a **number**. A call
+site that passes a raw string does not compile. Token filtering is gone — see §2.2b for
+why a filter was the wrong kind of defence.
 
-One idiom follows from that and is worth knowing: filter values *then* join with our
-own separator (`joinTokens`), rather than joining then filtering, because a
-separator with a space in it would take the whole joined string down with it.
+That idiom about filtering before joining is gone with the filters; so is the
+"second net" the trace used to have. Neither is needed: a value in a node cannot be
+read as our prose, so there is nothing for a second net to catch. The trace keeps a
+different pair of independent defences, both still tested — the call sites record no
+model-chosen string into the trace DATA, and the RENDERED trace shows the detail only
+inside a `data-not-ours` node.
 
-Note that this half of the mechanism is enforced at **compile time**, so no runtime
-test can fail when it is removed — widening the parameter back to `string` is
-undetectable to the suite. What the suite pins is the filtering behaviour
-(`siteText`, `tokenOrOmitted`, `joinTokens`) and each call site's observable output.
-
-Two further independent nets, both tested: each trace call site records no
-model-chosen string, **and** the trace renderer refuses to print any string that is
-not token-shaped or allow-listed. The second exists because the first depends on
-every future call site remembering.
+Note that the compile-time half cannot be pinned by a runtime test: widening
+`siteText` back to `unknown`, or `ours` back to `string`, is undetectable to the suite
+on its own. What the suite pins is each call site's observable output — so widening a
+type is only exploitable if someone *also* writes the interpolation, and that is what
+fails a test. The commented list of refused constructs in
+`tests/runtime.test.ts` records what the compiler rejects, since no assertion can.
 
 ### What is "ours"
 

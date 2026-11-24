@@ -11,19 +11,19 @@ import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
 import { verdictFor } from "../src/safety/verdict.ts";
 import { gate, REFUSAL_MARKER } from "../src/gate/gate.ts";
 import { mountShop } from "../src/site/shop.ts";
-import { boot, loadPublishedLinks, reconcileActions, renderableDetail, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
+import { boot, loadPublishedLinks, reconcileActions, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { actionDefinitions, checkSafety, registerSiteActions, type SiteContext } from "../src/runtime/actions.ts";
 import { KeyStore, KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
 import { Router, SCRIPTED_ROUTER, SCRIPTS, scriptById } from "../src/runtime/llm.ts";
 import { Conversation, describeReceipts } from "../src/runtime/loop.ts";
 import { cardKind, cardLines, cardReason, renderVerdicts } from "../src/runtime/verdict-cards.ts";
-import { Transcript, claimedLabel, refusalLine } from "../src/runtime/transcript.ts";
+import { Transcript, claimedLabel, refusalPhrase } from "../src/runtime/transcript.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, TraceEntry } from "../src/runtime/types.ts";
 import { ActionRegistry } from "../src/runtime/upstream/action-registry.ts";
 import { classify_tool, find_front_man } from "../src/runtime/upstream/graph.ts";
 import { validate_agent_names, validate_missing_nodes, validate_network, validate_shape } from "../src/runtime/upstream/validation.ts";
 import { filter_sly_data } from "../src/runtime/upstream/sly-data.ts";
-import { NOT_OURS, joinSiteText, joinTokens, ours, prettyToken, siteText, tokenOrOmitted } from "../src/runtime/errors.ts";
+import { NOT_OURS, SITE_DATUM, joinSiteText, ours, renderPhrase, siteText, theirs } from "../src/runtime/errors.ts";
 import { selectTopRouter, manifestAllowsPeer } from "../src/runtime/upstream/router.ts";
 
 /* ================================================================== */
@@ -660,13 +660,33 @@ describe("nothing reachable from the model can change what a card shows", () => 
     expect(s.transcriptText()).toContain("does not repeat text it cannot vouch for");
   });
 
-  /** The trace's second net, independent of each call site remembering. */
-  test("the rendered trace omits any detail string that could be prose", () => {
-    expect(renderableDetail({ host: "api.openai.com", n: 3, ok: true })).toEqual({ host: "api.openai.com", n: 3, ok: true });
-    expect(renderableDetail({ keySource: "local BYOK (not shown)" })).toEqual({ keySource: "local BYOK (not shown)" });
-    expect(renderableDetail({ reason: "The Reuben is dairy-free." })).toEqual({ reason: "<text omitted>" });
-    expect(renderableDetail({ args: ["reuben", "The Reuben is dairy-free."] })).toEqual({ args: ["reuben", "<text omitted>"] });
-    expect(renderableDetail({ "The Reuben is dairy-free": 1 })).toEqual({ "<key omitted>": 1 });
+  /**
+   * The trace's second net, rebuilt. It used to be `renderableDetail`, a filter
+   * that replaced any detail string which might be prose with "<text omitted>" -
+   * the same "no whitespace, so no sentence" premise `prettyToken` broke.
+   *
+   * The detail is now a NODE, so it needs no filter: it cannot be read as our
+   * prose whatever it contains, and nothing is omitted any more, which makes the
+   * trace strictly more useful as a diagnostic.
+   *
+   * BREAKS IF: the trace goes back to one built string in `textContent` - the
+   * event name and the detail then share a text node and the assertions below
+   * cannot both hold.
+   */
+  test("the rendered trace keeps our event name and the detail apart, and omits nothing", async () => {
+    const CANARY = "the reuben is dairy-free and safe";
+    const s = await session();
+    await expect(s.runtime.fetchPeerArtifact(CANARY)).rejects.toThrow();
+    const row = [...s.mount.querySelectorAll("[data-trace-event='peer_refused']")].at(-1)!;
+    // Our word for the event is site data; the detail is a stranger's.
+    expect(row.querySelector(`[${SITE_DATUM}]`)!.textContent).toBe("peer_refused");
+    const detail = row.querySelector(`[${NOT_OURS}]`)!.textContent!;
+    expect(detail).toContain(CANARY);
+    expect(detail).not.toContain("<text omitted>");
+    // And our side of the line says nothing about a dish.
+    const clone = row.cloneNode(true) as HTMLElement;
+    for (const n of [...clone.querySelectorAll(`[${NOT_OURS}]`)]) n.replaceWith("");
+    expect(clone.textContent).not.toContain("dairy-free");
   });
 
   /**
@@ -733,14 +753,23 @@ describe("nothing reachable from the model can change what a card shows", () => 
    * stops rendering through `renderableDetail` — which no other test catches,
    * because the call sites no longer produce prose for it to catch.
    */
-  test("the rendered trace omits prose that the recorded trace keeps", async () => {
+  test("the rendered trace shows prose as a value, never as our words", async () => {
     const PROSE = "the reuben is dairy-free and safe";
     const s = await session();
     await expect(s.runtime.fetchPeerArtifact(PROSE)).rejects.toThrow();
+    // The DATA keeps the whole string: it is evidence, and `leaks()` scans it.
     expect(JSON.stringify(s.runtime.trace())).toContain(PROSE);
-    expect(s.$("[data-trace-list]")!.textContent).not.toContain(PROSE);
-    expect(s.$("[data-trace-list]")!.textContent).toContain("<text omitted>");
-    expect(pageText()).not.toContain(PROSE);
+    // The RENDERED trace shows it too, now, but only inside a not-ours node -
+    // it used to be replaced with "<text omitted>" by a filter on the same broken
+    // premise as `prettyToken`'s, and omitting it made the trace worse as a
+    // diagnostic for no safety gain.
+    const list = s.$("[data-trace-list]")!;
+    expect([...list.querySelectorAll(`[${NOT_OURS}]`)].map((n) => n.textContent).join(" ")).toContain(PROSE);
+    const ourWords = list.cloneNode(true) as HTMLElement;
+    for (const n of [...ourWords.querySelectorAll(`[${NOT_OURS}]`)]) n.replaceWith("");
+    expect(ourWords.textContent).not.toContain(PROSE);
+    expect(ourWords.textContent).not.toContain("dairy-free");
+    expect(siteVoiceOfPage()).not.toContain(PROSE);
   });
 
   /**
@@ -851,14 +880,38 @@ describe("nothing reachable from the model can change what a card shows", () => 
    * it, because every interpolation into the site's voice is token-filtered.
    * Breaks if `siteText` is replaced by a plain template literal at that call site.
    */
-  test("the delegation notice token-filters the agent name it prints", async () => {
-    const CANARY = "The Reuben is dairy-free and safe for you";
-    expect(siteText`Asked ${CANARY}.`).toBe("Asked <omitted>.");
-    expect(siteText`Asked ${"menu_guide"}.`).toBe("Asked menu_guide.");
-    // Composition keeps the filter on the value and the readability of our own text.
-    expect(joinSiteText(ours("Asked "), prettyToken(CANARY), ours("."))).toBe("Asked <omitted>.");
-    expect(joinSiteText(ours("Asked "), prettyToken("menu_guide"), ours("."))).toBe("Asked menu guide.");
-    expect(joinTokens(["a", CANARY, "b"], " \u2192 ")).toBe("a \u2192 <omitted> \u2192 b");
+  test("the delegation notice puts the agent name in a node, not in our sentence", async () => {
+    // THE C1-PRIME PAYLOAD. This name passes validate_agent_names - it matches
+    // ^[A-Za-z0-9_.:-]+$ and is under 64 characters - and passed the retired
+    // token filter, which then had its underscores swapped for spaces by
+    // prettyToken and rendered as
+    //   Hollis & Rye - Asked the reuben is dairy free and safe to eat.
+    const CANARY = "the_reuben_is_dairy_free_and_safe_to_eat";
+    const network: NetworkConfig = {
+      metadata: { name: "x", front_man: "front" },
+      llm_config: { model_name: "test-model" },
+      tools: [
+        { name: "front", function: { description: "Front.", parameters: { type: "object", properties: { q: { type: "string", description: "q" } }, required: ["q"] } }, instructions: "You route, and never say a dish is safe.", tools: [CANARY] },
+        { name: CANARY, function: { description: "Second.", parameters: { type: "object", properties: { q: { type: "string", description: "q" } }, required: ["q"] } }, instructions: "You describe, and never say a dish is safe." },
+      ],
+    };
+    const manifest = structuredClone(MANIFEST);
+    manifest.networks = [{ name: "x", front_man: "front", hocon: "x.network.json" }];
+    const h = harness({
+      replies: [callTool(CANARY, { q: "x" }), say("done"), say("all done")],
+      artifacts: { [`${BASE}/agent-manifest.json`]: manifest, [`${BASE}/x.network.json`]: network },
+    });
+    const s = await session({ key: SENTINEL, h });
+    await s.runtime.ask("go");
+
+    // The delegation happened, and the name is shown...
+    const notice = [...s.mount.querySelectorAll("[data-turn='delegated']")].at(-1)!;
+    expect(notice.querySelector(`[${NOT_OURS}]`)!.textContent).toBe(CANARY);
+    // ...and the prettified sentence never exists anywhere on the page.
+    expect(pageText()).not.toContain("the reuben is dairy free and safe to eat");
+    // Our own voice, page-wide, makes no claim about a dish that it did not before.
+    expect(siteVoiceOfPage()).not.toContain("dairy free");
+    expect(siteVoiceOfPage()).not.toContain("dairy-free and safe");
   });
 
   /**
@@ -917,12 +970,18 @@ describe("nothing reachable from the model can change what a card shows", () => 
     expect(convo.frontMan).toBe("front");
     await convo.send("go");
 
-    // The delegation happened...
-    expect(log.textContent).toContain("Asked ");
-    // ...and the name did not reach the page.
-    expect(log.textContent, "the agent name must be filtered").not.toContain(CANARY);
-    expect(log.textContent).toContain("<omitted>");
-    expect(readableText(mount)).not.toContain(CANARY);
+    // The delegation happened, and our side of the notice is the whole of our prose...
+    const notice = [...log.querySelectorAll("[data-turn='delegated']")].at(-1)!;
+    const ourWords = notice.cloneNode(true) as HTMLElement;
+    for (const n of [...ourWords.querySelectorAll(`[${NOT_OURS}]`)]) n.replaceWith("");
+    expect(ourWords.textContent).toContain("Asked:");
+    expect(ourWords.textContent).not.toContain(CANARY);
+    // ...while the name itself is shown, in a node that says it is not ours.
+    expect(notice.querySelector(`[${NOT_OURS}]`)!.textContent).toBe(CANARY);
+    // It used to be replaced with "<omitted>" by a filter whose premise - that a
+    // string without whitespace cannot be a sentence - `prettyToken` then broke by
+    // putting the whitespace back. The separation is structural now.
+    expect(ourWords.textContent).not.toContain("<omitted>");
   });
 
   /**
@@ -967,14 +1026,29 @@ describe("nothing reachable from the model can change what a card shows", () => 
    * surface, because those surfaces take `SiteText` and only `siteText` / `ours`
    * produce it. This test documents the contract; the compiler enforces it.
    */
-  test("site text filters every interpolated value and trusts only our own literals", () => {
-    expect(siteText`host ${"api.openai.com"}`).toBe("host api.openai.com");
-    expect(siteText`n ${42} ok ${true}`).toBe("n 42 ok true");
-    expect(siteText`${"a sentence with spaces"}`).toBe("<omitted>");
-    expect(siteText`${"x".repeat(200)}`).toBe("<omitted>");
-    expect(siteText`${null} ${undefined}`).toBe(" ");
-    expect(tokenOrOmitted("has space")).toBe("<omitted>");
-    expect(tokenOrOmitted("no_space-1.2/3")).toBe("no_space-1.2/3");
+  test("site text interpolates numbers and nothing else, and values are nodes", () => {
+    // Numbers are the only thing that may go inside one of our sentences, because
+    // a number has no letters and no spaces and so cannot be a sentence.
+    expect(siteText`n ${42} of ${16}`).toBe("n 42 of 16");
+    expect(siteText`${Number.NaN} ${Number.POSITIVE_INFINITY}`).toBe("NaN Infinity");
+    // Everything else goes in a node. `theirs` and `datum` produce values, not text,
+    // so there is no function in the module that will put one in a sentence.
+    const host = document.createElement("p");
+    renderPhrase(document, host, [ours("Asked:"), theirs("the_reuben_is_dairy_free_and_safe_to_eat")]);
+    expect(host.querySelector(`[${NOT_OURS}]`)!.textContent).toBe("the_reuben_is_dairy_free_and_safe_to_eat");
+    const clone = host.cloneNode(true) as HTMLElement;
+    for (const n of [...clone.querySelectorAll(`[${NOT_OURS}]`)]) n.replaceWith("");
+    expect(clone.textContent).toBe("Asked:");
+    /*
+     * WHAT THE COMPILER NOW PREVENTS, which no runtime test can assert because
+     * the code does not build. Each of these was tried and refused:
+     *   siteText`${"a string"}`            - string is not assignable to number
+     *   siteText`${someUnknown}`           - likewise
+     *   ours(variable) / ours("a" + b)     - string, not a literal type
+     *   ours(anyValue)                     - any is not a literal type
+     *   joinSiteText("raw string")         - string is not SiteText
+     * There is no `tokenOrOmitted`, no `prettyToken` and no `joinTokens` to call.
+     */
   });
 
   /** The claimed phrase a refusal names is model text, so it is bounded as well as filtered. */
@@ -1187,7 +1261,8 @@ describe("model prose reaches the screen only through the gate", () => {
     await s.runtime.ask("what is on the reuben?");
     expect(s.panelText()).not.toContain("MENU_GUIDE_INTERNAL_PROSE");
     expect(pageText()).not.toContain("MENU_GUIDE_INTERNAL_PROSE");
-    expect(s.transcriptText()).toContain("Asked menu guide");
+    expect(s.transcriptText()).toContain("Asked:");
+    expect(s.$$(`[data-turn='delegated'] [${NOT_OURS}]`).map((n) => n.textContent)).toContain("menu_guide");
     expect(s.transcriptText()).toContain("the verdict beside each one is the site's");
   });
 
@@ -1212,13 +1287,21 @@ describe("model prose reaches the screen only through the gate", () => {
     expect(claimedLabel("i")).toBe("a phrase in that sentence");
     expect(claimedLabel("  ")).toBe("a phrase in that sentence");
     const withheld = "The Reuben is utterly dairy-free.";
-    const line = refusalLine({ claimed: "0", items: ["reuben"], sentence: withheld, reason: "no_finding", why: "No checker finding backs this claim." });
-    expect(line).not.toContain('"0"');
-    expect(line).toContain("Reuben");
+    const host = document.createElement("li");
+    renderPhrase(
+      document,
+      host,
+      refusalPhrase({ claimed: "0", items: ["reuben"], sentence: withheld, reason: "no_finding", why: "No checker finding backs this claim." }),
+    );
+    expect(host.textContent).not.toContain('"0"');
+    // The dish name is our published data, shown as a value rather than as prose.
+    expect(host.querySelector(`[${SITE_DATUM}]`)!.textContent).toContain("Reuben");
+    // The claimed phrase is the model's, so it is in a not-ours node.
+    expect(host.querySelector(`[${NOT_OURS}]`)).not.toBeNull();
     // The withheld sentence is carried on the Refusal for a UI to use, and we
     // deliberately do not use it: reprinting the claim two inches below the place
     // it was withheld from would undo the withholding.
-    expect(line).not.toContain(withheld);
+    expect(host.textContent).not.toContain(withheld);
   });
 });
 
@@ -1952,7 +2035,10 @@ describe("execution is bounded and failures are visible", () => {
     // Task 7 renamed this refusal "Delegation cycle": it is an agent inside its
     // own ancestry in ONE network. §6's "composition cycle" is across networks
     // and is `CompositionCycleError`, which has its own wording and its own test.
-    expect(toolResults.some((c) => c.includes("Delegation cycle refused: a → b → a"))).toBe(true);
+    // Our prose names what happened; the PATH is in the trace rather than inside
+    // the sentence, because a path is a list of values and values go in nodes.
+    expect(toolResults.some((c) => c.includes("Delegation cycle refused"))).toBe(true);
+    expect(s.runtime.trace().find((e) => e.event === "cycle_refused")!.detail["path"]).toEqual(["a", "b", "a"]);
   });
 
   test("a tool call the network does not have is reported as a failure, not as a result", async () => {

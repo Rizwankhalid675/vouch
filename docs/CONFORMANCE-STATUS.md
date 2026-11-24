@@ -141,6 +141,53 @@ left in a report:
 
 ---
 
+## Widths, contrast and the no-JavaScript path, measured on the built site
+
+Measured by the controller on 24 November 2026 in a real browser against the built output, with
+ratios **computed in the page** rather than judged from a screenshot. Task 10 repeats all of it
+on the deployed origin; what changes is that a failure there now points at the deployment rather
+than at the code.
+
+**Widths — no horizontal scroll at any of 320, 375, 570, 900 or 1440px**, and no element
+extending past the viewport at any of them. The single element found outside the viewport is the
+skip link at `left: -999px`, which is the correct pattern for one and is not a defect. This
+matters because the responsive bug this project already shipped had three independent causes, one
+visible only at 320px and two only at 375px.
+
+**Contrast — every verdict card passes WCAG AAA.** Computed foreground against the nearest opaque
+background, walking up the tree, for all three verdict states:
+
+| Element | Size | Unsafe | We don't know | No conflict found |
+|---|---|---|---|---|
+| Icon and headline | 16.8 / 15.2px bold | 8.67 | 7.47 | 8.50 |
+| The deciding reason | 14.08px | 13.56 | 14.34 | 13.87 |
+| "Checked against" and the caption | 11.84px | 7.36 | 7.78 | 7.53 |
+
+The lowest ratio anywhere on a verdict card is **7.36** against a AAA threshold of 7.0 and an AA
+threshold of 4.5. A verdict card that cannot be read is a safety failure rather than a style nit,
+so this is the measurement that most needed making.
+
+**One judgement call, flagged rather than fixed:** the caption carrying *"Not a statement about
+the kitchen, and not medical advice"* renders at **11.84px** (0.74rem against a 16px root). It
+passes AAA on contrast and it is a disclaimer repeated on 34 cards, so small is defensible — but
+it is below the 12px most guidance treats as a floor, and it is the one sentence on the card that
+limits what the verdict means. Worth a deliberate decision, not an accident.
+
+**The no-JavaScript path is correct by construction, not by accident.** Checked against the built
+`dist/index.html` (22,911 bytes) rather than in jsdom:
+
+- All 34 dishes and all 34 ingredient blocks are in the static markup, "Turkey club" and "Butter"
+  among them — so the ingredient data a person would check is readable with scripts off.
+- **None** of the agent panel's text is in the static HTML: not its heading, not the standing
+  note, not the restriction controls, not the key panel. The whole panel is built by script. So
+  with JavaScript off the page promises no assistant, rather than showing a dead one.
+- The 34 verdict slots are in the static markup but collapse, because
+  `.verdict-slot:empty { display: none }`. No empty boxes and no unexplained placeholders.
+- One element is hidden in the static markup: the confirmation dialog's `role="status"`
+  container. One script tag. No `<noscript>` block is needed, because nothing is missing.
+
+---
+
 ## What is only knowable after a deploy
 
 Honest list, so none of it is quietly assumed:

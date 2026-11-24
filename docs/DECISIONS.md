@@ -254,6 +254,23 @@ exception" when four surfaces were exempt and one was live, and a tension descri
 unresolved after it had been resolved. Every one of these was in prose. Nothing pins prose,
 and 324 passing tests say nothing about a sentence.
 
+**A consent card told a visitor "This reads only." about running a stranger's code.**
+The card that asks permission to load another site's agents said, in one breath, that those
+agents would run in this browser and that the operation was a read. The effect clause was
+hard-coded to `read` for both purposes, and four lines above that line a comment called this
+"an inaccuracy a consent card cannot have". The principle was written down, next to the code
+that broke it, by the same hand, in the same minute.
+
+A test asserted the wrong value outright — `effect === "read"` for the run purpose — so the
+suite defended the defect. It read the plan object; the bug was in the rendered sentence. The
+controller had also seen this card in a browser and approved it, having read its description
+and never its final clause. Three checks, one blind spot, shared.
+
+The fix was not a better comment. The published action catalog now carries each action's effect
+in the spec's own field, the card derives its clause from what the plan does, and the test reads
+the rendered text for both purposes. **A comment is a note to a reader; a type is a note to the
+compiler.** Only one of them refuses to build.
+
 **Comments outlived the code they described.** After the filters were deleted, three comments
 still explained them in the present tense — one of them telling a future caller to route raw
 strings through functions that no longer exist, and one asserting that quoting a value is what

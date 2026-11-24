@@ -144,6 +144,111 @@ describe("§3.3 presence: reachable by public GET", () => {
     expect(check.detail).toMatch(/weather_peer/);
   });
 
+  test("a host this checker never reached is NOT reported as the site's failure", async () => {
+    // THE WORST BUG THIS TOOL HAS HAD, and the one its whole thesis is about.
+    //
+    // A DNS failure, a refused connection, a blocked proxy or a mistyped hostname
+    // produced `FAIL §3.3 ... It was not [readable]` and eleven downstream lines
+    // reading "blocked by the site" -- a confident indictment of a site this
+    // checker never contacted, with the blame attributed to that site. "I could
+    // not look" rendered as "I looked and it is wrong", in the path a stranger
+    // hits first. It was observed in the wild, against a site that was serving
+    // correctly throughout, and read without anyone noticing.
+    //
+    // A site cannot be at fault for a request that never arrived.
+    const files = conformingSite();
+    files[`${BASE}agent-manifest.json`] = { throws: "ECONNREFUSED 10.0.0.1:443" };
+    const { results } = await run(files);
+
+    const manifest = one(results, "manifest-reachable");
+    expect(manifest.status).toBe("not-demonstrated");
+    expect(manifest.blockedBy).toBe("checker");
+    expect(manifest.detail).toMatch(/never reached|did not reach/i);
+    expect(findingsText(manifest)).toContain("ECONNREFUSED");
+
+    // Nothing anywhere in the run may blame the site for this.
+    for (const result of results) {
+      expect(result.status, result.check).not.toBe("fail");
+      if (result.blockedBy === "site") {
+        throw new Error(`${result.check} blames the site for a connection that never happened`);
+      }
+    }
+  });
+
+  test("an HTTP error IS the site's failure: a 404 and a 500 stay failures, and say so", async () => {
+    // The other direction, and it has to keep working. The fix for the bug above
+    // is not "stop failing"; it is "fail only about answers that arrived."
+    for (const status of [404, 500, 403]) {
+      const files = conformingSite();
+      files[`${BASE}agent-manifest.json`] = { raw: "nope", status };
+      const { results } = await run(files);
+      const manifest = one(results, "manifest-reachable");
+      expect(manifest.status, `HTTP ${status}`).toBe("fail");
+      expect(findingsText(manifest)).toContain(String(status));
+      expect(one(results, "agent-definitions").blockedBy, `HTTP ${status}`).toBe("site");
+    }
+  });
+
+  test("a network definition the checker never reached is not the site's failure either", async () => {
+    const files = conformingSite();
+    files[`${BASE}demo.network.json`] = { throws: "EAI_AGAIN cdn.fixture.example" };
+    const { results } = await run(files);
+    const network = one(results, "network-reachable");
+    expect(network.status).toBe("not-demonstrated");
+    expect(network.blockedBy).toBe("checker");
+    expect(findingsText(network)).toContain("EAI_AGAIN");
+    // ...and the checks downstream of it inherit the checker, not the site.
+    expect(one(results, "agent-definitions").blockedBy).toBe("checker");
+    expect(one(results, "portable-data").blockedBy).toBe("checker");
+    expect(results.some((r) => r.status === "fail")).toBe(false);
+  });
+
+  test("a link map the checker never reached is not the site's failure either", async () => {
+    const files = conformingSite();
+    files[`${BASE}links.json`] = { throws: "ETIMEDOUT" };
+    const { results } = await run(files);
+    const links = one(results, "links-reachable");
+    expect(links.status).toBe("not-demonstrated");
+    expect(links.blockedBy).toBe("checker");
+    expect(findingsText(links)).toContain("ETIMEDOUT");
+  });
+
+  test("a run that reached nothing exits 4, not 1: no verdict about the site was reached", async () => {
+    // Exit 1 would be a false indictment and exit 0 a false all-clear. Someone's
+    // CI needs to tell "your site failed a check" from "nothing was contacted".
+    const unreachable = conformingSite();
+    for (const url of Object.keys(unreachable)) unreachable[url] = { throws: "ECONNREFUSED" };
+    const { results } = await run(unreachable);
+    expect(exitCodeFor(results)).toBe(4);
+
+    // A real failure outranks it: a finding is a finding.
+    const mixed = conformingSite();
+    mixed[`${BASE}links.json`] = { throws: "ECONNREFUSED" };
+    const net = mixed[`${BASE}demo.network.json`]!.body as { tools: { name: string }[] };
+    net.tools[1]!.name = "demo agent with a space";
+    expect(exitCodeFor((await run(mixed)).results)).toBe(1);
+
+    // And a clean run is still 0.
+    expect(exitCodeFor((await run(conformingSite())).results)).toBe(0);
+  });
+
+  test("the report tells a reader that nothing was contacted, rather than leaving them to infer it", async () => {
+    const unreachable = conformingSite();
+    for (const url of Object.keys(unreachable)) unreachable[url] = { throws: "ECONNREFUSED" };
+    const { results } = await run(unreachable);
+    const text = renderText(results, deriveTarget(NETWORK_URL));
+    // The CLOSING SUMMARY has to say it, not just the per-check lines: that is the
+    // line a reader skims to. Asserting only on `/never reached/i` passed while
+    // the summary said nothing, because the per-check blocker lines contain the
+    // same words -- so the assertion is on the phrase only the summary uses.
+    expect(text).toMatch(/reached no verdict about the site/i);
+    expect(text).toMatch(/NEVER REACHED THE HOST/);
+    expect(text).toContain("exit 4");
+    // It must not tell them their site is broken.
+    expect(text).not.toMatch(/blocked by the site/);
+    expect(text).not.toMatch(/\bFAIL\b/);
+  });
+
   test("a manifest that is not JSON is a failure, not a crash", async () => {
     const files = conformingSite();
     files[`${BASE}agent-manifest.json`] = { raw: "<!doctype html><title>404</title>" };

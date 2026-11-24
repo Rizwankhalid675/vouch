@@ -27,9 +27,27 @@ const BLOCKER_TEXT = {
   "checker-and-site": "blocked by the checker and by the site: both reasons apply, and they are set out below",
 } as const;
 
-/** 1 when any check failed, 0 otherwise. A not-demonstrated check never fails a build on its own. */
+/**
+ * 0 all clear, 1 something failed, 4 nothing was contacted.
+ *
+ * A not-demonstrated check never fails a build on its own -- except the one kind
+ * that means the request never got an answer. For that, 0 would be a false
+ * all-clear and 1 a false indictment of a site this checker never reached, so it
+ * gets a code of its own: non-zero, because a CI run that learned nothing should
+ * not be green, and distinct, because "your site failed a check" and "nothing was
+ * contacted" are different things to wake up to.
+ *
+ * A real failure outranks it. A finding is a finding even if some other artifact
+ * was unreachable.
+ */
+export const EXIT_OK = 0;
+export const EXIT_FAILED = 1;
+export const EXIT_UNREACHED = 4;
+
 export function exitCodeFor(results: readonly CheckResult[]): number {
-  return results.some((r) => r.status === "fail") ? 1 : 0;
+  if (results.some((r) => r.status === "fail")) return EXIT_FAILED;
+  if (results.some((r) => r.unreached === true)) return EXIT_UNREACHED;
+  return EXIT_OK;
 }
 
 function wrap(text: string, width: number, indent: string): string[] {
@@ -81,7 +99,12 @@ export function renderText(results: readonly CheckResult[], target: Target): str
   lines.push("");
   for (const result of notMade) {
     lines.push(`  ${LABEL[result.status]}  ${result.section.padEnd(5)} ${result.title}`);
-    if (result.blockedBy) {
+    if (result.unreached) {
+      lines.push(
+        "                       blocked by the checker: this run never reached the host, so nothing here is",
+      );
+      lines.push("                       a statement about the site");
+    } else if (result.blockedBy) {
       lines.push(`                       ${BLOCKER_TEXT[result.blockedBy]}`);
     }
     lines.push(...wrap(result.detail, 100, "                       "));
@@ -95,7 +118,13 @@ export function renderText(results: readonly CheckResult[], target: Target): str
     `Result: ${failed.length} failed, ${made.length - failed.length} passed, ${notMade.length} NOT CHECKED ` +
       `— exit ${exitCodeFor(results)}`,
   );
-  if (failed.length === 0) {
+  const unreached = results.filter((r) => r.unreached === true);
+  if (unreached.length > 0) {
+    lines.push("");
+    lines.push(`THIS RUN NEVER REACHED THE HOST for ${unreached.length} of this site's published artifacts, so`);
+    lines.push("it reached no verdict about the site at all. Nothing above is a finding about this site's");
+    lines.push("conformance. Check the URL, then whether this machine can reach that host.");
+  } else if (failed.length === 0) {
     lines.push("No check that this tool is able to make has failed. That is not the same as conformance:");
     lines.push(`${notMade.length} of the specification's checks were not made at all. See above for which.`);
   }
@@ -114,6 +143,7 @@ export function renderJson(results: readonly CheckResult[], target: Target): str
         passed: results.filter((r) => r.status === "pass").length,
         failed: results.filter((r) => r.status === "fail").length,
         notChecked: results.filter((r) => r.status === "not-demonstrated").length,
+        neverReached: results.filter((r) => r.unreached === true).length,
         exitCode: exitCodeFor(results),
       },
       results,

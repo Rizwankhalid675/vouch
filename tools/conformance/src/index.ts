@@ -38,7 +38,7 @@ import {
   isLoopback,
   toolRefsOf,
 } from "./checks.ts";
-import type { CheckResult, RunOptions, Target } from "./types.ts";
+import type { CheckResult, RunOptions, Target, Unavailable } from "./types.ts";
 
 export { DECLINED_CHECKS, DiscoveryError, deriveTarget };
 export { exitCodeFor, renderJson, renderText, VERSION } from "./report.ts";
@@ -90,29 +90,56 @@ export async function runChecksOn(target: Target, options: RunOptions = {}): Pro
   const artifacts = [manifest, ...(network ? [network] : []), links];
 
   // Why a check that needs the network definition could not be made, traced to the
-  // first thing that went wrong rather than to the symptom. "the network could not
-  // be read" sends a publisher looking at a file that was never located.
-  const whyMissing =
-    manifest.status !== 200 || manifest.json === undefined
-      ? "the site manifest could not be read, so the network definition was never located."
+  // first thing that went wrong rather than to the symptom ("the network could not
+  // be read" sends a publisher looking at a file that was never located) -- and
+  // WHOSE limitation it is, which matters more.
+  //
+  // A request that never got an answer is not the site's fault and must not be
+  // reported as such, so `blockedBy` is computed here rather than hard-coded, and
+  // every downstream check inherits it. That hard-coded "site" was the bug.
+  const unreachedArtifact = manifest.status === null || network?.status === null;
+  const unavailable: Unavailable = unreachedArtifact
+    ? {
+        reason: "this checker never reached the host, so no artifact of this site was read.",
+        blockedBy: "checker",
+        unreached: true,
+      }
+    : manifest.status !== 200 || manifest.json === undefined
+      ? {
+          reason: "the site manifest could not be read, so the network definition was never located.",
+          blockedBy: "site",
+          unreached: false,
+        }
       : !entry
-        ? "no manifest entry matched the requested network name, so no network definition was located."
+        ? {
+            reason: "no manifest entry matched the requested network name, so no network definition was located.",
+            blockedBy: "site",
+            unreached: false,
+          }
         : !hoconUrl
-          ? "the matching manifest entry declares no usable `hocon` location."
-          : "the network definition at the location the manifest declares could not be read.";
+          ? {
+              reason: "the matching manifest entry declares no usable `hocon` location.",
+              blockedBy: "site",
+              unreached: false,
+            }
+          : {
+              reason: "the network definition at the location the manifest declares could not be read.",
+              blockedBy: "site",
+              unreached: false,
+            };
 
   return [
     checkManifest(target, manifest),
     checkNetworkSelected(target, manifest),
     checkNetworkDefinition(manifest, entry, network),
     checkLinkMap(links, symbolicRefs),
-    checkNetworkIdentity(entry, network, whyMissing),
-    checkAgentDefinitions(network, whyMissing),
-    checkTwoAgentNetwork(network, whyMissing),
-    checkInvocationSchemas(network, whyMissing),
-    checkPrivateContextRules(network, whyMissing),
-    checkPortableData(network, whyMissing),
-    checkReferentialIntegrity(entry, manifest, network, links, target.networkName, whyMissing),
+    checkNetworkIdentity(entry, network, unavailable),
+    checkAgentDefinitions(network, unavailable),
+    checkTwoAgentNetwork(network, unavailable),
+    checkInvocationSchemas(network, unavailable),
+    checkPrivateContextRules(network, unavailable),
+    checkPortableData(network, unavailable),
+    checkReferentialIntegrity(entry, manifest, network, links, target.networkName, unavailable),
     checkHttps(target),
     checkCors(artifacts, probeOrigin, isLoopback(target)),
     checkCredentials(artifacts),

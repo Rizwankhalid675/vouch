@@ -11,7 +11,7 @@ import type { Fetched } from "./fetch.ts";
 import { describe as describeFetch } from "./fetch.ts";
 import { publishedNames, selectNetwork, type ManifestNetwork } from "./discover.ts";
 import { credentialFindings, formatFinding, portabilityFindings } from "./rules.ts";
-import type { Blocker, CheckResult, Target } from "./types.ts";
+import type { Blocker, CheckResult, Target, Unavailable } from "./types.ts";
 
 const pass = (
   check: string,
@@ -46,14 +46,54 @@ const declined = (
  * could not look is on the site's side, and a publisher needs to know that it is
  * not the tool refusing.
  */
-const notReached = (check: string, title: string, section: string, because: string): CheckResult =>
-  declined(
-    check,
-    title,
-    section,
-    `Not reached: ${because} This check was not made; fix the failure above and run again.`,
-    "site",
-  );
+const notReached = (
+  check: string,
+  title: string,
+  section: string,
+  because: string,
+  blockedBy: Blocker = "site",
+  unreached = false,
+): CheckResult => ({
+  check,
+  title,
+  status: "not-demonstrated",
+  section,
+  detail: `Not reached: ${because} This check was not made; resolve that first and run again.`,
+  findings: [],
+  blockedBy,
+  ...(unreached ? { unreached: true } : {}),
+});
+
+/**
+ * The request never got an answer: no status, no headers, no body.
+ *
+ * A DNS failure, a refused connection, a blocked proxy, a timeout, a mistyped
+ * hostname. **A site cannot be at fault for a request that never arrived**, so
+ * this is never a failure and never blamed on the site. It is the one case where
+ * `blockedBy: "checker"` means something other than "a shell cannot drive a
+ * browser": it means this checker did not get as far as asking.
+ *
+ * This was a real bug, found by review and not by us. A refused connection
+ * produced `FAIL ... It was not [readable]` plus eleven lines reading "blocked by
+ * the site", about a site that was serving correctly the whole time. "I could not
+ * look" rendered as "I looked and it is wrong" -- the exact confusion every other
+ * line of this tool exists to prevent.
+ */
+const neverReached = (check: string, title: string, section: string, fetched: Fetched): CheckResult => ({
+  check,
+  title,
+  status: "not-demonstrated",
+  section,
+  detail:
+    "This checker never reached the host, so it has no information about this site at all. Nothing came " +
+    "back: no status, no headers, no body. That is a DNS failure, a refused connection, a proxy in the " +
+    "way, a timeout or a mistyped hostname -- and a site cannot be at fault for a request that never " +
+    "arrived, so this is not reported as its failure. Check the URL, then whether this machine can reach " +
+    "that host at all.",
+  findings: [describeFetch(fetched)],
+  blockedBy: "checker",
+  unreached: true,
+});
 
 // ---------------------------------------------------------------------------
 // Presence (§3.2, §3.3)
@@ -63,6 +103,8 @@ const MANIFEST_TITLE = "Site manifest published and readable by a public GET";
 
 export function checkManifest(target: Target, fetched: Fetched): CheckResult {
   const title = MANIFEST_TITLE;
+  // Nothing came back at all. Not the site's failure; see `neverReached`.
+  if (fetched.status === null) return neverReached("manifest-reachable", title, "§3.3", fetched);
   // §3.3, hosting rule for agent-manifest.json: "Public GET from the derived site base".
   if (fetched.status !== 200 || fetched.json === undefined) {
     return fail(
@@ -96,6 +138,16 @@ export function checkManifest(target: Target, fetched: Fetched): CheckResult {
 export function checkNetworkSelected(target: Target, manifest: Fetched): CheckResult {
   const title = "The requested network name matches a manifest entry exactly";
   const section = "§3.2";
+  if (manifest.status === null) {
+    return notReached(
+      "network-selected",
+      title,
+      section,
+      "this checker never reached the host, so no manifest was read.",
+      "checker",
+      true,
+    );
+  }
   if (manifest.status !== 200 || manifest.json === undefined) {
     return notReached("network-selected", title, section, "the site manifest could not be read.");
   }
@@ -130,6 +182,16 @@ export function checkNetworkDefinition(
 ): CheckResult {
   const title = "Resolved network definition published and readable by a public GET";
   const section = "§3.3";
+  if (manifest.status === null) {
+    return notReached(
+      "network-reachable",
+      title,
+      section,
+      "this checker never reached the host, so the manifest never named a network definition.",
+      "checker",
+      true,
+    );
+  }
   if (manifest.status !== 200 || manifest.json === undefined) {
     return notReached("network-reachable", title, section, "the site manifest could not be read.");
   }
@@ -151,6 +213,7 @@ export function checkNetworkDefinition(
       [`${String(entry.name)}: hocon = ${JSON.stringify(entry.hocon ?? null)}`],
     );
   }
+  if (network.status === null) return neverReached("network-reachable", title, section, network);
   if (network.status !== 200 || network.json === undefined) {
     return fail(
       "network-reachable",
@@ -183,6 +246,7 @@ export function checkLinkMap(links: Fetched, symbolicRefs: readonly string[]): C
     symbolicRefs.length > 0
       ? `This network has ${symbolicRefs.length} symbolic external reference(s) that nothing else resolves (${symbolicRefs.join(", ")}), so the link map is what binds them.`
       : "This network declares no symbolic external reference, so the link map has nothing to bind — but §3.3 lists it among the minimum public files, so its absence is reported rather than waived.";
+  if (links.status === null) return neverReached("links-reachable", title, section, links);
   if (links.status !== 200 || links.json === undefined) {
     return fail(
       "links-reachable",
@@ -235,12 +299,12 @@ const AGENT_NAME = /^[A-Za-z0-9_-]+$/;
 export function checkNetworkIdentity(
   entry: ManifestNetwork | null,
   network: Fetched | null,
-  whyMissing: string,
+  unavailable: Unavailable,
 ): CheckResult {
   const title = "Network identity: a stable name, a short description and a named front agent";
   const section = "§2.1";
   if (!entry || !network || network.json === undefined) {
-    return notReached("network-identity", title, section, whyMissing);
+    return notReached("network-identity", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
   }
   const doc = network.json as { metadata?: { description?: unknown; name?: unknown; front_man?: unknown } };
   const problems: string[] = [];
@@ -273,11 +337,11 @@ export function checkNetworkIdentity(
   ]);
 }
 
-export function checkAgentDefinitions(network: Fetched | null, whyMissing: string): CheckResult {
+export function checkAgentDefinitions(network: Fetched | null, unavailable: Unavailable): CheckResult {
   const title = "Agent definitions: unique name, a description, instructions when it uses an LLM";
   const section = "§2.1";
   if (!network || network.json === undefined) {
-    return notReached("agent-definitions", title, section, whyMissing);
+    return notReached("agent-definitions", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
   }
   const agents = agentsOf(network.json);
   const problems: string[] = [];
@@ -338,11 +402,11 @@ export function checkAgentDefinitions(network: Fetched | null, whyMissing: strin
   );
 }
 
-export function checkTwoAgentNetwork(network: Fetched | null, whyMissing: string): CheckResult {
+export function checkTwoAgentNetwork(network: Fetched | null, unavailable: Unavailable): CheckResult {
   const title = "A two-agent network is published (§6's first interoperability check)";
   const section = "§6";
   if (!network || network.json === undefined) {
-    return notReached("two-agent-network", title, section, whyMissing);
+    return notReached("two-agent-network", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
   }
   const agents = agentsOf(network.json);
   if (agents.length < 2) {
@@ -359,11 +423,11 @@ export function checkTwoAgentNetwork(network: Fetched | null, whyMissing: string
   ]);
 }
 
-export function checkInvocationSchemas(network: Fetched | null, whyMissing: string): CheckResult {
+export function checkInvocationSchemas(network: Fetched | null, unavailable: Unavailable): CheckResult {
   const title = "Invocation schemas are JSON-Schema compatible in the honoured form";
   const section = "§2.1";
   if (!network || network.json === undefined) {
-    return notReached("invocation-schemas", title, section, whyMissing);
+    return notReached("invocation-schemas", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
   }
   const agents = agentsOf(network.json);
   const problems: string[] = [];
@@ -412,11 +476,11 @@ export function checkInvocationSchemas(network: Fetched | null, whyMissing: stri
 
 const SLY_BLOCKS = ["to_downstream", "from_downstream", "to_upstream", "to_tracing"] as const;
 
-export function checkPrivateContextRules(network: Fetched | null, whyMissing: string): CheckResult {
+export function checkPrivateContextRules(network: Fetched | null, unavailable: Unavailable): CheckResult {
   const title = "Private-context fields are named, not allowed in bulk";
   const section = "§2.1";
   if (!network || network.json === undefined) {
-    return notReached("private-context-rules", title, section, whyMissing);
+    return notReached("private-context-rules", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
   }
   const problems: string[] = [];
   let namedCount = 0;
@@ -468,11 +532,11 @@ export function checkPrivateContextRules(network: Fetched | null, whyMissing: st
 // Portability (§2.2) and referential integrity
 // ---------------------------------------------------------------------------
 
-export function checkPortableData(network: Fetched | null, whyMissing: string): CheckResult {
+export function checkPortableData(network: Fetched | null, unavailable: Unavailable): CheckResult {
   const title = "Published definition is portable data: no includes, substitutions, env or publisher paths";
   const section = "§2.2";
   if (!network || network.json === undefined) {
-    return notReached("portable-data", title, section, whyMissing);
+    return notReached("portable-data", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
   }
   const findings = portabilityFindings(network.json);
   if (findings.length > 0) {
@@ -533,12 +597,12 @@ export function checkReferentialIntegrity(
   network: Fetched | null,
   links: Fetched,
   networkName: string,
-  whyMissing: string,
+  unavailable: Unavailable,
 ): CheckResult {
   const title = "Every reference resolves: front agent, in-network agents, link-map bindings, URLs, MCP";
   const section = "§3.1";
   if (!network || network.json === undefined) {
-    return notReached("referential-integrity", title, section, whyMissing);
+    return notReached("referential-integrity", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
   }
   const agents = agentsOf(network.json);
   const names = new Set(agents.map((a) => a.name).filter((n) => n !== ""));
@@ -675,11 +739,16 @@ export function checkCors(artifacts: readonly Fetched[], probeOrigin: string, lo
   const section = "§3.4";
   const reachable = artifacts.filter((a) => a.status === 200);
   if (reachable.length === 0) {
+    const neverAnswered = artifacts.every((a) => a.status === null);
     return notReached(
       "cors-hosting",
       title,
       section,
-      "no public artifact answered a GET, so there was no response to read a header off.",
+      neverAnswered
+        ? "this checker never reached the host, so there was no response to read a header off."
+        : "no public artifact answered a GET with 200, so there was no response to read a header off.",
+      neverAnswered ? "checker" : "site",
+      neverAnswered,
     );
   }
   const problems: string[] = [];
@@ -731,7 +800,17 @@ export function checkCredentials(artifacts: readonly Fetched[]): CheckResult {
   const section = "§4";
   const readable = artifacts.filter((a) => a.json !== undefined);
   if (readable.length === 0) {
-    return notReached("credential-handling", title, section, "no public artifact could be read as JSON.");
+    const neverAnswered = artifacts.every((a) => a.status === null);
+    return notReached(
+      "credential-handling",
+      title,
+      section,
+      neverAnswered
+        ? "this checker never reached the host, so there was nothing to read."
+        : "no public artifact could be read as JSON.",
+      neverAnswered ? "checker" : "site",
+      neverAnswered,
+    );
   }
   const problems: string[] = [];
   for (const artifact of readable) {

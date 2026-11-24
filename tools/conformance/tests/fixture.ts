@@ -20,6 +20,16 @@ export interface Artifact {
   readonly raw?: string;
   readonly status?: number;
   readonly headers?: Record<string, string>;
+  /**
+   * Make the TRANSPORT fail for this URL, with this reason, instead of answering.
+   *
+   * An earlier version of this fixture had a comment saying a thrown error was
+   * the case it deliberately did not exercise. That omission hid the worst bug
+   * this tool has had: a connection that never happened was reported as the
+   * site's failure, with eleven downstream lines blaming the site. There is no
+   * substitute for exercising the path where nothing comes back at all.
+   */
+  readonly throws?: string;
 }
 
 /** The files a conforming fixture site publishes, as a mutable deep copy. */
@@ -95,9 +105,11 @@ export function conformingSite(): Record<string, Artifact> {
 /**
  * Serves a file map over a fetch-shaped function, and records every URL asked for.
  *
- * Anything not in the map is a real 404 with a real body, not a thrown error: a
- * checker that only handles rejections would otherwise look correct here and
- * crash on a live site that answers 404.
+ * Anything not in the map is a real 404 with a real body, so a checker that only
+ * handled rejections would not look correct here. For the other direction -- the
+ * transport failing and nothing coming back at all -- set `throws` on the entry.
+ * Both paths are exercised; for a long time only this one was, and the other was
+ * where the bug lived.
  */
 export function serve(files: Record<string, Artifact>): {
   fetchImpl: FetchLike;
@@ -112,6 +124,13 @@ export function serve(files: Record<string, Artifact>): {
     const headers = new Headers(init?.headers as HeadersInit | undefined);
     origins.push(headers.get("origin"));
     const file = files[href];
+    if (file?.throws) {
+      // The transport failing: no status, no headers, no body. What `fetch` does
+      // for a DNS failure, a refused connection or a blocked proxy -- which is a
+      // different thing from a site answering 404, and the whole point of the
+      // tests that use this.
+      throw new TypeError(`fetch failed: ${file.throws}`);
+    }
     if (!file) {
       return new Response("not found", { status: 404, headers: { "content-type": "text/plain" } });
     }

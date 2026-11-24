@@ -83,12 +83,19 @@ exact match exists, it MUST fail rather than select another published network." 
 | Code | Meaning |
 |---|---|
 | **0** | Every check the tool was able to make passed. **Not the same as conformance** — see the NOT CHECKED section of the output for what was not verified. |
-| **1** | At least one check failed. |
+| **1** | At least one check failed. A finding about your site. |
 | **2** | Bad usage, or a URL the tool cannot read as a network URL. |
 | **3** | The tool itself hit an error and reached no verdict. Not a verdict about your site. |
+| **4** | The tool **never reached your host** — DNS, a refused connection, a proxy, a timeout, a typo in the hostname. No verdict about your site was reached and nothing in the output is a finding about it. Non-zero, because a run that learned nothing should not be green; distinct from 1, because your site cannot be at fault for a request that never arrived. |
 
-A `not-demonstrated` result never affects the exit code on its own. The tool is safe to put in CI
-and will not go red because it cannot drive a browser.
+A `not-demonstrated` result never affects the exit code on its own — with one exception, exit 4,
+which exists precisely so that "nothing was contacted" cannot be mistaken for either answer. The
+tool is safe to put in CI and will not go red because it cannot drive a browser.
+
+If you are triaging in CI: **1 means read the findings, 4 means check the network.** Earlier
+versions of this tool reported a refused connection as `FAIL … not readable` with eleven lines
+blaming the site, which sent at least one reader looking for a fault in hosting that was working
+perfectly. That is the mistake this code exists to not make, so it is worth a paragraph.
 
 ### What it never does
 

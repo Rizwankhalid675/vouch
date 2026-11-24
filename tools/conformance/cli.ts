@@ -39,9 +39,14 @@ OPTIONS
 EXIT CODES
   0  Every check this tool could make passed. NOT the same as conformance: see the
      NOT CHECKED section of the output for what was not verified.
-  1  At least one check failed.
+  1  At least one check failed. A finding about the site.
   2  Bad usage, or a URL this tool cannot read as a network URL.
   3  The tool itself hit an error and did not finish. No verdict was reached.
+  4  This tool never reached the host -- DNS, a refused connection, a proxy, a
+     timeout, a typo in the hostname. No verdict about the site was reached, and
+     nothing in the output is a finding about it. Non-zero because a run that
+     learned nothing should not be green; distinct from 1 because a site cannot be
+     at fault for a request that never arrived.
 `;
 
 interface Args {

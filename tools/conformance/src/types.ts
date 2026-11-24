@@ -44,6 +44,24 @@ export interface CheckResult {
   readonly findings: readonly string[];
   /** Set exactly when `status` is `not-demonstrated`. */
   readonly blockedBy?: Blocker;
+  /**
+   * True when the reason this check was not made is that the request never got
+   * an answer at all -- a DNS failure, a refused connection, a blocked proxy, a
+   * timeout.
+   *
+   * This exists because a site cannot be at fault for a request that never
+   * arrived, and because someone's CI needs to tell "your site failed a check"
+   * from "nothing was contacted". It drives exit code 4.
+   */
+  readonly unreached?: boolean;
+}
+
+/** Why a check that needs an artifact could not be made, and whose limitation that is. */
+export interface Unavailable {
+  readonly reason: string;
+  readonly blockedBy: Blocker;
+  /** The artifact was never answered for, as opposed to answered badly. */
+  readonly unreached: boolean;
 }
 
 /** `fetch`, narrowed to what this tool uses, so a test can supply its own. */

@@ -89,13 +89,19 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
 /* no agent at all.                                                     */
 /* ------------------------------------------------------------------ */
 .agent-host { max-width: 72rem; margin: 0 auto; padding: 0 1rem 3rem; }
-.vouch-panel { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 1.25rem; display: grid; gap: 1rem; }
+/* minmax(0,1fr): a grid track defaults to minmax(auto,1fr), and `auto` will not shrink
+   below its widest child's min-content. Without this the panel computed a 413px column
+   inside a 343px panel at 375px wide, and the page scrolled sideways on a phone. */
+.vouch-panel { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 1.25rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .panel-note, .byok-note { margin: 0; color: var(--muted); font-size: .9rem; max-width: 46rem; }
 .restrictions { border: 1px solid var(--rule); border-radius: 4px; padding: .75rem 1rem 1rem; margin: 0; }
 .restrictions legend { font-weight: 700; padding: 0 .35rem; }
 .restriction { display: inline-flex; align-items: center; gap: .35rem; margin: 0 1rem .4rem 0; }
 .verdict-status { margin: .6rem 0 0; font-size: .88rem; color: var(--ink); }
 .model-settings { border: 1px solid var(--rule); border-radius: 4px; padding: .5rem .75rem; }
+/* A <select> sizes itself to its widest option and ignores its container, so the
+   reply picker overhung the viewport at 320px. max-width keeps it inside. */
+.model-settings select, .vouch-panel select { max-width: 100%; }
 .model-settings summary { font-weight: 600; cursor: pointer; }
 .model-settings > *:not(summary) { margin-top: .6rem; }
 .field { display: grid; gap: .2rem; max-width: 32rem; font-size: .85rem; }
@@ -155,7 +161,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
 .confirm button { font: inherit; margin-right: .5rem; padding: .5rem .9rem; border-radius: 4px; border: 1px solid var(--rule); background: var(--paper); }
 .confirm [data-confirm-yes] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .runtime-error { margin: 0; white-space: pre-wrap; font-size: .9rem; }
-.ask { display: flex; gap: .5rem; }
+/* wrap: the input, Ask and New conversation do not fit on one line at phone widths;
+   without this the last button overhangs the viewport. */
+.ask { display: flex; flex-wrap: wrap; gap: .5rem; }
 .ask input { flex: 1; font: inherit; padding: .6rem .7rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); }
 .ask button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 4px; padding: .6rem 1.1rem; font-weight: 600; }
 .ask input:disabled, .ask button:disabled { background: var(--rule); color: #5a4d3f; }

@@ -206,10 +206,23 @@ export async function fetchPublicArtifact(
  * The publisher's symbolic-name bindings for this network, from links.json.
  * Best effort: a site with no peers need not publish the file, and a missing one
  * is not a startup failure. Same no-credentials rule as every public artifact.
+ *
+ * `landedOn` is the §5 landing check, and it is passed in rather than built here
+ * so that this function keeps knowing nothing about the allow-list. A refusal
+ * from it lands in the same `catch` as a missing file — so a redirect off this
+ * site's origin leaves the bindings EMPTY, which refuses the published network a
+ * step later because its one symbolic reference no longer resolves. Fail-closed
+ * by a different route than the other two artifacts, and the trace entry
+ * `landedOn` wrote is what says which route it was.
  */
-export async function loadPublishedLinks(base: string, networkName: string, fetchImpl: typeof fetch): Promise<Record<string, string>> {
+export async function loadPublishedLinks(
+  base: string,
+  networkName: string,
+  fetchImpl: typeof fetch,
+  landedOn?: (finalUrl: string) => void,
+): Promise<Record<string, string>> {
   try {
-    const doc = (await fetchPublicArtifact(`${base}/links.json`, fetchImpl)) as {
+    const doc = (await fetchPublicArtifact(`${base}/links.json`, fetchImpl, landedOn)) as {
       networks?: Record<string, Record<string, string>>;
     };
     return doc?.networks?.[networkName] ?? {};
@@ -671,8 +684,24 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
   });
 
   try {
+    /*
+     * THE SITE'S OWN THREE ARTIFACTS GO THROUGH THE LANDING CHECK TOO.
+     *
+     * "There is one route to a third-party origin in this runtime" has to be true
+     * of these as well, and until fix round 3 it was not: these three were
+     * fetched with no `landedOn`, so a redirect from this site's own origin to a
+     * third one was parsed and run AS THIS SITE'S OWN NETWORK — no allow-list
+     * check, no consent, not even a trace entry. It needs this site's own server
+     * or its DNS, which is narrow; narrow is not closed, and the claim in
+     * LIMITS.md was the thing that was false.
+     *
+     * Same-origin passes on `landingCheck`'s `landed === asked` fast path, so the
+     * ordinary startup is untouched. The manifest's own fetch is checked against
+     * a `manifest` that is still null, which is correct rather than awkward: a
+     * redirect cannot be approved by an allow-list we have not read yet.
+     */
     const manifestUrl = `${base}/agent-manifest.json`;
-    manifest = (await fetchPublicArtifact(manifestUrl, fetchImpl)) as Manifest;
+    manifest = (await fetchPublicArtifact(manifestUrl, fetchImpl, landingCheck(manifestUrl, compositionDeps()))) as Manifest;
     addTrace({ at: now(), event: "manifest_loaded", detail: { url: manifestUrl, networks: (manifest.networks ?? []).map((n) => n.name) } });
 
     const entry = opts.network
@@ -689,7 +718,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
 
     const hoconUrl = new URL(entry.hocon, `${base}/`).toString();
     startupStage = "network";
-    network = (await fetchPublicArtifact(hoconUrl, fetchImpl)) as NetworkConfig;
+    network = (await fetchPublicArtifact(hoconUrl, fetchImpl, landingCheck(hoconUrl, compositionDeps()))) as NetworkConfig;
 
     /*
      * LINKS BEFORE VALIDATION, and the order matters.
@@ -706,7 +735,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
      * `resolved` exists only to be validated. See `peers.ts`.
      */
     startupStage = "links";
-    links = await loadPublishedLinks(base, entry.name, fetchImpl);
+    const linksUrl = `${base}/links.json`;
+    links = await loadPublishedLinks(base, entry.name, fetchImpl, landingCheck(linksUrl, compositionDeps()));
     bindings = peerBindings(links, opts.peerBindings ?? {});
     addTrace({
       at: now(),

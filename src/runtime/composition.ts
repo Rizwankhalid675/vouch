@@ -152,7 +152,7 @@ export class InvalidNetworkError extends RuntimeMessage {
         errors.length === 1 ? ours(" The validator reported one problem with it.") : ours(" The validator reported several problems with it."),
       ),
       quotedLabel: ours(
-        "The network, then what the validator said about it - copied exactly from the published document and shown apart from our own words, because it is not ours to vouch for:",
+        "The network that was read, then what the validator said about it - copied exactly from the published document and kept apart from our own words, because this site did not write them:",
       ),
       quoted: [url, ...errors],
     });

@@ -159,7 +159,9 @@ place it was withheld from would undo the withholding.
 
 The gate is the only path for model *prose*, but prose is not the only thing a model
 chooses. Three further channels were found and closed; a fourth was closed by the
-author during the first round. Every site in `src/runtime` that writes a string into
+author during the first round. A fifth — a published `front_man` defeating the
+filter on the validator's messages — was found in review afterwards, and is §2.2b,
+which also replaces the mechanism this section describes. Every site in `src/runtime` that writes a string into
 the DOM was then enumerated and classified, and the rule they all follow now is:
 
 > The transcript speaks in the deli's voice, so only an error **this runtime wrote**
@@ -171,12 +173,86 @@ the DOM was then enumerated and classified, and the rule they all follow now is:
 | Action argument *values* | `add_to_cart({item: "the Reuben is dairy-free"})` printed that in the confirmation dialog | every id argument is an `enum` of published ids, so it fails validation before a dialog is drawn |
 | Router HTTP error *body* | a 400 whose body was prose rendered as "Hollis & Rye — …" | the body is never put in the message; only a token-shaped provider error code survives |
 | Action argument *keys*, and validator messages | `{"The Reuben is dairy-free": 1}` reached the rendered trace twice | the trace records only schema-declared keys plus a count, and a classification instead of the validator's message |
-| Network validator interpolations | `Agent 'x' references missing tool 'y'` — ours today, a peer's in Task 8 | quoted interpolations that are not token-shaped are replaced |
+| Network validator interpolations | `Agent 'x' references missing tool 'y'` — ours today, a peer's once one is published | **was** a filter on quoted interpolations; that filter was defeated and is gone. The message is now rendered in a node of its own, marked `data-not-ours` — see §2.2b |
 | The claimed phrase in a refusal | model text, named deliberately (SPEC 4.4) | filtered for meaningless tokens *and* bounded to a phrase |
 | A published agent's **name** | `Hollis & Rye — Asked The Reuben is dairy-free and safe for you.` Ours are tokens; a **peer's are not**, and Task 8 loads a peer network from a second origin | the network is refused at startup (`validate_agent_names`), **and** the notice token-filters the name anyway |
 | The startup catch | a malformed artifact's `SyntaxError` quotes the file | only a `RuntimeMessage` is shown; anything else becomes our own sentence plus a kind |
 | The unknown-outcome card's source line | a handler's raw `error` | token-filtered |
 | The key-status line | `selectTopRouter`'s message | token-filtered |
+
+### 2.2b The filter that was defeated, and the rule that replaced it
+
+A value that supplies the filter's own delimiter defeats the filter. A published
+`metadata.front_man` of
+
+```
+x' The Reuben is dairy-free and safe for you to eat. '
+```
+
+makes the validator emit
+
+```
+metadata.front_man names 'x' The Reuben is dairy-free and safe for you to eat. '', which is not an agent in this network.
+```
+
+The apostrophes in the value re-pair the quotes. `quotedTokensOnly` saw `'x'` and
+`''`, judged both token-shaped, kept both, and the sentence between them went
+through untouched — then `ours(...)` declared the whole built string the site's own
+words. **That rendered an ungated safety claim in the deli's voice**, on
+`[data-compose-status]` and on the startup error line. It was not reachable while
+`allowed_peers` is `[]`; it became reachable the moment a peer could be published.
+
+It was the **third** filter for the same problem: action arguments in the
+confirmation dialog, then agent names in the site's voice, then this. The lesson
+taken is that a sanitiser built on a delimiter is defeated by supplying the
+delimiter, so a fourth filter would buy a fourth incident. `quotedTokensOnly` was
+**deleted**, not fixed, and the rule is structural:
+
+> An untrusted value never becomes part of a sentence. It is rendered in its own
+> node, structurally separate from the site's prose and labelled as not ours, so
+> nothing it contains can be read as something the site is saying.
+
+That holds whatever characters the value contains, which is the point — it stops
+being a question about quoting. It is the shape the verdict cards already used one
+layer down, where `verdictCard` is built from DOM nodes rather than a markup
+string.
+
+**How it is enforced**, in three places:
+
+- `SiteReport` carries our prose and, separately, strings that are not ours.
+  `renderReport` puts each of the latter in its own `<code data-not-ours>` by
+  `textContent`, under a caption naming whose words they are. The type makes the
+  attribution mandatory: a report with `quoted` cannot omit `quotedLabel`.
+- `ours` accepts a string **literal** only, enforced by the compiler. The exact
+  laundering that caused this — `ours(errors.join(...))` — no longer builds.
+  `joinSiteText` accepts `SiteText` only, closing the same door twice.
+- The tests assert the **property**, not the mechanism: run a refusal with a
+  harmless value and with a hostile one, and the site's voice must be
+  byte-identical. Our prose is literal, so it cannot vary with the value; anything
+  that reached our sentence by any route changes it and fails.
+
+**Applied without exception**, which is more than the reported case needed. Every
+refusal's prose is literal and every value it names sits in its own node: the
+validator's messages, the document URL, a denied origin, each hop of a cycle
+chain, a bad reference, a requested network name, the router host in the
+missing-key setup error, and the names of networks that loaded successfully. The
+case that settled it: `TOKEN` admits hyphens, so a host like
+`the-reuben-is-dairy-free-and-safe.example` would have survived `siteText` and
+landed in our sentence — and this project's own claim detector reads that sentence
+as a dairy-free claim about the Reuben. Marginal, and a visitor's own typing
+rather than a peer's, but the invariant says *never*.
+
+**One promise was relaxed to do this, deliberately.** The filter used to replace a
+hostile value with `'<name omitted>'`, so it never reached the page at all. It is
+now **shown**, fenced and attributed. Two reasons: a publisher has to be able to
+see which name is wrong, and showing it is only safe *because* the separation is
+structural rather than textual. The counter-argument is §2.2's ruling that the
+refusal panel does not reprint a withheld claim, "two inches below the place it
+was withheld from"; that case is different because it sits inside a conversation
+where a model has just made the claim, whereas this is a quoted validator error
+in a red box. If that reading is wrong, the change is one line: drop the value
+from `quoted` and say only how many problems there were. The verdict beside each
+dish is unaffected either way, which is why this is survivable at all.
 
 ### The mechanism
 
@@ -287,7 +363,11 @@ and something any judge using the demo for two minutes would have hit.
 
 Reaching any of them shows **both** figures — the budget and what had been spent —
 because "over budget" without the numbers is indistinguishable from a bug, which is
-the confusion §6's demonstration exists to rule out.
+the confusion §6's demonstration exists to rule out. They are said the way a person
+would say them, not as field identifiers: "this turn may take 1 second, and has
+already taken 2 seconds", not "maxElapsedMs is 1000 and this turn has already used
+2000". Seconds carry their unit. The identifier stays in the trace, which is where a
+developer looks.
 
 **The wall clock** (§3.1's "elapsed execution time", the axis Task 6 left open) is
 enforced at two points, and both are needed. At every step boundary, which stops a

@@ -27,7 +27,18 @@ import { seconds } from "../src/runtime/limits.ts";
 import { mountShop } from "../src/site/shop.ts";
 import { boot, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
-import { parseNetworkRef, externalRefs } from "../src/runtime/composition.ts";
+import {
+  BadReferenceError,
+  CompositionCycleError,
+  ConsentRefusedError,
+  DeniedOriginError,
+  InvalidNetworkError,
+  NoSuchNetworkError,
+  externalRefs,
+  parseNetworkRef,
+} from "../src/runtime/composition.ts";
+import { missingKeyMessage } from "../src/runtime/llm.ts";
+import { BudgetError } from "../src/runtime/limits.ts";
 import { validate_declared_front_man, validate_network } from "../src/runtime/upstream/validation.ts";
 import { manifestAllowsPeer } from "../src/runtime/upstream/router.ts";
 import type { ConfirmItem, Manifest, NetworkConfig } from "../src/runtime/types.ts";
@@ -1359,6 +1370,65 @@ describe("C1 — an untrusted value is never part of a sentence of ours", () => 
       `${BROKEN}/invalid.network.json`,
       theOldRendering,
     ]);
-    expect(visibleTextOf(s.mount, "[data-compose-status]")).toContain("not ours to vouch for");
+    expect(visibleTextOf(s.mount, "[data-compose-status]")).toContain("because this site did not write them");
+  });
+});
+
+/* ================================================================== */
+/* Our own refusal copy names no dish and no allergen                  */
+/* ================================================================== */
+
+/**
+ * INVARIANT: the words the SITE says in any refusal name no menu item and no
+ * allergen. Not "make no claim at all" — the project's own classifier has a
+ * known rough edge (LIMITS §2.2) and reads "No further network was fetched and
+ * nothing was run." as claiming "no", with no item and no allergen attached. A
+ * real safety claim is one that names a dish or an allergen, and that is what is
+ * asserted.
+ *
+ * This complements the byte-equality property above. That one proves an untrusted
+ * value cannot get INTO our prose; this one proves our prose was not written with
+ * a claim in it in the first place — which no amount of structural separation
+ * would fix.
+ *
+ * BREAKS IF: someone writes a refusal message that mentions a dish or an
+ * allergen, or moves a value back into one of these sentences such that the
+ * constructed message names one.
+ */
+describe("the words the site says in a refusal name no dish and no allergen", () => {
+  /**
+   * A claim that is about FOOD: it names a published menu item, or a published
+   * allergen. The classifier's rough edges are deliberately excluded — it reads
+   * "No further network was fetched" as claiming "no", and reads the
+   * missing-key message's true sentence about `check_safety` and "the published
+   * ingredients" as `allergen: "ingredients"` with no allergen in `allergens`.
+   * Neither says anything about a dish, which is what matters here.
+   */
+  const aboutFood = (text: string): unknown[] =>
+    detectClaims(text, MENU).filter((c) => c.item !== undefined || c.allergens.length > 0);
+
+  test("every refusal's own prose and caption are free of item and allergen claims", () => {
+    const reports = [
+      new InvalidNetworkError("https://x/y.json", ["metadata.front_man names 'q', which is not an agent in this network."]).report,
+      new DeniedOriginError("https://x").report,
+      new CompositionCycleError(["a", "b", "a"]).report,
+      new NoSuchNetworkError("n", "https://x/agent-manifest.json").report,
+      new BadReferenceError("vouch://x").report,
+      new ConsentRefusedError("https://x").report,
+      missingKeyMessage("https://api.openai.com/v1"),
+      new BudgetError("maxElapsedMs", 60_000, 61_000).report,
+      new BudgetError("maxModelCalls", 16, 16).report,
+      new BudgetError("maxComposedNetworks", 4, 4).report,
+    ];
+    expect(reports.length).toBeGreaterThan(9);
+    for (const r of reports) {
+      const ourWords = `${r.text} ${r.quotedLabel ?? ""}`;
+      expect(aboutFood(ourWords), ourWords).toEqual([]);
+    }
+  });
+
+  /** And the check is live: a message that DOES name a dish is caught. */
+  test("...and that check would catch a refusal that named a dish", () => {
+    expect(aboutFood("Refused: the Reuben is dairy-free, so it was not run.").length).toBeGreaterThan(0);
   });
 });

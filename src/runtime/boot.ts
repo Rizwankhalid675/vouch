@@ -772,6 +772,18 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
       );
       return;
     }
+    /**
+     * §3.4's MUST is enforced in `Router.chat`, which throws the same setup
+     * error before it builds a request. THIS check is the early, friendlier
+     * path: it keeps the turn out of the loop, so no budget is spent and no
+     * trace entry is written for a call that was never going to happen.
+     *
+     * So removing this branch alone changes nothing a guest can see, and a
+     * mutation run confirms that: it survives, because the guard below catches
+     * it. Removing BOTH fails three tests. That is defence in depth working
+     * rather than a gap, and it is written down here because an untested branch
+     * with no note on it looks like an oversight.
+     */
     if (router.needsKey) {
       transcript.showUser(text);
       transcript.showRuntime(missingKeyMessage(router.baseUrl), "error");

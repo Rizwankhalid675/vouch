@@ -6,17 +6,17 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { Finding, Restriction } from "../contracts.ts";
+import type { Finding, Menu, Restriction } from "../contracts.ts";
 import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
 import { verdictFor } from "../src/safety/verdict.ts";
 import { gate, REFUSAL_MARKER, WHY } from "../src/gate/gate.ts";
 import { mountShop } from "../src/site/shop.ts";
 import { boot, loadPublishedLinks, reconcileActions, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
-import { actionDefinitions, checkSafety, registerSiteActions, type SiteContext } from "../src/runtime/actions.ts";
+import { actionDefinitions, addToCart, checkSafety, registerSiteActions, type SiteContext } from "../src/runtime/actions.ts";
 import { KeyStore, KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
 import { Router, SCRIPTED_ROUTER, SCRIPTS, scriptById } from "../src/runtime/llm.ts";
 import { Conversation, describeReceipts } from "../src/runtime/loop.ts";
-import { cardKind, cardLines, cardReason, renderVerdicts } from "../src/runtime/verdict-cards.ts";
+import { cardKind, cardReason, guestVerdictCard, renderVerdicts } from "../src/runtime/verdict-cards.ts";
 import { Transcript, claimedLabel, refusalPhrase } from "../src/runtime/transcript.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, TraceEntry } from "../src/runtime/types.ts";
 import { ActionRegistry } from "../src/runtime/upstream/action-registry.ts";
@@ -482,18 +482,34 @@ describe("the verdict is displayed beside the dish, not through the chat", () =>
    * A `safe` Finding with `covered: []` asserts nothing. Breaks the moment that
    * case is rendered with the reassuring wording: `cardKind` would return "safe"
    * and the headline would read "No conflict found".
+   *
+   * `unchecked` is the one card kind no renderer in this project can produce, and
+   * the review asked whether its copy, its CSS and its `–` mark are therefore
+   * dead. They are not: `verdictFor(item, [], menu)` returns exactly this value
+   * for a fully-known item, and it is exported and one careless call away. The
+   * branch is a fail-safe, so both halves are pinned here — the guard is live,
+   * AND neither renderer can reach it.
    */
   test("a safe finding that checked nothing is rendered as not checked, never as reassurance", () => {
-    const nothing: Finding = { item: "reuben", verdict: "safe", covered: [] };
+    // The guard, on the value the safety layer really does produce.
+    const nothing = verdictFor(MENU.items.find((i) => i.id === "reuben")!, [], MENU);
+    expect(nothing).toEqual({ item: "reuben", verdict: "safe", covered: [] });
     expect(cardKind(nothing)).toBe("unchecked");
     const text = cardReason(nothing, MENU);
     expect(text).toContain("Nothing was checked");
     expect(text).toContain("not an all-clear");
-    expect(cardLines(nothing, MENU, RESTRICTIONS).join(" ")).not.toContain("No conflict found");
-    // And the renderer never produces that Finding in the first place: an empty
-    // selection clears every slot rather than painting 34 "not checked" cards.
+    expect(text).not.toContain("No conflict found");
+
+    // And NEITHER renderer can produce it: an empty selection clears every slot
+    // rather than painting 34 "not checked" cards, and the panel's own card
+    // builder returns nothing rather than inventing a verdict.
     expect(renderVerdicts(document, [], MENU)).toEqual([]);
     expect(document.querySelectorAll("[data-verdict-slot] [data-verdict]")).toHaveLength(0);
+    expect(guestVerdictCard(document, "reuben", [], MENU)).toBeNull();
+    // With a selection, every card produced is one of the three reachable kinds.
+    renderVerdicts(document, [DAIRY], MENU);
+    const kinds = new Set([...document.querySelectorAll("[data-verdict]")].map((n) => n.getAttribute("data-verdict")));
+    expect([...kinds].sort()).toEqual(["safe", "unknown", "unsafe"]);
   });
 
   test("with nothing selected, no card is shown at all and the page says why", async () => {
@@ -813,6 +829,41 @@ describe("nothing reachable from the model can change what a card shows", () => 
     const refused = s.runtime.trace().find((e) => e.event === "action_refused")!;
     expect(refused.detail["kind"]).toBe("invalid_arguments");
     expect(refused.detail["reason"]).toBeUndefined();
+  });
+
+  /**
+   * A DECLINED WRITE IS AN OUTCOME, AND THE EVIDENCE CHANNEL HAS TO HAVE IT.
+   *
+   * Every other outcome of a proposed action writes a trace entry — `action_receipt`
+   * when it ran, `action_refused` when the runtime stopped it — and the peer path
+   * writes `peer_consent` with `approved: false` when a visitor says no. The one
+   * path that wrote nothing was the visitor DECLINING a write: the transcript said
+   * "You declined …", and "What this ran" showed an `action_proposed` with no
+   * outcome after it, which is indistinguishable from a receipt that went missing.
+   *
+   * On a project whose argument is that evidence survives, a gap in the record of
+   * what a guest refused is the wrong gap to have.
+   *
+   * BREAKS IF: the declined branch stops tracing, or starts tracing the model's
+   * own strings — the action name is model-CHOSEN (it picked which registered
+   * action to propose), so this entry is held to the same rule as the others.
+   */
+  test("declining a write is recorded in the trace, not only in the transcript", async () => {
+    const h = harness({ replies: [callTool("add_to_cart", { item: "reuben" }), say("Nothing added, then.")] });
+    const s = await session({ key: SENTINEL, h, confirm: () => false });
+    await s.runtime.ask("add a reuben");
+
+    const trace = s.runtime.trace();
+    expect(trace.some((e) => e.event === "action_proposed" && e.detail["action"] === "add_to_cart")).toBe(true);
+    // Nothing ran, so there is no receipt, and the runtime did not refuse it either.
+    expect(trace.some((e) => e.event === "action_receipt")).toBe(false);
+    expect(trace.some((e) => e.event === "action_refused")).toBe(false);
+    // The outcome is on the record, and says whose decision it was.
+    const declined = trace.filter((e) => e.event === "action_declined");
+    expect(declined).toHaveLength(1);
+    expect(declined[0]!.detail).toEqual({ action: "add_to_cart", approved: false, decidedBy: "guest" });
+    // The transcript still says it too; this adds a channel rather than moving one.
+    expect(s.transcriptText()).toContain("You declined");
   });
 
   /**
@@ -2414,5 +2465,95 @@ describe("the adapted upstream plumbing, run against what we actually publish", 
     for (const agent of NETWORK.tools ?? []) {
       for (const ref of agent.tools ?? []) expect(actionNames).not.toContain(ref);
     }
+  });
+});
+
+
+/* ================================================================== */
+/* One escape, one explanation                                         */
+/* ================================================================== */
+
+/**
+ * A SELECTOR BUILT FROM DATA IS ESCAPED, IN BOTH PLACES THAT BUILD ONE.
+ *
+ * `verdict-cards.ts` escapes its `[data-verdict-slot="…"]` value and explains why:
+ * "Menu ids are `[a-z0-9_]`, but a selector built from data must not depend on
+ * that staying true." `actions.ts` built `[data-item="${item}"]` from the same
+ * kind of id and did not. Unreachable with a hostile value today — `addToCart`
+ * refuses an id that is not in the published menu first, and the menu is ours —
+ * so this is consistency, not a vulnerability. Two code paths with one rule
+ * between them and only one of them following it is how the rule gets lost.
+ *
+ * Driven with a menu whose id carries the two characters that end an attribute
+ * selector, because the assertion has to be about a selector and not about a
+ * comment. Unescaped, `querySelector` throws a `SyntaxError` before any of this
+ * function's own checks can run.
+ *
+ * BREAKS IF: either call site stops escaping, or `cssEscape` stops handling `"`
+ * and `]`.
+ */
+describe("a selector built from a published id is escaped", () => {
+  const HOSTILE = 'brie"] , [data-item';
+
+  const menuWith = (id: string): Menu => ({
+    items: [{ id, name: "Brie toast", price: 7, ingredients: [] }],
+    ingredients: {},
+  });
+
+  test("a menu id carrying selector syntax does not break the Add path", () => {
+    const doc = document;
+    doc.body.innerHTML = `<div data-item="${HOSTILE.replace(/"/g, "&quot;")}"><button data-add>Add</button></div>`;
+    // Sanity: the element really does carry the hostile id, so the selector has
+    // something to find and the test is not passing on an empty document.
+    expect([...doc.querySelectorAll("[data-item]")].map((e) => e.getAttribute("data-item"))).toEqual([HOSTILE]);
+
+    // It gets PAST the selector and past the button lookup, and fails on the thing
+    // it is supposed to fail on: the hand-built page has no cart to add to. The
+    // unescaped version threw a SyntaxError from `querySelector` instead.
+    let thrown: unknown;
+    try {
+      addToCart(doc, menuWith(HOSTILE), HOSTILE, 1);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).name).not.toBe("SyntaxError");
+    expect(String((thrown as Error).message)).toContain("The cart shows");
+  });
+});
+
+/**
+ * THE DEMO SCRIPT'S QUOTED STRINGS, HELD TO THE PAGE THEY CLAIM TO QUOTE.
+ *
+ * `docs/DEMO-SCRIPT.md`'s "Verified on-screen strings" section opens with "Every
+ * string below was read out of the live DOM on the built site, not drafted". One
+ * of sixteen was drafted: it quoted "publishes three deliberately broken **ones**"
+ * where the page says "**networks**". Nothing ran over that section, so a drafted
+ * line and a read one were indistinguishable — and the owner reads these aloud
+ * on camera against a recording of the real page.
+ *
+ * Pinned by reading the quote OUT OF the document rather than restating it here,
+ * so correcting the page without correcting the script fails, and so does the
+ * reverse. The compose panel's note is the one that drifted and the one this
+ * round rewrote; the rest of the section quotes strings that other tests already
+ * assert character by character (the unsafe card, the status lines, the standing
+ * note, the two refusals).
+ *
+ * BREAKS IF: either sentence is edited without the other, or the script's heading
+ * for that section is renamed so this stops finding the quote — which fails on
+ * the match, not quietly.
+ */
+describe("docs/DEMO-SCRIPT.md quotes the page, not a draft", () => {
+  const script = readFileSync(resolve(root, "docs/DEMO-SCRIPT.md"), "utf8");
+
+  test("the fixtures sentence it quotes is on the built page, verbatim", async () => {
+    const quoted = script.match(/\*\*The panel's own explanation of the fixtures:\*\*\s*"([^"]+)"/);
+    expect(quoted, "the script's fixtures quote was not found").not.toBeNull();
+    const sentence = quoted![1]!.replace(/\s+/g, " ").trim();
+    expect(sentence).toContain("deliberately broken");
+
+    const s = await session();
+    const note = readableText(s.$("[data-compose] .panel-note")!).replace(/\s+/g, " ");
+    expect(note, `the script quotes a sentence the page does not say: "${sentence}"`).toContain(sentence);
   });
 });

@@ -331,3 +331,21 @@ export class RuntimeMessage extends Error {
     this.report = report;
   }
 }
+
+/**
+ * A value interpolated into an attribute SELECTOR, escaped.
+ *
+ * Menu and restriction ids are `[a-z0-9_]` today, but a selector built from data
+ * must not depend on that staying true: one `"` or `]` in an id turns
+ * `[data-item="${id}"]` into a different selector, or into a `SyntaxError` thrown
+ * out of `querySelector` before the caller's own checks can run.
+ *
+ * It lives here, with one explanation, because it was in `verdict-cards.ts` with
+ * the explanation and `actions.ts` built the same shape of selector without it.
+ * `CSS.escape` where the environment has it, a conservative fallback where it does
+ * not — this file has no module-scope DOM dependency and keeps none.
+ */
+export function cssEscape(value: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
+  return value.replace(/["'\\\]\[]/g, "\\$&");
+}

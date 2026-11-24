@@ -44,7 +44,7 @@ In short:
 | `sly_data` filtering (`sly-data.ts`) | the private-context boundary rule |
 | router selection, peer policy (`router.ts`) | `selectTopRouter` is the function that decides where a visitor's key goes; our own paraphrase of it already cost us one defect |
 | action schema validation and dispatch (`action-registry.ts`) | argument validation, confirmation and receipt semantics, including the never-retry rule |
-| agent → function schema (`tool-schema.ts`) | one 12-line function |
+| agent → function schema (`tool-schema.ts`) | one function, `schemaFor`, and nothing else from `runner.js` |
 
 Written by us, not adapted: the four site actions, `check_safety`, the verdict
 cards, the gate integration, the agent loop, the model client, the key store, the
@@ -133,6 +133,19 @@ survivable, so that was the product's central claim being false.
 
 A model may still ASK for a verdict. It gets a `Finding` back in the conversation,
 and the conversation is gated. It does not get the display.
+
+**One of the four card kinds cannot appear on screen, and it is a fail-safe rather
+than dead copy.** `cardKind` returns `unchecked` for a `safe` Finding that covered
+nothing, with the headline "Not checked" and the line "Nothing was checked, because
+you have not told us what to avoid. This is not an all-clear." No renderer here can
+produce it: `renderVerdicts` clears every slot and returns on an empty selection,
+`guestVerdictCard` returns `null`, and `loadRestrictions` refuses a restriction with
+an empty `avoid`. An auditor reading the vocabulary will assume otherwise, so it is
+said here. It is kept because `verdictFor(item, [], menu)` **does** return
+`{ verdict: "safe", covered: [] }` for a fully-known item, and that value is
+exported and one careless call away; without the branch it would render "✓ No
+conflict found" — reassurance computed from nothing checked. Both halves are
+asserted: the guard is live, and neither renderer reaches it.
 
 ### 2.0a What the key-isolation test can and cannot see
 
@@ -707,6 +720,16 @@ worth anything.
 What this does *not* give you: there is no idempotency key and no way to ask the
 site afterwards what happened. The guest is told to check their order themselves.
 A real deployment would need both.
+
+**A declined write is now on the record too.** Every other end of a proposed action
+wrote a trace entry — `action_receipt` when it ran, `action_refused` when the runtime
+stopped it, and `peer_consent { approved: false }` on the peer path when a visitor
+says no — and the one path that wrote nothing was the visitor declining. The
+transcript said "You declined …", so the guest saw it; "What this ran" showed an
+`action_proposed` with no outcome after it, which reads exactly like a receipt that
+went missing. It is an `action_declined` entry now, carrying the action's name,
+`approved: false` and `decidedBy: "guest"`, and nothing else — the same rule as every
+other entry, because the model chose which registered action to propose.
 
 ### 2.5 Inference, keys and what browser storage is worth
 

@@ -28,7 +28,7 @@ import type { Finding, Menu, MenuItem, Restriction } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { verdictFor } from "../safety/verdict.ts";
 import { containsLine, ingredientNames } from "../site/shop.ts";
-import { ours } from "./errors.ts";
+import { cssEscape, ours } from "./errors.ts";
 import { NoEffectError, type ActionDefinition, type ActionRegistry, type ActionScope } from "./upstream/action-registry.ts";
 
 /** What the actions need from the page and from the session. */
@@ -165,7 +165,10 @@ export function addToCart(doc: Document, menu: Menu, item: string, quantity: num
   // Everything before the first click is a NoEffectError: the cart provably did not
   // change, so the outcome is a failure, not an unknown.
   if (!itemById(menu, item)) throw new NoEffectError(`'${item}' is not an item on this menu.`);
-  const card = doc.querySelector<HTMLElement>(`[data-item="${item}"]`);
+  // Escaped for the same reason `verdict-cards.ts` escapes its slot selector,
+  // with the same function: a selector built from data must not depend on ids
+  // staying `[a-z0-9_]`.
+  const card = doc.querySelector<HTMLElement>(`[data-item="${cssEscape(item)}"]`);
   const button = card?.querySelector<HTMLElement>("[data-add]");
   if (!button) throw new NoEffectError(`The page has no Add control for '${item}', so nothing was added.`);
   const before = readCart(doc).find((l) => l.item === item)?.quantity ?? 0;

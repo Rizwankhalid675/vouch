@@ -10,10 +10,13 @@ terms. It exists so that no reviewer has to guess which parts are ours.
 `https://raw.githubusercontent.com/cognizant-ai-lab/nsdeploy/main/LICENSE.txt`; the
 `neuro-san` repository carries a byte-identical Apache 2.0 licence).
 
-Our event spec (`docs/mvp-spec-2026-11-23.md`, lines 96-102) names the Neuro SAN Agent
-Network HOCON File Reference as the normative working schema for an agent network, and
-names nsDeploy as the reference runtime. Both are linked rather than included, so the
-schema had to be either inferred or fetched. We fetched it.
+Our event spec names both, in two different sections, and the line numbers are given
+separately because this file cited one range for both: the **Neuro SAN Agent Network
+HOCON File Reference** is the normative working schema for an agent network, at
+`docs/mvp-spec-2026-11-23.md` **lines 96-102** (§2, Tenet One), and **nsDeploy** is named
+as *one* reference browser runtime, first at **line 187** (§3, Tenet Two). Lines 96-102
+name the HOCON reference only. Both are linked rather than included, so the schema had to
+be either inferred or fetched. We fetched it.
 
 ### Reference material vendored here (documentation and schema only, unmodified)
 

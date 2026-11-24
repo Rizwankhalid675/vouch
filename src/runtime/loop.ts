@@ -432,6 +432,20 @@ export class Conversation {
           // one of ours by the time it gets here - but the model chose which, and
           // the rule has no "it is probably fine" branch.
           this.deps.transcript.showPhrase([ours("You declined "), datum(name), ours(". Nothing was done.")], "declined");
+          // A DECLINED WRITE IS AN OUTCOME, AND IT BELONGS IN THE EVIDENCE CHANNEL.
+          // Every other end of this branch writes one - `action_receipt` when it
+          // ran, `action_refused` when the runtime stopped it - and the peer path
+          // writes `peer_consent { approved: false }` when a visitor says no. This
+          // one wrote nothing, so "What this ran" showed an `action_proposed` with
+          // no outcome after it, which reads exactly like a receipt that went
+          // missing. The detail carries no model-chosen string beyond the
+          // registered action's own name, which `action_proposed` above already
+          // records under the same rule.
+          this.deps.trace({
+            at: this.now(),
+            event: "action_declined",
+            detail: { action: name, approved: false, decidedBy: "guest" },
+          });
           this.deps.onReceipts?.(name, null);
           return `DECLINED: the guest did not approve ${name}. It did not run.`;
         }

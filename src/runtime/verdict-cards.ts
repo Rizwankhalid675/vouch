@@ -33,8 +33,32 @@
 
 import type { Finding, Menu, Restriction } from "../../contracts.ts";
 import { verdictFor } from "../safety/verdict.ts";
+// `cssEscape` only; this module takes no text, no gate and no loop from `errors.ts`.
+import { cssEscape } from "./errors.ts";
 
-/** What the card says at a glance. `unchecked` is ours, for a `safe` Finding that covered nothing. */
+/**
+ * What the card says at a glance. `unchecked` is ours, for a `safe` Finding that
+ * covered nothing.
+ *
+ * **`unchecked` is unreachable from both renderers, and that is deliberate rather
+ * than dead.** An auditor reading this vocabulary will reasonably assume all four
+ * members can appear on screen; none of this file's callers can produce the fourth.
+ * `renderVerdicts` clears every slot and returns on an empty selection,
+ * `guestVerdictCard` returns `null`, and `loadRestrictions` refuses a restriction
+ * with an empty `avoid`, so a `Finding` from this module's own path always has a
+ * non-empty `covered`.
+ *
+ * It is kept because `verdictFor(item, [], menu)` **does** return
+ * `{ verdict: "safe", covered: [] }` for a fully-known item, and that value is
+ * representable, exported and one careless call away. Without this branch it would
+ * render "✓ No conflict found" — reassurance computed from nothing checked, which
+ * is the single worst sentence this product could put beside a dish. Deleting the
+ * copy would delete a fail-safe, not a feature: the branch is what makes the
+ * dangerous value render honestly if it ever arrives.
+ *
+ * `tests/runtime.test.ts` pins both halves: the guard is live, and neither renderer
+ * can reach it.
+ */
 export type CardKind = "safe" | "unsafe" | "unknown" | "unchecked";
 
 export function cardKind(f: Finding): CardKind {
@@ -114,26 +138,6 @@ export function cardReason(f: Finding, menu: Menu): string {
  */
 function scopeNames(selected: Restriction[]): string[] {
   return selected.map((r) => r.name);
-}
-
-/**
- * Every line of text a card shows, as data. Pure: a function of the Finding, the
- * menu and **the guest's selected restrictions**, and of nothing else.
- *
- * It exists so that a test can assert a rendered card's `textContent` is EXACTLY
- * these lines and nothing more. That assertion is what catches text arriving in a
- * card from anywhere other than the checker.
- */
-export function cardLines(f: Finding, menu: Menu, selected: Restriction[] = []): string[] {
-  const kind = cardKind(f);
-  const names = scopeNames(selected);
-  return [
-    MARK[kind],
-    HEADLINE[kind],
-    cardReason(f, menu),
-    ...(names.length > 0 ? [`Checked against: ${names.join(", ")}.`] : []),
-    "From the published ingredient list. Not a statement about the kitchen, and not medical advice.",
-  ];
 }
 
 /** A word, not only a colour: the verdict must survive a monochrome screen. */
@@ -245,14 +249,4 @@ export function guestVerdictCard(doc: Document, itemId: string, selected: Restri
 /** Empty every slot. The CSS hides an empty slot, so the card disappears with it. */
 export function clearVerdicts(doc: Document): void {
   for (const slot of doc.querySelectorAll<HTMLElement>("[data-verdict-slot]")) slot.replaceChildren();
-}
-
-/**
- * Menu ids are `[a-z0-9_]`, but a selector built from data must not depend on
- * that staying true. `CSS.escape` where the browser has it, a conservative
- * fallback where it does not.
- */
-function cssEscape(value: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
-  return value.replace(/["'\\\]\[]/g, "\\$&");
 }

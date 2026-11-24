@@ -31,8 +31,24 @@ no-op on the wrong host. Any of the three is fine; free tiers cover this.
 published files is a specification MUST. It is the obvious free choice and it is the one that
 fails.
 
-**What I need from you:** an account, and either the credential in place so a deploy command
-works from here, or you running two deploys yourself. Two projects on one account is enough —
+**Correction, 24 November 2026: you already have a Vercel account, so this item is much smaller
+than it was written.** There is a deliberate `vercel.json` at `~/Desktop/PW` with a schema
+reference and cache headers — that is how webrizz.dev is served — and a `netlify.toml` in a
+previous hackathon folder. So there is no signup, no new account and nothing to pay for. What is
+left is two commands, and `docs/DEPLOY-RUNBOOK.md` has them.
+
+**Why the two commands are yours and not mine.** The deploy needs a credential, and this session's
+sandbox denies me read access to `.env` precisely so that keys never pass through me. That limit is
+working correctly, and I would rather not have it lifted for a token that can create and delete
+deployments on your account. Everything either side of those two commands is mine.
+
+**And I found a defect in our own deploy config while preparing it** — `peer/vercel.json` is
+unreachable as configured, for the same reason this project keeps finding: it looks right and
+cannot be read. The runbook explains it, and the first deploy settles it by measurement rather than
+by my model of how Vercel resolves config.
+
+**What I need from you:** the two commands in `docs/DEPLOY-RUNBOOK.md`, and the two URLs they
+print. Two projects on one account is enough —
 they get different origins. The repo already builds both halves: `npm run build` produces
 `dist/` (the deli) and `peer-dist/` (the second site).
 

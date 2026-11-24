@@ -35,6 +35,22 @@ has no git remote. Nothing below was improvised around that.
 | B5 | The no-JavaScript path on the deployed build | §3.1 | load the deployed page with scripting disabled |
 | B6 | The five CORS tests in our own suite | — | `npm run test:cors` (see §6 below — they are **skipped**, not passed, in this environment) |
 
+**One thing to know before running B2 and B3: the CLI does not bust caches.** It sends
+no `Cache-Control` and appends no cache-buster, so a CDN serving a previous build would
+be measured as the current one — the classic way to "verify" something that is not
+deployed. Until the CLI grows a flag for it, read the three headers by hand as well,
+with a query string the CDN has not seen:
+
+```
+for f in agent-manifest.json vouch.network.json links.json; do
+  curl -sSI -H "Origin: https://agentic-web-conformance.invalid" \
+    "https://<DELI-ORIGIN>/$f?cb=$(date +%s)" | grep -i "^access-control-allow-origin\|^HTTP/"
+done
+```
+
+A header absent there is **B2 failing**, whatever a config file says, and §6 check 4
+then fails in front of a judge.
+
 **Fill these in: the deployed origins.**
 
 | | Origin | Host | Deployed |

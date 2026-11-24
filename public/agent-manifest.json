@@ -26,11 +26,11 @@
     "byok": true
   },
   "peer_policy": {
-    "allowed_peers": [],
     "consent": "required_before_contact",
     "private_context": "deny_by_default",
     "router_inherited_by_peers": true
   },
+  "//allowed_peers": "This is the only place the allow-list lives. §3.3 fixes no location for it, the runtime reads it here, and a nested copy under peer_policy could only ever disagree with it — it was published as an empty array here while this list named the bakery, so the document read as deny-all to anyone who looked in the other place.",
   "allowed_peers": [
     "https://marrow-point-bakery.vercel.app"
   ],

@@ -482,8 +482,11 @@ describe("the peer is a conforming agent site, on an origin of its own", () => {
     // And the allow-list that permits it is the published one, read top level.
     expect(manifestAllowsPeer(PEER_REF, MANIFEST)).toBe(true);
     expect(MANIFEST.allowed_peers).toEqual([PEER_ORIGIN]);
-    // The nested copy stays empty on purpose: the runtime reads the top level.
-    expect(MANIFEST.peer_policy!["allowed_peers"]).toEqual([]);
+    // THERE IS NO NESTED COPY. It used to be published as an empty array beside a
+    // top-level list naming the bakery, so the document read as deny-all to
+    // anyone who consulted the block the runtime does not read. §3.3 fixes no
+    // location for it ("peer policy"), and a second copy can only ever disagree.
+    expect(Object.keys(MANIFEST.peer_policy!)).not.toContain("allowed_peers");
     expect(MANIFEST.peer_policy!.mode).toBeUndefined();
   });
 

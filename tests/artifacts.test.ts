@@ -187,6 +187,31 @@ describe("agent-manifest.json (§3.3)", () => {
     expect(manifest.deployment.mode).toBe("static");
   });
 
+  /**
+   * THE ALLOW-LIST IS PUBLISHED IN EXACTLY ONE PLACE.
+   *
+   * It was in two: a top-level `allowed_peers` naming the bakery, which is what
+   * the runtime reads, and an empty `peer_policy.allowed_peers` beside it. So the
+   * published document read as deny-all to anyone who consulted the nested block,
+   * which is the same "two stories in one file" defect we spent a round removing
+   * from `LIMITS.md`. §3.3 fixes no location — its manifest row says only "peer
+   * policy" — so the tie is broken by which one the runtime reads.
+   *
+   * `peer_policy` itself STAYS: that row lists it as required content, and it
+   * carries the rest of the policy. Only the duplicated key is gone.
+   *
+   * BREAKS IF: a nested copy comes back, or `peer_policy` loses the three fields
+   * that are actually its own.
+   */
+  test("the allow-list is published in one place, and peer_policy keeps the rest of the policy", () => {
+    expect(Object.keys(manifest.peer_policy)).not.toContain("allowed_peers");
+    expect(manifest.peer_policy.consent).toBe("required_before_contact");
+    expect(manifest.peer_policy.private_context).toBe("deny_by_default");
+    expect(manifest.peer_policy.router_inherited_by_peers).toBe(true);
+    // And the one place it does live says so, beside itself.
+    expect(manifest["//allowed_peers"]).toMatch(/only place/i);
+  });
+
   test("declares the site actions, and none of them is an agent", () => {
     const acts = manifest.actions.map((x: any) => x.name);
     expect(acts).toEqual(["get_menu_state", "check_safety", "add_to_cart", "checkout_demo_order"]);

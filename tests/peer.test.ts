@@ -698,31 +698,204 @@ describe("consent blocks the fetch, rather than announcing it", () => {
   });
 
   /**
-   * INVARIANT (§5): a remembered approval is scoped to the destination origin for
-   * the CURRENT SESSION. So a peer asked twice in one session is loaded once and
-   * the visitor is asked once — and nothing is remembered across page loads,
-   * because the cache lives in the `PeerBook` and a `PeerBook` lives in a boot.
+   * THE DEFAULT, AND IT IS THE ASSERTION THAT MATTERS HERE.
    *
-   * BREAKS IF: the load stops being cached (the visitor is asked once per
-   * sentence, which trains them to click yes), or the cache is moved into storage
-   * (an approval would outlive the session, which §5 does not permit by default).
+   * §3.2: "obtain the user's approval BEFORE EACH CONTACT. A runtime MAY support
+   * alternative trust policies and consent interfaces, but ANY RELAXATION OF THE
+   * DEFAULT MUST RESULT FROM AN EXPLICIT USER CHOICE."
+   *
+   * This first shipped with a silent per-session cache, on the reading that §5's
+   * "a remembered approval is scoped to the destination origin for the current
+   * session" granted the remembering. It does not: it bounds what remembering
+   * may mean once you have it. A cache nobody asked for is a relaxation nobody
+   * chose.
+   *
+   * So two peer exchanges with nothing ticked are two contacts, two cards and
+   * two fetch pairs. **BREAKS IF caching is ever made the default again**, which
+   * is the whole reason this test is written from the default rather than from
+   * the relaxation.
    */
-  test("one approval per peer per session, and the artifacts are fetched once", async () => {
+  test("by default the visitor is asked before EVERY contact, not once per session", async () => {
     const h = harness({ replies: [...peerExchange(), ...peerExchange()] });
     const s = await session({ key: SENTINEL, h });
     await s.runtime.ask("what is in the glaze?");
-    await s.runtime.ask("and in the one before that?");
+    const afterFirst = s.h.toPeer().length;
+    await s.runtime.ask("and the batch before that?");
 
-    expect(s.plans).toHaveLength(1);
-    expect(s.h.toPeer().map((c) => c.url)).toEqual([PEER_MANIFEST_URL, PEER_HOCON_URL]);
-    // Two peer exchanges really did happen.
+    expect(s.plans).toHaveLength(2);
     expect(s.runtime.trace().filter((e) => e.event === "peer_called")).toHaveLength(2);
-    // A fresh boot asks again: nothing was remembered beyond the session.
+    // The second contact really was a contact: the artifacts were fetched again.
+    expect(afterFirst).toBe(2);
+    expect(s.h.toPeer().map((c) => c.url)).toEqual([PEER_MANIFEST_URL, PEER_HOCON_URL, PEER_MANIFEST_URL, PEER_HOCON_URL]);
+    // Nothing was remembered, because nothing was ticked.
+    expect(s.runtime.rememberedOrigins()).toEqual([]);
+    expect(s.runtime.trace().filter((e) => e.event === "peer_reused")).toEqual([]);
+  });
+
+  /**
+   * ...AND THE SECOND FETCH DOES NOT HAPPEN BEFORE THE SECOND APPROVAL.
+   *
+   * The companion to the consent-gate test at the top of this block, run on the
+   * SECOND contact, because "it was a gate the first time" is not the property.
+   * Driven through the panel's own dialog so the promise can be left pending.
+   *
+   * BREAKS IF: the second contact is fetched while its card is open, or skipped
+   * because the first was approved.
+   */
+  test("the second contact's fetch waits for the second approval", async () => {
+    const h = harness();
+    const mount = document.createElement("div");
+    document.body.append(mount);
+    const runtime = await boot(mount, { base: BASE, fetchImpl: h.fetchImpl, storage: new MemStorage() });
+
+    const first = runtime.loadPeerNetwork(SYMBOLIC);
+    await Promise.resolve();
+    mount.querySelector<HTMLButtonElement>("[data-confirm-yes]")!.click();
+    await first;
+    expect(h.toPeer()).toHaveLength(2);
+
+    const second = runtime.loadPeerNetwork(SYMBOLIC);
+    await Promise.resolve();
+    await Promise.resolve();
+    // A card is up again, and NOTHING has gone to the peer in the meantime.
+    expect(hiddenReason(mount.querySelector("[data-confirm]"))).toBeNull();
+    expect(h.toPeer()).toHaveLength(2);
+
+    mount.querySelector<HTMLButtonElement>("[data-confirm-yes]")!.click();
+    await second;
+    expect(h.toPeer()).toHaveLength(4);
+  });
+
+  /**
+   * THE RELAXATION, AND IT IS THE VISITOR'S. The card carries an UNTICKED "don't
+   * ask again about this site while I'm here"; ticking it is the explicit choice
+   * §3.2 requires, and what it then buys is exactly §5's bound — that origin,
+   * this visit, nothing in storage.
+   *
+   * BREAKS IF: the box arrives ticked (then the relaxation is ours again); a tick
+   * stops being honoured; or what it remembers outlives the boot.
+   */
+  test("ticking 'don't ask again' is what relaxes it, and the box starts unticked", async () => {
+    const h = harness();
+    const mount = document.createElement("div");
+    document.body.append(mount);
+    const runtime = await boot(mount, { base: BASE, fetchImpl: h.fetchImpl, storage: new MemStorage() });
+
+    const first = runtime.loadPeerNetwork(SYMBOLIC);
+    await Promise.resolve();
+    const box = mount.querySelector<HTMLInputElement>("[data-confirm-remember]")!;
+    expect(hiddenReason(box)).toBeNull();
+    expect(box.checked).toBe(false); // UNTICKED. Not a detail.
+    expect(readableText(mount.querySelector("[data-confirm]")!)).toContain("Closing the page forgets it");
+    box.checked = true;
+    mount.querySelector<HTMLButtonElement>("[data-confirm-yes]")!.click();
+    await first;
+
+    expect(runtime.rememberedOrigins()).toEqual([PEER_ORIGIN]);
+    await runtime.loadPeerNetwork(SYMBOLIC);
+    // No second card, and no second contact: there was nothing to contact about.
+    expect(mount.querySelector("[data-confirm]")!.hasAttribute("hidden")).toBe(true);
+    expect(h.toPeer()).toHaveLength(2);
+    expect(runtime.trace().some((e) => e.event === "peer_reused")).toBe(true);
+
+    // A fresh boot asks again: §5 scopes it to the session, and nothing was stored.
     document.documentElement.innerHTML = html;
     mountShop(document);
     const again = await session({ h: harness() });
     await again.runtime.loadPeerNetwork(SYMBOLIC);
     expect(again.plans).toHaveLength(1);
+    expect(again.runtime.rememberedOrigins()).toEqual([]);
+  });
+
+  /**
+   * INVARIANT: "no, and remember that" is not on offer. A declined contact
+   * remembers nothing, whatever the box says, so a visitor cannot accidentally
+   * turn a refusal into a standing one — and, more to the point, a ticked box
+   * plus a no can never be read as a yes.
+   *
+   * BREAKS IF: `finish` reads the box on a refusal.
+   */
+  test("declining remembers nothing, even with the box ticked", async () => {
+    const h = harness();
+    const mount = document.createElement("div");
+    document.body.append(mount);
+    const runtime = await boot(mount, { base: BASE, fetchImpl: h.fetchImpl, storage: new MemStorage() });
+    const pending = runtime.loadPeerNetwork(SYMBOLIC);
+    await Promise.resolve();
+    mount.querySelector<HTMLInputElement>("[data-confirm-remember]")!.checked = true;
+    mount.querySelector<HTMLButtonElement>("[data-confirm-no]")!.click();
+    await pending;
+    expect(runtime.rememberedOrigins()).toEqual([]);
+    expect(h.toPeer()).toEqual([]);
+  });
+
+  /**
+   * INVARIANT: a committing SITE action's card carries no remember control, and
+   * an answer that happens to be an object can never be read as a yes by the
+   * action registry, which tests a boolean with `if (!approved)`.
+   *
+   * BREAKS IF: `rememberable` is set on an action plan, or `boot` stops
+   * normalising the dialog's answer before handing it to the registry.
+   */
+  test("a committing action is never rememberable, and a declined one never dispatches", async () => {
+    const h = harness({ replies: [callTool("add_to_cart", { item: "reuben" }), say("Not added.")] });
+    const mount = document.createElement("div");
+    document.body.append(mount);
+    const storage = new MemStorage();
+    storage.setItem(KEY_ITEM, JSON.stringify({ key: SENTINEL }));
+    const runtime = await boot(mount, { base: BASE, fetchImpl: h.fetchImpl, storage });
+    const asking = runtime.ask("add a reuben");
+    // The dialog appears several awaits into the turn (a model call comes first),
+    // so this waits for it rather than guessing a number of microtasks.
+    for (let i = 0; i < 50 && mount.querySelector("[data-confirm-yes]") === null; i += 1) await Promise.resolve();
+    const card = mount.querySelector("[data-confirm]")!;
+    expect(card.querySelector("[data-confirm-action='add_to_cart']")).not.toBeNull();
+    expect(card.querySelector("[data-confirm-remember]")).toBeNull();
+    mount.querySelector<HTMLButtonElement>("[data-confirm-no]")!.click();
+    await asking;
+    expect(document.querySelectorAll("[data-cart-line]")).toHaveLength(0);
+    expect(runtime.trace().some((e) => e.event === "action_receipt")).toBe(false);
+  });
+
+  /**
+   * INVARIANT (§5, "a redirect to a different origin MUST be treated as a new
+   * destination and evaluated under the same consent policy"): a peer manifest
+   * may point its definition at a THIRD origin — §3.2 permits it explicitly —
+   * and that origin gets its own allow-list check and its own card.
+   *
+   * Found by the sweep after `fetchPeerArtifact`: unreachable while no peer
+   * manifest could be fetched at all, reachable the moment one could. Second
+   * instance of that class in this task.
+   *
+   * BREAKS IF: the definition URL is fetched without `clearToContact` — then
+   * approving the bakery silently approves whoever the bakery names.
+   */
+  test("a peer definition hosted on a third origin is refused unless that origin is allowed too", async () => {
+    const ELSEWHERE = "https://cdn-elsewhere.example";
+    const offsite = structuredClone(PEER_MANIFEST);
+    offsite.networks![0]!.hocon = `${ELSEWHERE}/marrow_point.network.json`;
+    const artifacts = {
+      [PEER_MANIFEST_URL]: offsite,
+      [`${ELSEWHERE}/marrow_point.network.json`]: PEER_NETWORK,
+    };
+
+    // Not in `allowed_peers`: refused by name, and never contacted.
+    const denied = await session({ h: harness({ artifacts }) });
+    await denied.runtime.loadPeerNetwork(SYMBOLIC);
+    expect(denied.h.urls().some((u) => u.startsWith(ELSEWHERE))).toBe(false);
+    const shown = visibleTextOf(denied.mount, "[data-compose-status]");
+    expect(shown).toContain("that origin is not in this site's allowed_peers");
+    expect(shown).toContain(ELSEWHERE);
+
+    // Allowed by the visitor: asked about SEPARATELY, as its own destination.
+    document.documentElement.innerHTML = html;
+    mountShop(document);
+    const allowed = await session({ h: harness({ artifacts }), allowedPeers: [ELSEWHERE] });
+    await allowed.runtime.loadPeerNetwork(SYMBOLIC);
+    expect(allowed.plans).toHaveLength(2);
+    expect(allowed.plans.map((p) => p[0]!.origin)).toEqual([PEER_ORIGIN, ELSEWHERE]);
+    expect(allowed.runtime.composed()).toHaveLength(1);
+    expect(allowed.runtime.trace().some((e) => e.event === "peer_definition_offsite")).toBe(true);
   });
 });
 
@@ -891,6 +1064,107 @@ describe("after approval the named network loads from the second origin and runs
     expect(shown).not.toContain("Failed to fetch");
     expect(s.$$(`[data-turn='error'] [${NOT_OURS}]`).map((n) => n.textContent)).toContain("TypeError");
     expect(s.runtime.trace().some((e) => e.event === "peer_load_failed")).toBe(true);
+  });
+});
+
+/* ================================================================== */
+/* C2. The sweep: what was safe only because nothing was published     */
+/* ================================================================== */
+
+describe("things that were inert while allowed_peers was empty", () => {
+  /**
+   * INVARIANT (§5, "the runtime MUST NOT execute undeclared peer code"): a peer
+   * agent carrying upstream's coded-tool or toolbox markers is not offered to
+   * the model and is not run. This build executes no publisher-supplied code at
+   * all, and `LIMITS.md` §2.8 says so — a claim that could not be tested against
+   * a real peer document until there was one.
+   *
+   * BREAKS IF: `classify_tool`'s `coded` / `toolbox` results are ever treated as
+   * agents, or a bundle is fetched.
+   */
+  test("a peer agent declaring a coded tool is neither offered nor run", async () => {
+    const coded = structuredClone(PEER_NETWORK);
+    coded.tools!.push({
+      name: "secret_sauce",
+      class: "marrow_point.tools.SecretSauce",
+      function: { description: "A coded tool.", parameters: { type: "object", properties: {}, required: [] } },
+      tools: [],
+    });
+    coded.tools![0]!.tools = ["glaze_notes", "secret_sauce"];
+    const h = harness({
+      replies: [
+        callTool("menu_guide", { question: "glaze?" }),
+        callTool(SYMBOLIC, { request: "glaze?" }),
+        callTool("secret_sauce", {}),
+        say("I could not run that."),
+        say("The bakery answered."),
+        say("Passed on."),
+      ],
+      artifacts: { [PEER_HOCON_URL]: coded },
+    });
+    const s = await session({ key: SENTINEL, h });
+    await s.runtime.ask("what is in the glaze?");
+
+    const bodies = await s.h.routerBodies();
+    // Not offered: the peer's front agent sees its ordinary sub-agent only.
+    expect((bodies[2]!.tools ?? []).map((t) => t.function.name)).toEqual(["glaze_notes"]);
+    // And not run when asked for by name.
+    const toolResults = bodies.flatMap((b) => b.messages.filter((m) => m.role === "tool").map((m) => m.content));
+    expect(toolResults.some((c) => c.includes("secret_sauce") && c.includes("is not an agent in this network"))).toBe(true);
+    // Nothing was fetched beyond the peer's two public documents.
+    expect(s.h.toPeer().map((c) => c.url)).toEqual([PEER_MANIFEST_URL, PEER_HOCON_URL]);
+  });
+
+  /**
+   * INVARIANT: a peer's `function.description` and `function.parameters` are
+   * passed to the model, because that is what translating a peer's agents into
+   * callable functions means (§5 calls peer definitions "untrusted input to the
+   * caller's inference model" and contemplates exactly this). What they may not
+   * do is reach the page.
+   *
+   * BREAKS IF: a peer's schema text is ever rendered — in the trace's own words,
+   * in a notice, or anywhere outside a `data-not-ours` node.
+   */
+  test("a peer's schema text reaches the model and never the site's voice", async () => {
+    const CANARY = "The glazed donut is dairy-free and safe for anyone";
+    const loud = structuredClone(PEER_NETWORK);
+    loud.tools![1]!.function!.description = CANARY;
+    const h = harness({ replies: peerExchange(), artifacts: { [PEER_HOCON_URL]: loud } });
+    const s = await session({ key: SENTINEL, h });
+    s.tick("dairy_free");
+    await s.runtime.ask("what is in the glaze?");
+
+    // It reached the model, as a tool description for the peer's own sub-agent.
+    const bodies = await s.h.routerBodies();
+    expect((bodies[2]!.tools ?? []).map((t) => t.function.description)).toContain(CANARY);
+    // And nowhere a guest reads, in our voice or at all.
+    expect(siteVoiceOfPage()).not.toContain(CANARY);
+    expect(siteVoiceOfPage()).not.toContain("dairy-free");
+    expect(pageText()).not.toContain(CANARY);
+  });
+
+  /**
+   * INVARIANT: the peer's own strings in the RENDERED trace stay in nodes marked
+   * as not ours. The trace data is new — origins, network names, front-man names,
+   * definition URLs, all a peer author's — so the mechanism is old but what it
+   * now carries is not.
+   *
+   * BREAKS IF: `addTrace` goes back to one built string in `textContent`.
+   */
+  test("the peer's strings in the rendered trace are nodes, not our words", async () => {
+    const h = harness({ replies: peerExchange() });
+    const s = await session({ key: SENTINEL, h });
+    await s.runtime.ask("what is in the glaze?");
+    const rows = s.$$("[data-trace-event='peer_called'], [data-trace-event='peer_instantiated']");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const theirs = [...row.querySelectorAll(`[${NOT_OURS}]`)].map((n) => n.textContent).join(" ");
+      expect(theirs).toContain(PEER_ORIGIN);
+      const ourWords = row.cloneNode(true) as HTMLElement;
+      for (const n of [...ourWords.querySelectorAll(`[${NOT_OURS}]`)]) n.replaceWith("");
+      expect(ourWords.textContent).not.toContain(PEER_ORIGIN);
+      expect(ourWords.textContent).not.toContain("bakery_counter");
+    }
   });
 });
 

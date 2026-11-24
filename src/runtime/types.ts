@@ -106,6 +106,16 @@ export interface ConfirmItem {
   description: SiteText;
   origin: string;
   effect: "read" | "write" | "irreversible";
+  /**
+   * The card offers "do not ask again for this site, this visit", UNTICKED.
+   *
+   * Only peer contact sets it. §3.2's default is approval before each contact
+   * and permits relaxing that "only from an explicit user choice", so the
+   * control exists to BE that choice; the flag is what draws it. A committing
+   * site action never carries it — "remember that I approved a write" is not a
+   * thing this runtime offers.
+   */
+  rememberable?: true;
   arguments: Record<string, unknown>;
 }
 

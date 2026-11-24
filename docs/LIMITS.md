@@ -539,6 +539,26 @@ false-positive cases have their own test, and those tests are the reason a later
 `maxComposedNetworks` is not made redundant by the cycle check: A → B → C → D → … of
 distinct networks is not a cycle and would otherwise walk until the host ran out.
 
+**`maxElapsedMs` was 60 seconds, and it was sized for a world where the peer could
+not run.** Count a peer turn: `front_of_house` proposes `menu_guide` (1),
+`menu_guide` proposes the bakery (2), the bakery's front agent proposes its own
+sub-agent (3), that answers (4), the bakery answers (5), `menu_guide` answers (6),
+`front_of_house` proposes `check_safety` (7) and then answers (8). Eight model
+calls where the same question without a peer costs three or four. At eight seconds
+a call — not a slow provider, just a real one on conference wifi — that is 64
+seconds, and an ordinary demo question would have been stopped by a limit whose
+purpose is to stop a turn that will not finish. It is 90 seconds now, which covers
+eight calls at eleven seconds each. The trade is named rather than hidden: it is
+also how long a router that accepts a POST and never answers is waited on before
+the request is aborted.
+
+**The other five were re-counted and left alone**, which is worth more than a round
+of precautionary bumps: model calls 8 of 16, delegations 3 of 12, rounds 2 of 6,
+and a session of ~37 peer questions rather than ~75 plain ones. Depth is the one
+with no headroom left, and that is the point of its value — a fifth level is a
+peer's peer, and this build does not take a second hop. The arithmetic is in
+`limits.ts` beside the numbers, so the next person to change one can check it.
+
 **`maxDepth` was 3 until Task 8, and was raised to 4 for a measured reason rather
 than by taste.** A peer hop is a rung on the same ladder as our own delegations, so
 the shortest honest route to the bakery — `front_of_house` → `menu_guide` → the
@@ -583,6 +603,68 @@ When our `menu_guide` asks for it, the runtime checks the published allow-list,
 validates the definition, and then **runs the peer's agents in this browser** on the
 caller's router, under the caller's budgets. The answer comes back through the
 normal tool-result path and reaches the screen through `gate`.
+
+### 2.8b Consent: the default is before each contact, and the relaxation is the visitor's
+
+This shipped wrong for one review round and the correction is worth recording,
+because the mistake was a reading of the spec rather than a slip in the code.
+
+The first version cached a peer load for the session, so a visitor was asked once
+per peer rather than once per contact. The justification was §5: *"A remembered
+approval is scoped to the destination origin for the current session."* That
+passage does not grant remembering — it **bounds what remembering may mean once
+you have it**. The grant, and the limit on it, are in §3.2:
+
+> "it MUST identify the external origin and purpose of the contact and obtain the
+> user's approval **before each contact**. A runtime MAY support alternative trust
+> policies and consent interfaces, but **any relaxation of the default MUST result
+> from an explicit user choice**."
+
+A silent cache is a relaxation nobody chose. So the card now carries an **unticked**
+"Don't ask again about this site while I'm here", and:
+
+- **Unticked** — every contact is put to the visitor again, and the fetch waits for
+  each approval. Two uses of the bakery in one visit are two cards and two fetches.
+- **Ticked** — the approval is remembered for that origin, for that boot, in memory.
+  Nothing is written to storage, so closing the page forgets it, which is exactly
+  §5's bound. The tick is the explicit choice §3.2 requires.
+
+The test is written from the **default**, not from the relaxation: two contacts
+with nothing ticked must produce two cards, and the second fetch must not happen
+before the second approval. That is the assertion that fails if caching is ever
+made the default again, and a mutation run confirms it does.
+
+Two smaller rules fall out of the same place. A **committing site action is never
+rememberable** — "remember that I approved a write" is not on offer. And
+**declining remembers nothing**, whatever the box says.
+
+### 2.8c Two paths that were safe only because nothing was published
+
+Both were found by looking for one thing: *what was safe because `allowed_peers`
+was `[]`, and stopped being safe the moment it was not?* Neither was a regression;
+both were latent code whose status changed on the day a peer was published.
+
+1. **`Runtime.fetchPeerArtifact` checked the allow-list and then fetched**, with no
+   consent — unconsented contact with a third-party origin, which §3.2 forbids. The
+   allow-list check and the consent gate are now one function, `clearToContact`, and
+   both the composition walk and this method go through it. There is one route to a
+   third-party origin in this runtime.
+2. **A peer manifest may point its network definition at a third origin.** §3.2
+   permits it in as many words — the `hocon` value "MAY be a relative path or an
+   absolute HTTP or HTTPS URL" and "does not require the final network-definition
+   URL to remain on the manifest's origin". So approving the bakery would have
+   silently approved whoever the bakery names. §5 settles it: "A redirect to a
+   different origin MUST be treated as a new destination and evaluated under the
+   same consent policy." That origin now gets its own allow-list check and its own
+   card, named as itself.
+
+The generalisation is recorded because it will apply again: **anything that was
+safe because nothing was published deserves a second look once something is.** The
+same sweep checked, and found nothing wrong with, the peer's schemas and
+instructions reaching the model (§5 contemplates exactly that, and they reach no
+page surface), a peer's coded-tool and MCP declarations (neither is offered to the
+model and neither is executed), and a peer's own `llm_router` and `llm_config`
+(read, ignored, and asserted ignored on the payloads).
 
 ### 2.8a What the peer composition does NOT do
 

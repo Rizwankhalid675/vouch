@@ -40,7 +40,17 @@ import {
   type SiteReport,
 } from "./errors.ts";
 import { DEFAULT_LIMITS } from "./limits.ts";
-import { InvalidNetworkError, clearToContact, loadComposition, type ComposedNetwork, type CompositionDeps } from "./composition.ts";
+import {
+  InvalidNetworkError,
+  SessionConsent,
+  clearToContact,
+  consentAnswer,
+  loadComposition,
+  type ComposedNetwork,
+  type CompositionDeps,
+  type ConsentAnswer,
+  type PeerConfirmFn,
+} from "./composition.ts";
 import {
   PeerBook,
   peerBindings,
@@ -64,8 +74,16 @@ export interface BootOptions {
   fetchImpl?: typeof fetch;
   /** Where the visitor's key lives. `null` means nowhere, and the panel says so. */
   storage?: StorageLike | null;
-  /** How the guest is asked before a committing action. Defaults to the panel's own dialog. */
-  confirm?: ConfirmFn;
+  /**
+   * How the guest is asked, both before a committing action and before contact
+   * with a peer origin. Defaults to the panel's own dialog.
+   *
+   * Typed as `PeerConfirmFn`, a superset of `ConfirmFn`: a caller may answer
+   * with a plain boolean, and a plain `true` means "approved, and do NOT
+   * remember". The safe reading is the one a caller gets without thinking about
+   * it, which is the point of the widening rather than a new option.
+   */
+  confirm?: PeerConfirmFn;
   limits?: Partial<Limits>;
   menu?: Menu;
   restrictions?: Restriction[];
@@ -121,6 +139,12 @@ export interface Runtime {
   links(): Record<string, string>;
   /** Every binding in play, publisher's and caller's, each saying which it is. */
   peerBindings(): readonly PeerBinding[];
+  /**
+   * Origins the visitor ticked "do not ask again" for. Empty unless they did:
+   * §3.2's default is approval before each contact, and nothing here relaxes it
+   * on their behalf.
+   */
+  rememberedOrigins(): string[];
   /** Fetch a public artifact from a peer origin, subject to the published peer policy. */
   fetchPeerArtifact(url: string): Promise<unknown>;
   /**
@@ -433,7 +457,20 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     traceList.append(li);
   };
 
-  const confirm: ConfirmFn = opts.confirm ?? domConfirm(doc, confirmPanel);
+  /**
+   * The visitor's answers, and the two things that read them.
+   *
+   * `askGuest` may answer with a remember flag; the ACTION registry may not see
+   * one. `ConfirmFn` returns a boolean and the registry tests it with `if
+   * (!approved)`, so handing it `{ approved: false }` — an object, therefore
+   * truthy — would dispatch a write the guest declined. That is not a hazard to
+   * remember about: it is removed here, by normalising to a boolean at the one
+   * place the registry is handed a confirm function.
+   */
+  const askGuest: PeerConfirmFn = opts.confirm ?? domConfirm(doc, confirmPanel);
+  const confirm: ConfirmFn = async (plan) => consentAnswer(await askGuest(plan)).approved;
+  /** Origins the visitor has explicitly chosen not to be asked about again this visit. */
+  const sessionConsent = new SessionConsent();
 
   /* ---------------- everything below may fail without breaking the above ---------------- */
 
@@ -515,7 +552,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     manifest,
     runtimeAllowedPeers,
     fetchArtifact: (url) => fetchPublicArtifact(url, fetchImpl),
-    confirm,
+    confirm: askGuest,
+    consent: sessionConsent,
     trace: addTrace,
     now,
     maxComposedNetworks: opts.limits?.maxComposedNetworks ?? DEFAULT_LIMITS.maxComposedNetworks,
@@ -527,7 +565,15 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
    * are the same ones the Load control goes through; there is no second route to
    * a peer origin.
    */
-  const peers: PeerBook = peerBookFor(() => bindings, compositionDeps, { trace: addTrace, now });
+  const peers: PeerBook = peerBookFor(() => bindings, compositionDeps, {
+    trace: addTrace,
+    now,
+    // A loaded peer is REUSED only for an origin the visitor ticked "do not ask
+    // again" for. Without that tick every use is a fresh contact and is asked
+    // about, which is §3.2's default. The cache is not an optimisation with a
+    // consent check bolted on; it is the shape of the visitor's own choice.
+    reusable: (origin) => sessionConsent.has(origin),
+  });
 
   async function loadPeerNetwork(ref: string): Promise<void> {
     const wanted = ref.trim();
@@ -954,6 +1000,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     trace: () => trace,
     links: () => links,
     peerBindings: () => bindings,
+    rememberedOrigins: () => sessionConsent.remembered,
     loadPeerNetwork,
     composed: () => composed,
     /**
@@ -1063,9 +1110,9 @@ export function reconcileActions(
  * shows the action, its origin, its effect and its exact arguments, and nothing
  * is dispatched until the guest presses a button here.
  */
-export function domConfirm(doc: Document, host: HTMLElement): ConfirmFn {
+export function domConfirm(doc: Document, host: HTMLElement): PeerConfirmFn {
   return (plan: ConfirmItem[]) =>
-    new Promise<boolean>((resolve) => {
+    new Promise<ConsentAnswer>((resolve) => {
       host.replaceChildren();
       host.append(el(doc, "p", { class: "confirm-head" }, plan.length === 1 ? "Approve this?" : `Approve these ${plan.length} steps?`));
       const ul = el(doc, "ul");
@@ -1098,12 +1145,43 @@ export function domConfirm(doc: Document, host: HTMLElement): ConfirmFn {
         ul.append(li);
       }
       host.append(ul);
+      /*
+       * THE EXPLICIT CHOICE, AND IT STARTS UNTICKED.
+       *
+       * §3.2 sets the default at approval "before each contact" and permits
+       * relaxing it "only from an explicit user choice". This checkbox is that
+       * choice and the only one there is: leave it alone and every contact with
+       * that site is put to the guest again; tick it and the approval is
+       * remembered for that origin, for this visit, which is §5's bound.
+       *
+       * It is drawn only for an item that declares itself `rememberable`, which
+       * today is peer contact and nothing else. There is no "remember that I
+       * approved a write", and adding one would need a much better argument than
+       * convenience.
+       *
+       * Unticked is not a default to be tidied away later: a box that arrived
+       * ticked would be the same relaxation nobody chose, wearing a control.
+       */
+      const rememberable = plan.some((p) => p.rememberable === true);
+      let remember: HTMLInputElement | null = null;
+      if (rememberable) {
+        const label = el(doc, "label", { class: "confirm-remember field-inline" });
+        remember = el(doc, "input", { type: "checkbox", "data-confirm-remember": "" });
+        label.append(
+          remember,
+          el(doc, "span", {}, "Don't ask again about this site while I'm here. Closing the page forgets it."),
+        );
+        host.append(label);
+      }
       const yes = el(doc, "button", { type: "button", "data-confirm-yes": "" }, "Yes, do it");
       const no = el(doc, "button", { type: "button", "data-confirm-no": "" }, "No");
-      const finish = (answer: boolean): void => {
+      const finish = (approved: boolean): void => {
+        // Read before the dialog is torn down, and only on a yes: "no, and
+        // remember that" is not a thing this card offers.
+        const chosen = approved && remember?.checked === true;
         host.replaceChildren();
         host.setAttribute("hidden", "");
-        resolve(answer);
+        resolve({ approved, remember: chosen });
       };
       yes.addEventListener("click", () => finish(true));
       no.addEventListener("click", () => finish(false));

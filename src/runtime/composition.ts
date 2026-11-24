@@ -67,7 +67,7 @@
 
 import { RuntimeMessage, joinSiteText, ours } from "./errors.ts";
 import { BudgetError } from "./limits.ts";
-import type { Manifest, NetworkConfig, TraceEntry } from "./types.ts";
+import type { ConfirmItem, Manifest, NetworkConfig, TraceEntry } from "./types.ts";
 import { classify_tool } from "./upstream/graph.ts";
 import { manifestAllowsPeer, normOrigin } from "./upstream/router.ts";
 import { validate_network } from "./upstream/validation.ts";
@@ -218,6 +218,57 @@ export class BadReferenceError extends RuntimeMessage {
   }
 }
 
+/**
+ * What a visitor answered on a consent card.
+ *
+ * `remember` is the EXPLICIT CHOICE §3.2 requires before the default may be
+ * relaxed, and it is the whole of the reason this type exists rather than a
+ * bare boolean. Read the note on `clearToContact` for the two passages.
+ */
+export interface ConsentAnswer {
+  approved: boolean;
+  /** The visitor ticked "do not ask again for this site, this visit". */
+  remember?: boolean;
+}
+
+/**
+ * The peer-consent mechanism. A superset of `ConfirmFn`, so a caller that
+ * answers with a plain boolean — every test stub, and any UI that has no
+ * remember control — still fits, and its `true` means "approved, do not
+ * remember". The safe reading is the one you get by default.
+ */
+export type PeerConfirmFn = (plan: ConfirmItem[]) => boolean | ConsentAnswer | Promise<boolean | ConsentAnswer>;
+
+/** A boolean or an answer, read as an answer. A bare `true` never remembers. */
+export function consentAnswer(value: boolean | ConsentAnswer): ConsentAnswer {
+  if (typeof value === "boolean") return { approved: value, remember: false };
+  return { approved: value.approved === true, remember: value.remember === true };
+}
+
+/**
+ * The origins a visitor has chosen to stop being asked about, for this visit.
+ *
+ * In memory, for the life of one `boot`. Deliberately not in storage: §5 scopes
+ * a remembered approval to "the current session", and an approval that outlived
+ * the tab would be a relaxation the visitor made once and could not see again.
+ */
+export class SessionConsent {
+  private readonly origins = new Set<string>();
+
+  has(origin: string): boolean {
+    return this.origins.has(origin);
+  }
+
+  remember(origin: string): void {
+    this.origins.add(origin);
+  }
+
+  /** What has been remembered, for the panel and the trace. */
+  get remembered(): string[] {
+    return [...this.origins];
+  }
+}
+
 export interface CompositionDeps {
   /** The site this runtime serves. Anything on this origin is same-site, not a peer. */
   siteBase: string;
@@ -232,7 +283,12 @@ export interface CompositionDeps {
    */
   fetchArtifact: (url: string) => Promise<unknown>;
   /** How the visitor approves contact with a third-party origin. `null` means they cannot be asked. */
-  confirm: ConfirmFn | null;
+  confirm: PeerConfirmFn | null;
+  /**
+   * Origins the visitor has explicitly chosen to stop being asked about, this
+   * visit. Absent means nothing is remembered, which is the default §3.2 sets.
+   */
+  consent?: SessionConsent;
   trace?: (entry: TraceEntry) => void;
   now?: () => number;
   /** §3.1's composition depth. A cycle check does not bound a chain of distinct networks. */
@@ -258,6 +314,25 @@ export interface CompositionDeps {
  * The allow-list and the consent gate, in that order. THE ONLY WAY TO REACH A
  * THIRD-PARTY ORIGIN IN THIS RUNTIME.
  *
+ * THE DEFAULT IS TO ASK BEFORE EVERY CONTACT, and that was a correction. This
+ * first shipped with a silent per-session cache, which reads §5 as permission
+ * to remember. It is not; §5 BOUNDS what remembering may mean once you have it.
+ * The grant, and the limit on it, are in §3.2:
+ *
+ *   "it MUST identify the external origin and purpose of the contact and obtain
+ *    the user's approval BEFORE EACH CONTACT. A runtime MAY support alternative
+ *    trust policies and consent interfaces, but ANY RELAXATION OF THE DEFAULT
+ *    MUST RESULT FROM AN EXPLICIT USER CHOICE."
+ *
+ *   §5: "A remembered approval is SCOPED TO the destination origin for the
+ *    current session."
+ *
+ * A cache nobody asked for is a relaxation nobody chose. So the card carries an
+ * unticked "do not ask again for this site, this visit": unticked, every contact
+ * is asked about; ticked, the visitor has made the explicit choice §3.2 requires
+ * and the approval is remembered within exactly §5's bound — that origin, this
+ * boot, nothing in storage. Both passages are then true at once.
+ *
  * Extracted so there is one of it. The composition walk goes through here, and so
  * does `Runtime.fetchPeerArtifact`, which used to check the allow-list and then
  * fetch — unconsented contact with a third-party origin, which §3.2 forbids. It
@@ -277,7 +352,7 @@ export interface CompositionDeps {
 export async function clearToContact(
   origin: string,
   about: Record<string, unknown>,
-  deps: Pick<CompositionDeps, "siteBase" | "manifest" | "runtimeAllowedPeers" | "confirm" | "trace" | "now" | "purpose">,
+  deps: Pick<CompositionDeps, "siteBase" | "manifest" | "runtimeAllowedPeers" | "confirm" | "trace" | "now" | "purpose" | "consent">,
 ): Promise<void> {
   const now = deps.now ?? Date.now;
   if (origin === normOrigin(deps.siteBase)) return;
@@ -285,7 +360,15 @@ export async function clearToContact(
     deps.trace?.({ at: now(), event: "peer_refused", detail: { url: origin, origin } });
     throw new DeniedOriginError(origin);
   }
-  const approved = deps.confirm
+  // The ONLY way past the card without seeing it, and it exists only because a
+  // visitor ticked a box to make it exist. Scoped to this origin and to this
+  // boot, which is §5's bound on what a remembered approval may mean.
+  if (deps.consent?.has(origin)) {
+    deps.trace?.({ at: now(), event: "peer_consent", detail: { origin, approved: true, source: "remembered this visit" } });
+    return;
+  }
+  const answer = consentAnswer(
+    await (deps.confirm
     ? await deps.confirm([
         {
           action: "load_peer_network",
@@ -308,12 +391,18 @@ export async function clearToContact(
               : ours("Fetch a published agent network from another site and read it here. It is read, not run."),
           origin,
           effect: "read",
+          // Unticked. The card draws a "do not ask again for this site, this
+          // visit" control because of this flag, and without it there is no
+          // control and no relaxation to make.
+          rememberable: true,
           arguments: about,
         },
       ])
-    : false;
-  deps.trace?.({ at: now(), event: "peer_consent", detail: { origin, approved } });
-  if (!approved) throw new ConsentRefusedError(origin);
+      : false),
+  );
+  deps.trace?.({ at: now(), event: "peer_consent", detail: { origin, approved: answer.approved, remembered: answer.remember === true } });
+  if (!answer.approved) throw new ConsentRefusedError(origin);
+  if (answer.remember) deps.consent?.remember(origin);
 }
 
 /**
@@ -381,7 +470,34 @@ async function walk(ref: string, path: string[], loaded: ComposedNetwork[], deps
   const entry = (peerManifest?.networks ?? []).find((n) => n.name === target.name);
   if (!entry) throw new NoSuchNetworkError(target.name, manifestUrl);
 
+  /*
+   * THE DEFINITION MAY BE ON A THIRD ORIGIN, AND THAT IS A NEW DESTINATION.
+   *
+   * §3.2 permits it explicitly — the `hocon` value "MAY be a relative path or an
+   * absolute HTTP or HTTPS URL", and this version "does not require the final
+   * network-definition URL to remain on the manifest's origin". So a peer we
+   * have been approved to contact can point its definition at anybody.
+   *
+   * §5 is equally explicit about what that is: "A redirect to a different origin
+   * MUST be treated as a new destination and evaluated under the same consent
+   * policy." So it goes through the same allow-list and the same card, named as
+   * the third origin it is.
+   *
+   * Found by the sweep the controller asked for after `fetchPeerArtifact`: this
+   * was unreachable while no peer manifest could be fetched at all, and became
+   * reachable the moment one could. It is the second instance of that class in
+   * this task.
+   */
   const definitionUrl = new URL(entry.hocon, `${target.base}/`).toString();
+  const definitionOrigin = normOrigin(definitionUrl);
+  if (definitionOrigin !== target.origin) {
+    deps.trace?.({
+      at: now(),
+      event: "peer_definition_offsite",
+      detail: { network: target.name, manifestOrigin: target.origin, definitionOrigin, url: definitionUrl },
+    });
+    await clearToContact(definitionOrigin, { network: target.name, definition: definitionUrl }, deps);
+  }
   const config = (await deps.fetchArtifact(definitionUrl)) as NetworkConfig;
   const errors = validate_network(config);
   if (errors.length > 0) {

@@ -183,6 +183,15 @@ code.site-datum { background: #ece7f0; border: 1px solid var(--rule); color: #3d
 .refusal-head { margin: 0; font-weight: 600; font-size: .9rem; color: #6d4700; }
 .refusals ul { margin: .4rem 0 0; padding-left: 1.2rem; font-size: .85rem; }
 .confirm { border: 2px solid var(--accent); border-radius: 4px; padding: .75rem 1rem; }
+/*
+ * "Don't ask again about this site while I'm here." It arrives unticked and
+ * sits ABOVE the buttons rather than beside them, so it is read before the
+ * decision rather than noticed after it. Not styled to attract the eye: it
+ * relaxes a default, and a control that relaxes a default should not be the
+ * most inviting thing on the card.
+ */
+.confirm-remember { display: flex; align-items: flex-start; gap: .5rem; margin: .6rem 0; font-size: .85rem; color: var(--muted); }
+.confirm-remember input { margin-top: .2rem; flex: none; }
 .confirm-head { margin: 0 0 .4rem; font-weight: 700; }
 .confirm ul { margin: 0 0 .6rem; padding-left: 1.2rem; font-size: .9rem; }
 .confirm code { display: block; font-size: .8rem; color: #574a3c; overflow-wrap: anywhere; }

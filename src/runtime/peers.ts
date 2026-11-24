@@ -227,6 +227,14 @@ export interface PeerBookDeps {
    * copy of either, so there is no second way for a peer to be contacted.
    */
   walk: (url: string) => Promise<ComposedNetwork[]>;
+  /**
+   * May an already-loaded peer at this origin be reused without contacting it
+   * again? Answered by the visitor's own "do not ask again this visit" tick.
+   *
+   * Absent means never, which is §3.2's default: approval before each contact,
+   * so a contact we would skip is one the visitor has not been asked about.
+   */
+  reusable?: (origin: string) => boolean;
   trace?: (entry: TraceEntry) => void;
   now?: () => number;
 }
@@ -234,10 +242,18 @@ export interface PeerBookDeps {
 /**
  * The bound peers of a session, and the only place one is loaded.
  *
- * A load is cached per symbolic name for the life of the session, so the
- * visitor is asked once per peer rather than once per sentence. §5 permits
- * exactly that and no more: "A remembered approval is scoped to the destination
- * origin for the current session." Nothing is remembered across page loads.
+ * **A load is reused only for an origin the visitor chose to remember**, and
+ * that was a correction. It first shipped caching every load for the life of
+ * the session, on the reading that §5's "a remembered approval is scoped to the
+ * destination origin for the current session" granted the remembering. It does
+ * not — it bounds what remembering may mean once you have it. §3.2 sets the
+ * default at approval "before each contact" and permits relaxing it "only from
+ * an explicit user choice", so a silent cache is a relaxation nobody chose.
+ *
+ * So: no tick, and every use walks again — allow-list, card, fetch, validate.
+ * Ticked, and the load is reused for that origin, for this boot, which lands
+ * exactly inside §5's bound. Nothing is remembered across page loads, because
+ * nothing is written anywhere.
  */
 export class PeerBook {
   private readonly loaded = new Map<string, LoadedPeer>();
@@ -270,7 +286,17 @@ export class PeerBook {
    */
   async open(symbolic: string): Promise<LoadedPeer> {
     const cached = this.loaded.get(symbolic);
-    if (cached) return cached;
+    // Reused only if the visitor said not to ask again about that origin. The
+    // check is on the BINDING's origin and not on the cached document, so a
+    // binding that moved to another origin is contacted and asked about afresh.
+    if (cached && this.deps.reusable?.(cached.binding.origin) === true) {
+      this.deps.trace?.({
+        at: (this.deps.now ?? Date.now)(),
+        event: "peer_reused",
+        detail: { boundAs: symbolic, origin: cached.binding.origin, why: "remembered this visit" },
+      });
+      return cached;
+    }
     const binding = this.binding(symbolic);
     if (!binding) throw new Error(`No peer network is bound to the name '${symbolic}' by this site.`);
     const composed = await this.deps.walk(binding.url);
@@ -312,11 +338,12 @@ export class PeerBook {
 export function peerBookFor(
   bindings: () => readonly PeerBinding[],
   deps: () => Omit<CompositionDeps, "purpose">,
-  hooks: { trace?: (entry: TraceEntry) => void; now?: () => number } = {},
+  hooks: { trace?: (entry: TraceEntry) => void; now?: () => number; reusable?: (origin: string) => boolean } = {},
 ): PeerBook {
   return new PeerBook({
     bindings,
     walk: (url) => loadComposition(url, { ...deps(), purpose: "run" }),
+    ...(hooks.reusable ? { reusable: hooks.reusable } : {}),
     ...(hooks.trace ? { trace: hooks.trace } : {}),
     ...(hooks.now ? { now: hooks.now } : {}),
   });

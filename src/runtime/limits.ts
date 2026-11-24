@@ -94,9 +94,38 @@ export const DEFAULT_LIMITS: Limits = {
   maxDepth: 4,
   maxRounds: 6,
   maxSessionModelCalls: 300,
-  maxElapsedMs: 60_000,
+  // Raised from 60_000 by Task 8, and this one was genuinely sized for a world
+  // where the peer could not run. Count a peer turn: front_of_house proposes
+  // menu_guide (1), menu_guide proposes the bakery (2), the bakery's front agent
+  // proposes its own sub-agent (3), that answers (4), the bakery answers (5),
+  // menu_guide answers (6), front_of_house proposes check_safety (7) and then
+  // answers (8). EIGHT model calls plus two artifact fetches, where the same
+  // question without a peer costs three or four. At 8 seconds a call — not a
+  // slow provider, just a real one on conference wifi — that is 64 seconds, and
+  // the turn would have been stopped mid-demo by a limit whose whole purpose is
+  // to stop a turn that will not finish. 90 seconds covers eight calls at eleven
+  // seconds each.
+  //
+  // The trade is named rather than hidden: this is also how long a router that
+  // accepts a POST and never answers is waited on before the request is aborted.
+  maxElapsedMs: 90_000,
   maxComposedNetworks: 4,
 };
+
+/*
+ * THE OTHER FIVE WERE RE-COUNTED AND LEFT ALONE, which is worth more here than a
+ * round of precautionary bumps:
+ *
+ *   model calls   8 of 16 for the peer turn above  — 2x headroom
+ *   delegations   3 of 12 (menu_guide, the bakery's two)  — 4x
+ *   depth         4 of 4  — exactly at it, and deliberately: see `maxDepth`
+ *   rounds        2 of 6 for the front agent  — 3x
+ *   session       8 per peer question, so ~37 of them rather than ~75  — still
+ *                 far beyond an honest visit
+ *
+ * Depth is the one with no headroom left. That is the point of its value: a
+ * fifth level is a peer's peer, and this build does not take a second hop.
+ */
 
 /**
  * Milliseconds as a person says them: `1000` → "1 second", `62500` → "62.5

@@ -40,14 +40,39 @@ jobs:
       - run: npm run build:peer
 
       # A smoke test of the shipped CLI, not of this site: it must answer usefully
-      # for a URL that is not a conforming agent site, and must not crash. Exit 1
-      # (checks failed) is the expected answer here; exit 3 would mean the tool
-      # itself broke, and that is what this catches.
-      - name: conformance CLI runs and reports rather than crashing
+      # for a URL that is not a conforming agent site, and must not crash.
+      #
+      # Asserting only on exit 1 was not a smoke test. A 404, an HTML 200 and a
+      # total network failure all produced exit 1, so an offline runner looked
+      # exactly like a working CLI. Two changes fix that:
+      #
+      #  - The target is a loopback server this step starts, so "could the runner
+      #    reach the internet today" is no longer part of the result. That
+      #    dependence is precisely what made the old assertion meaningless.
+      #  - The assertions are on --json. The manifest check must have FAILED, not
+      #    been declined for want of a connection; nothing may be unreachable
+      #    (exit 4's counter must be zero); the six declined checks must still be
+      #    there; and summary.exitCode must agree with the process exit code.
+      - name: conformance CLI reaches a real host and reports rather than crashing
         run: |
+          mkdir -p /tmp/smoke
+          python3 -m http.server 8751 --bind 127.0.0.1 --directory /tmp/smoke &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 30); do curl -sf -o /dev/null "http://127.0.0.1:8751/" && break || sleep 0.2; done
           set +e
-          node tools/conformance/cli.ts https://example.com/agents/not_a_real_network
+          node tools/conformance/cli.ts http://127.0.0.1:8751/agents/not_a_real_network --json > /tmp/conf.json
           code=$?
           set -e
           echo "exit $code"
+          cat /tmp/conf.json
           test "$code" = "1"
+          node -e '
+            const d = JSON.parse(require("fs").readFileSync("/tmp/conf.json", "utf8"));
+            const manifest = d.results.find((x) => x.check === "manifest-reachable");
+            if (manifest.status !== "fail") throw new Error("expected manifest-reachable to FAIL, got " + manifest.status + " -- that is an unreachable server, not a working CLI");
+            if (d.summary.neverReached !== 0) throw new Error("the CLI never reached the loopback server; this proves nothing about it");
+            if (d.summary.notChecked < 6) throw new Error("expected at least the six declined checks, got " + d.summary.notChecked);
+            if (d.summary.exitCode !== 1) throw new Error("summary.exitCode disagrees with the process exit code");
+            console.log("smoke test ok:", JSON.stringify(d.summary));
+          '

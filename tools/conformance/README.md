@@ -234,10 +234,10 @@ instead of CORS.
 
 ## How well tested this is, exactly
 
-61 tests. Each one was watched failing against a named one-line mutation of the implementation
-before it was kept, because a test nobody watched fail is not evidence. They run under the
-repository's root test runner, so `npm test` covers them and a change to this tool cannot be green
-in isolation.
+90 tests — 65 on the checks, 15 on the command line's exit codes, 10 on CORS. Each one was watched
+failing against a named one-line mutation of the implementation before it was kept, because a test
+nobody watched fail is not evidence. They run under the repository's root test runner, so
+`npm test` covers them and a change to this tool cannot be green in isolation.
 
 **One gap, and it is in the five tests that matter most.** The CORS tests bind a loopback port and
 read the header off a real HTTP response — the only place in this tool where a header comes from
@@ -253,6 +253,9 @@ npm run test:cors     # demands a real server; fails rather than skipping
 So, honestly: **as of 24 November 2026 those five are verified by manual runs outside the restricted
 environment — they pass — and by the CI workflow, which demands them.** They become automatic
 evidence once that workflow has a remote to run on. Everything else in the suite runs everywhere.
+
+A test count is the kind of number that goes stale quietly, so: `npx vitest run tools/conformance`
+prints the current one.
 
 ---
 

@@ -49,6 +49,7 @@ import { KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
 import { cardLines } from "../src/runtime/verdict-cards.ts";
 import { NOT_OURS, SITE_DATUM } from "../src/runtime/errors.ts";
 import { PEER_TOOL_DESCRIPTION, peerBindings, resolveSymbolicRefs, symbolicRefs } from "../src/runtime/peers.ts";
+import { SessionConsent, landingCheck } from "../src/runtime/composition.ts";
 import { validate_network } from "../src/runtime/upstream/validation.ts";
 import { find_front_man } from "../src/runtime/upstream/graph.ts";
 import { manifestAllowsPeer } from "../src/runtime/upstream/router.ts";
@@ -265,7 +266,13 @@ interface Session {
   mount: HTMLElement;
   h: Harness;
   plans: ConfirmItem[][];
-  answer: { value: boolean };
+  /**
+   * What the stub confirm answers. `remember` is the visitor ticking "don't ask
+   * again about this site while I'm here" — the explicit choice §3.2 requires
+   * before anything is remembered, and the only way an origin gets into the
+   * session's consent set.
+   */
+  answer: { value: boolean; remember: boolean };
   $: (sel: string) => HTMLElement | null;
   $$: (sel: string) => HTMLElement[];
   tick: (id: string) => void;
@@ -284,7 +291,7 @@ async function session(opts: Partial<BootOptions> & { h?: Harness; key?: string 
   const storage = new MemStorage();
   if (opts.key) storage.setItem(KEY_ITEM, JSON.stringify({ key: opts.key }));
   const plans: ConfirmItem[][] = [];
-  const answer = { value: true };
+  const answer = { value: true, remember: false };
   const mount = document.createElement("div");
   document.body.append(mount);
   const { h: _h, key: _k, ...rest } = opts;
@@ -294,7 +301,7 @@ async function session(opts: Partial<BootOptions> & { h?: Harness; key?: string 
     storage,
     confirm: (plan) => {
       plans.push(plan);
-      return answer.value;
+      return answer.remember ? { approved: answer.value, remember: true } : answer.value;
     },
     ...rest,
   });
@@ -1072,27 +1079,117 @@ describe("consent blocks the fetch, rather than announcing it", () => {
   });
 
   /**
-   * ...AND A REDIRECT TO A DIFFERENT ORIGIN THE ALLOW-LIST DOES NAME IS FOLLOWED.
+   * ...AND AN ALLOW-LISTED LANDING ORIGIN IS NOT ENOUGH. §5's "SAME CONSENT
+   * POLICY" IS THE VISITOR'S, NOT THE ALLOW-LIST.
    *
-   * §3.2 "does not require the final network-definition URL to remain on the
-   * manifest's origin", so refusing every cross-origin landing would refuse
-   * something the spec permits. The allow-list is the judge, not the fact of a
-   * redirect.
+   * > §5: "A redirect to a different origin MUST be treated as a new destination
+   * >  and evaluated under the same consent policy."
    *
-   * BREAKS IF: the landing check refuses any off-origin landing, or stops
-   * consulting the allow-list for one.
+   * The allow-list is §3.2's separate control over which origins are permissible
+   * at all. The consent policy is the visitor's: approval before each contact,
+   * relaxed only by their own tick. So a landing origin must satisfy BOTH, and
+   * until fix round 2 the check consulted only the first — which left this: with
+   * two allow-listed peers, approving the first would let it redirect to the
+   * second and run the second's network under the first's approval. The visitor
+   * approved one origin and would have got a network from another.
+   *
+   * Tested with a SECOND allow-list entry on purpose. One entry is the only
+   * reason this was unreachable, and Task 10 adds the real deployed bakery origin.
+   *
+   * There is no card. A card shown after the contact it asks about has happened is
+   * fix round 1's run-card defect in a different hat, on the same surface. This is
+   * a refusal.
+   *
+   * BREAKS IF: `landingCheck` stops consulting the session's consent set.
    */
-  test("...and a redirect to a DIFFERENT origin the allow-list names is followed, and recorded as a new destination", async () => {
+  test("a redirect to an allow-listed origin the visitor has NOT approved is refused", async () => {
     const ELSEWHERE = "https://cdn-elsewhere.example";
     const landedUrl = `${ELSEWHERE}/marrow_point.network.json`;
     const h = harness({ redirects: { [PEER_HOCON_URL]: landedUrl } });
     const s = await session({ h, allowedPeers: [ELSEWHERE] });
     await s.runtime.loadPeerNetwork(SYMBOLIC);
+
+    expect(s.runtime.composed()).toEqual([]);
+    expect(s.h.parsed()).not.toContain(landedUrl);
+    const shown = visibleTextOf(s.mount, "[data-compose-status]");
+    expect(shown).toContain("redirected to a different origin");
+    expect(shown).toContain(ELSEWHERE);
+    // Asked once, about the bakery. Never about the CDN — by then the request had
+    // been made, and asking afterwards is not a gate.
+    expect(s.plans).toHaveLength(1);
+    expect(s.plans[0]![0]!.origin).toBe(PEER_ORIGIN);
+    expect(s.runtime.trace().some((e) => e.event === "peer_redirect_refused" && e.detail["reason"] === "not_consented")).toBe(true);
+  });
+
+  /**
+   * ...AND A LANDING ORIGIN THE VISITOR HAS APPROVED THIS VISIT IS FOLLOWED.
+   *
+   * §3.2 "does not require the final network-definition URL to remain on the
+   * manifest's origin", so refusing every cross-origin landing would refuse
+   * something the spec permits. What makes it permissible is the visitor having
+   * named that origin themselves and ticked "don't ask again about this site while
+   * I'm here" — §5's bound on what a remembered approval may mean, reached here
+   * through the one other route to a peer origin.
+   *
+   * BREAKS IF: the landing check refuses any off-origin landing, or stops
+   * consulting the allow-list, or honours an approval it was never given.
+   */
+  test("...but a redirect to an origin the visitor approved this visit is followed", async () => {
+    const ELSEWHERE = "https://cdn-elsewhere.example";
+    const landedUrl = `${ELSEWHERE}/marrow_point.network.json`;
+    const h = harness({
+      redirects: { [PEER_HOCON_URL]: landedUrl },
+      artifacts: { [`${ELSEWHERE}/agent-manifest.json`]: PEER_MANIFEST },
+    });
+    const s = await session({ h, allowedPeers: [ELSEWHERE] });
+
+    // The visitor names the CDN themselves and ticks the box.
+    s.answer.remember = true;
+    await s.runtime.fetchPeerArtifact(`${ELSEWHERE}/agent-manifest.json`);
+    expect(s.plans).toHaveLength(1);
+    expect(s.plans[0]![0]!.origin).toBe(ELSEWHERE);
+
+    await s.runtime.loadPeerNetwork(SYMBOLIC);
     expect(s.runtime.composed().map((c) => c.ref.name)).toEqual([PEER_NAME]);
+    // Its body WAS read, which is the difference the visitor's approval makes.
+    expect(s.h.parsed()).toContain(landedUrl);
     expect(s.runtime.trace().some((e) => e.event === "peer_redirect_refused")).toBe(false);
     expect(s.runtime.trace().some((e) => e.event === "redirect_offsite" && e.detail["landedOn"] === ELSEWHERE)).toBe(true);
-    // And its body WAS read, which is the difference the allow-list makes.
-    expect(s.h.parsed()).toContain(landedUrl);
+  });
+
+  /**
+   * ...AND BOTH CONTROLS ARE REQUIRED, asserted on `landingCheck` directly.
+   *
+   * Stated here rather than driven through the runtime because THE RUNTIME CANNOT
+   * REACH THIS STATE: `clearToContact` checks the allow-list before it asks for
+   * consent, so an origin in the session's consent set was allow-listed when it
+   * got there, which makes the allow-list half of `landingCheck` redundant today.
+   * It is asserted anyway, as the function's contract, because that implication
+   * holds only while consent is never granted anywhere else — and "it is implied
+   * by another function" is not a thing a reader of this one can see.
+   *
+   * BREAKS IF: `landingCheck` stops consulting the allow-list.
+   */
+  test("...and the landing check needs both: a consented origin that is not allow-listed is still refused", () => {
+    const ROGUE = "https://consented-but-not-allow-listed.example";
+    const consent = new SessionConsent();
+    consent.remember(ROGUE);
+    const check = landingCheck(PEER_HOCON_URL, { siteBase: BASE, manifest: MANIFEST, consent });
+    expect(() => check(`${ROGUE}/marrow_point.network.json`)).toThrow(/redirected to a different origin/);
+    // ...and with it allow-listed as well, the same call is permitted.
+    const ok = landingCheck(PEER_HOCON_URL, {
+      siteBase: BASE,
+      manifest: MANIFEST,
+      runtimeAllowedPeers: new Set([ROGUE]),
+      consent,
+    });
+    expect(() => ok(`${ROGUE}/marrow_point.network.json`)).not.toThrow();
+
+    // NO CONSENT SET AT ALL IS A REFUSAL, not a pass. `boot` always supplies one,
+    // so this is the fail-closed default rather than a reachable path — and a
+    // default that fails open is how an unreachable path becomes a reachable one.
+    const noSet = landingCheck(PEER_HOCON_URL, { siteBase: BASE, manifest: MANIFEST, runtimeAllowedPeers: new Set([ROGUE]) });
+    expect(() => noSet(`${ROGUE}/marrow_point.network.json`)).toThrow(/redirected to a different origin/);
   });
 });
 

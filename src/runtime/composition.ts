@@ -122,8 +122,14 @@ export class DeniedOriginError extends RuntimeMessage {
 }
 
 /**
- * Refused because the response came back from an origin the allow-list does not
- * name — an HTTP redirect to a new destination (§5).
+ * Refused because the response came back from an origin the visitor did not
+ * approve for this contact — an HTTP redirect to a new destination (§5).
+ *
+ * The sentence says what the visitor needs and no more: they approved one origin
+ * and the answer came from another. Which of the two controls the landing origin
+ * failed — the allow-list or their own approval — goes in the trace, where a
+ * developer looks, because a card that explains the policy to a guest is a card
+ * they stop reading.
  *
  * Both URLs are quoted, never interpolated: the landing URL is chosen by whoever
  * served the redirect, which makes it exactly the kind of stranger's string the
@@ -136,7 +142,7 @@ export class RedirectedOriginError extends RuntimeMessage {
   ) {
     super({
       text: ours(
-        "Refused: that request was redirected to a different origin, which is a new destination, and this site's allowed_peers does not name it. Nothing from it was parsed, run or shown as the other site's. It did receive the request before this could be known.",
+        "Refused: that request was redirected to a different origin, which makes it a new destination and needs approval of its own. You approved the first origin below; the answer came from the second, and that one you have not approved, so nothing from it was parsed, run or shown as another site's words. It did receive the request before that could be known.",
       ),
       quotedLabel: ours("What was asked for, then the origin the response came back from:"),
       quoted: [requested, landedOn],
@@ -464,21 +470,6 @@ export async function clearToContact(
 }
 
 /**
- * May this runtime use an artifact served by `origin` at all?
- *
- * The first question `clearToContact` asks, without the second. A landing origin
- * cannot be put to the visitor before contact — the contact is how we found out
- * where we landed — so this half of the policy is all there is to apply to it,
- * and saying so is the point of `LIMITS.md` §2.8c.
- */
-function destinationAllowed(
-  origin: string,
-  deps: Pick<CompositionDeps, "siteBase" | "manifest" | "runtimeAllowedPeers">,
-): boolean {
-  return origin === normOrigin(deps.siteBase) || manifestAllowsPeer(origin, deps.manifest, deps.runtimeAllowedPeers ?? new Set());
-}
-
-/**
  * §5's REDIRECT MUST, the half that can only be enforced after the request.
  *
  * > §3.2: "This version follows normal browser fetch redirects and relies on
@@ -487,19 +478,35 @@ function destinationAllowed(
  * > §5: "A redirect to a different origin MUST be treated as a new destination
  * >  and evaluated under the same consent policy."
  *
- * These resolve rather than conflict. §3.2 permits following the redirect and
- * permits the final URL being elsewhere; §5 requires the landing origin to be
- * evaluated as a destination. So: follow it, then refuse to PARSE, run or show
- * anything whose final origin the allow-list does not name, and say where it
- * landed.
+ * These resolve rather than conflict, because they govern different questions.
+ * §3.2 says where a definition may LIVE and permits following the redirect; §5
+ * says whom we may CONTACT and on whose say-so. So: follow it, then evaluate the
+ * landing origin as the destination it is, and refuse to PARSE, run or show
+ * anything that does not pass — naming where it landed.
  *
- * WHAT THIS DOES NOT BUY, because a check that overstates itself is worse than
- * the gap it hides: **the third origin receives one GET.** `fetch` will not
- * reveal a cross-origin `Location` without following it, and `redirect: "error"`
- * would refuse an ordinary same-origin trailing-slash redirect as well. So this
- * closes "nothing from an unapproved origin is run or believed" and does not
- * close "an unapproved origin is never contacted". `LIMITS.md` §2.8c says so in
- * the section that reports on exactly this class.
+ * BOTH CONTROLS, which was fix round 2. This checked only the allow-list, and
+ * "the same consent policy" is not the allow-list: the allow-list is §3.2's
+ * separate control over which origins are permissible at all, and the consent
+ * policy is the visitor's. Checking one left this — with two allow-listed peers,
+ * approving the first would let it redirect to the second and run the second's
+ * network under the first's approval, which is a visitor who approved one origin
+ * and got a network from another. So a landing origin must be allow-listed AND in
+ * this session's consent set.
+ *
+ * AND THERE IS NO CARD. The visitor cannot be asked about a landing origin before
+ * the contact, because the contact is how we found out there was one to ask about,
+ * and a card shown after the thing it asks about has happened is the defect fix
+ * round 1 found on the run card wearing a different hat. An origin they already
+ * named, by contacting it and ticking "don't ask again about this site while I'm
+ * here", is approval they actually gave; anything else is a refusal.
+ *
+ * WHAT THIS STILL DOES NOT BUY, because a check that overstates itself is worse
+ * than the gap it hides: **the landing origin receives one GET.** `fetch` will
+ * not reveal a cross-origin `Location` without following it, and
+ * `redirect: "error"` would refuse an ordinary same-origin trailing-slash
+ * redirect as well. So this closes "nothing from an origin the visitor did not
+ * approve is run or believed" and does not close "it was never contacted".
+ * `LIMITS.md` §2.8c says so in the section that reports on this class.
  *
  * Returns the callback `fetchArtifact` invokes before parsing. Same-origin
  * redirects — a trailing slash, a canonical host — pass without comment, because
@@ -507,7 +514,7 @@ function destinationAllowed(
  */
 export function landingCheck(
   requested: string,
-  deps: Pick<CompositionDeps, "siteBase" | "manifest" | "runtimeAllowedPeers" | "trace" | "now">,
+  deps: Pick<CompositionDeps, "siteBase" | "manifest" | "runtimeAllowedPeers" | "consent" | "trace" | "now">,
 ): (finalUrl: string) => void {
   const now = deps.now ?? Date.now;
   const asked = normOrigin(requested);
@@ -522,8 +529,22 @@ export function landingCheck(
     }
     if (landed === asked) return;
     deps.trace?.({ at: now(), event: "redirect_offsite", detail: { requested, landedOn: landed, url: finalUrl } });
-    if (destinationAllowed(landed, deps)) return;
-    deps.trace?.({ at: now(), event: "peer_redirect_refused", detail: { requested, landedOn: landed, url: finalUrl } });
+    // The caller's OWN origin is not a third-party destination, so the consent
+    // rule does not reach it — the same exemption `clearToContact` applies, on
+    // the same two passages (§3.2 governs "contact with third-party origins" and
+    // names "the external origin"; §3.4 treats a co-bundled artifact as ordinary).
+    if (landed === normOrigin(deps.siteBase)) return;
+    const allowListed = manifestAllowsPeer(landed, deps.manifest, deps.runtimeAllowedPeers ?? new Set());
+    const consented = deps.consent?.has(landed) === true;
+    if (allowListed && consented) return;
+    // The reason is for the trace, which a developer reads. The page says only
+    // that the visitor approved one origin and the answer came from another,
+    // because that is the part a visitor needs and it is true either way.
+    deps.trace?.({
+      at: now(),
+      event: "peer_redirect_refused",
+      detail: { requested, landedOn: landed, url: finalUrl, reason: allowListed ? "not_consented" : "not_allow_listed" },
+    });
     throw new RedirectedOriginError(requested, landed);
   };
 }

@@ -680,35 +680,40 @@ both were latent code whose status changed on the day a peer was published.
    it, and `redirect: "error"` would refuse an ordinary same-origin
    trailing-slash or canonical-host redirect along with it. So the redirect is
    followed, `Response.url` is read, and **nothing whose landing origin the
-   allow-list does not name is parsed, run or shown as the peer's** — refused
+   visitor has not approved is parsed, run or shown as the peer's** — refused
    before `json()`, with the landing origin on the page. §3.2 permits following
    the redirect, §5 requires the landing origin to be evaluated, and this is
    both at once.
 
-   **What that leaves, stated rather than hidden: the third origin receives one
-   GET.** Request headers, the visitor's IP and the fact of the request reach a
-   server nobody approved, before anything could know where it landed. There is
-   no browser mechanism that both prevents this and leaves ordinary redirects
-   working. And a landing origin cannot be put to the visitor as a question
-   either — the contact is how we found out there was one to ask about — so the
-   allow-list is the whole of the policy that applies to it, without the consent
-   half. What the check buys is that **nothing from an unapproved origin is run
-   or believed**, not that it was never contacted. A test asserts the refusal,
-   asserts the body was never parsed, and asserts the GET, because the limit is
-   part of the claim.
+   **"Evaluated under the same consent policy" means both controls, and that was
+   fix round 2.** This check first shipped consulting only the allow-list, which
+   is §3.2's separate control over which origins are permissible at all. The
+   consent policy is the visitor's. Checking one left a real hole: with two
+   allow-listed peers, approving the first would have let it redirect to the
+   second and run the second's network under the first's approval — a visitor who
+   approved one origin and got a network from another. A landing origin must now
+   be allow-listed **and** in this session's consent set, which means an origin
+   the visitor contacted themselves and ticked "don't ask again about this site
+   while I'm here" for. Anything else is refused. It is not reachable with one
+   entry in `allowed_peers`, and it was fixed before the second, because a known
+   hole that goes live with a config change is the same bet this project already
+   refuses to take on allow-list entries for origins that do not exist.
 
-   **The consequence of having only the allow-list half, named rather than left
-   to be worked out:** if this site ever allow-lists two peers, approving the
-   first would let it redirect to the second and run the second's network under
-   the first's approval. The visitor consented to an origin and got a network
-   from another one they had also allow-listed but not chosen in that moment.
-   With one entry in `allowed_peers` there is nowhere to redirect to, so this is
-   not reachable in the build that ships — but it becomes reachable with the
-   second entry, and the fix at that point is not a consent card after the
-   contact. A card shown after the thing it asks about has happened is the defect
-   fix round 1 found on the run card, wearing a different hat. It would have to be
-   a refusal: run nothing from a landing origin the visitor did not name for this
-   contact.
+   **There is no card, and that is deliberate.** The visitor cannot be asked about
+   a landing origin before the contact — the contact is how we found out there was
+   one to ask about — and a card shown after the thing it asks about has happened
+   is the consent-card defect of fix round 1 wearing a different hat. A refusal is
+   the honest answer. The page says they approved one origin and the answer came
+   from another; which of the two controls failed goes in the trace.
+
+   **What that leaves, stated rather than hidden: the landing origin receives one
+   GET.** Request headers, the visitor's IP and the fact of the request reach a
+   server they did not approve, before anything could know where it landed. There
+   is no browser mechanism that both prevents this and leaves ordinary redirects
+   working. What the check buys is that **nothing from an origin the visitor did
+   not approve is run or believed**, not that it was never contacted. Tests assert
+   the refusal, assert the body was never parsed, and assert the GET, because the
+   limit is part of the claim.
 
 The generalisation is recorded because it will apply again: **anything that was
 safe because nothing was published deserves a second look once something is.** The

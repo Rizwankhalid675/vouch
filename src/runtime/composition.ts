@@ -508,9 +508,15 @@ export async function clearToContact(
  * approve is run or believed" and does not close "it was never contacted".
  * `LIMITS.md` §2.8c says so in the section that reports on this class.
  *
- * Returns the callback `fetchArtifact` invokes before parsing. Same-origin
- * redirects — a trailing slash, a canonical host — pass without comment, because
- * the rule is about destinations and not about redirects.
+ * Returns the callback `fetchArtifact` invokes before parsing. What passes
+ * without comment is a redirect that stays on the SAME ORIGIN — a trailing
+ * slash, a path canonicalisation, `/x` to `/x/index.json` — because the rule is
+ * about destinations and not about redirects. A host change is NOT in that set:
+ * `normOrigin` compares whole origins, so `example.com` to `www.example.com` is
+ * a new destination and is refused unless that host is itself allow-listed and
+ * consented. That is fail-closed and deliberate; a comment here said "a
+ * canonical host" passes until fix round 3, and it was describing a behaviour
+ * this function does not have.
  */
 export function landingCheck(
   requested: string,
@@ -519,14 +525,15 @@ export function landingCheck(
   const now = deps.now ?? Date.now;
   const asked = normOrigin(requested);
   return (finalUrl: string): void => {
-    let landed: string;
-    try {
-      landed = normOrigin(finalUrl);
-    } catch {
-      // An unparseable final URL is not a destination we can evaluate, so it is
-      // not one we use. Fail closed, and name what we were given.
-      throw new RedirectedOriginError(requested, finalUrl);
-    }
+    // `normOrigin` DOES NOT THROW: on a parse failure it returns the string it
+    // was given (`upstream/router.ts`). So an unparseable final URL arrives here
+    // as a non-origin string, which matches neither `asked` nor the site's own
+    // origin and is in no allow-list, and is refused by the ordinary path below
+    // with `reason: "not_allow_listed"`. A test asserts that, because it used to
+    // be asserted by a `try/catch` that could not run — a dead branch inside a
+    // security check with a comment as the only thing claiming it worked, which
+    // is the shape of fix round 1's finding 1.
+    const landed = normOrigin(finalUrl);
     if (landed === asked) return;
     deps.trace?.({ at: now(), event: "redirect_offsite", detail: { requested, landedOn: landed, url: finalUrl } });
     // The caller's OWN origin is not a third-party destination, so the consent

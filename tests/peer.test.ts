@@ -1074,7 +1074,8 @@ describe("consent blocks the fetch, rather than announcing it", () => {
     expect(s.runtime.trace().some((e) => e.event === "peer_redirect_refused")).toBe(false);
     // Not even recorded as a redirect off-origin, because it is not one. This is
     // what fails if the check compares URLs rather than origins — a trailing
-    // slash or a canonical host would read as a new destination.
+    // slash or a path canonicalisation would read as a new destination. A HOST
+    // change would read as one either way, and should: it is a new origin.
     expect(s.runtime.trace().some((e) => e.event === "redirect_offsite")).toBe(false);
   });
 
@@ -1190,6 +1191,65 @@ describe("consent blocks the fetch, rather than announcing it", () => {
     // default that fails open is how an unreachable path becomes a reachable one.
     const noSet = landingCheck(PEER_HOCON_URL, { siteBase: BASE, manifest: MANIFEST, runtimeAllowedPeers: new Set([ROGUE]) });
     expect(() => noSet(`${ROGUE}/marrow_point.network.json`)).toThrow(/redirected to a different origin/);
+  });
+
+  /**
+   * ...AND A FINAL URL THAT IS NOT A URL IS REFUSED BY THE ORDINARY PATH.
+   *
+   * `normOrigin` does not throw: on a parse failure it returns the string it was
+   * given. This was guarded by a `try/catch` until fix round 3, which could never
+   * run — a dead branch inside a security check whose only evidence was its own
+   * comment, which is the shape of round 1's first finding. The branch is gone and
+   * the real path is asserted instead: a non-origin string matches no origin and
+   * is in no allow-list, so it is refused as `not_allow_listed`.
+   *
+   * BREAKS IF: a non-origin landing value is ever permitted — by a truthiness
+   * test, by an early return for an unparseable value, or by `manifestAllowsPeer`
+   * being given a default that admits one.
+   */
+  /**
+   * ...AND A HOST CHANGE IS A NEW ORIGIN, however ordinary it looks.
+   *
+   * Origins are compared whole, so `example.com` → `www.example.com` is refused
+   * unless that host is itself allow-listed and consented. That is stricter than
+   * "an ordinary redirect passes" suggests, and it is the fail-closed direction —
+   * but a comment in `composition.ts` and a sentence in `LIMITS.md` both said a
+   * "canonical host" redirect passed, which was false of this function. The
+   * behaviour was right and the prose was wrong, so the behaviour is pinned here
+   * and the prose was corrected to it.
+   *
+   * BREAKS IF: the comparison is ever loosened to a registrable domain or a
+   * host suffix to make a `www.` redirect "just work".
+   */
+  test("...and a redirect that only changes the host is a new destination, not a canonicalisation", () => {
+    const consent = new SessionConsent();
+    consent.remember(PEER_ORIGIN);
+    const check = landingCheck(PEER_HOCON_URL, { siteBase: BASE, manifest: MANIFEST, consent });
+    const host = new URL(PEER_ORIGIN).host;
+    expect(() => check(`https://www.${host}/agents/marrow_point.network.json`)).toThrow(/redirected to a different origin/);
+    // ...and the scheme is part of it too.
+    expect(() => check(`http://${host}/agents/marrow_point.network.json`)).toThrow(/redirected to a different origin/);
+    // The same path on the same origin is not a new destination.
+    expect(() => check(`${PEER_ORIGIN}/agents/canonical/marrow_point.network.json`)).not.toThrow();
+  });
+
+  test("...and a final URL that cannot be parsed is refused, through the path that actually runs", () => {
+    const seen: TraceEntry[] = [];
+    const check = landingCheck(PEER_HOCON_URL, {
+      siteBase: BASE,
+      manifest: MANIFEST,
+      consent: new SessionConsent(),
+      trace: (e) => seen.push(e),
+    });
+    for (const junk of ["", "not a url at all", "://", "javascript:alert(1)"]) {
+      expect(() => check(junk), junk).toThrow(/redirected to a different origin/);
+    }
+    expect(seen.filter((e) => e.event === "peer_redirect_refused").map((e) => e.detail["reason"])).toEqual([
+      "not_allow_listed",
+      "not_allow_listed",
+      "not_allow_listed",
+      "not_allow_listed",
+    ]);
   });
 });
 
@@ -1406,6 +1466,47 @@ describe("after approval the named network loads from the second origin and runs
 /* ================================================================== */
 
 describe("things that were inert while allowed_peers was empty", () => {
+  /**
+   * INVARIANT: "There is ONE ROUTE to a third-party origin in this runtime" is
+   * true of the site's OWN startup fetches as well.
+   *
+   * The three artifacts this site reads about itself — `links.json`, its own
+   * manifest and its own network definition — were fetched with no landing check
+   * at all, so a redirect from the site's own origin to a third one was parsed
+   * and run AS THE SITE'S OWN NETWORK: no allow-list check, no consent, not even
+   * a `redirect_offsite` trace entry. A stranger's agent definitions would have
+   * been this site's published network, with our own name on them and our own
+   * action catalog offered to them.
+   *
+   * The threat model is narrow — it needs this site's own server or its DNS — and
+   * narrow is not the same as closed. What made the claim in `LIMITS.md` false was
+   * the word "one": the peer routes were checked and these three were not.
+   *
+   * Driven per artifact, because each is reached by a different call and one of
+   * them is best-effort. Same-origin passes on the `landed === asked` fast path,
+   * so nothing about the ordinary startup changes.
+   *
+   * BREAKS IF: any of the three fetches stops passing a `landedOn` guard. The
+   * assertion is that the third origin's body was never PARSED, not merely that
+   * the site did not finish starting.
+   */
+  test.each([["its own manifest", "agent-manifest.json"], ["its own network definition", "vouch.network.json"], ["links.json", "links.json"]])(
+    "a redirect off the site's own origin while fetching %s is refused, and its body never parsed",
+    async (_label, file) => {
+      const ELSEWHERE = "https://not-our-origin.example";
+      const landedUrl = `${ELSEWHERE}/${file}`;
+      const h = harness({ redirects: { [`${BASE}/${file}`]: landedUrl } });
+      const s = await session({ h });
+
+      expect(s.h.parsed()).not.toContain(landedUrl);
+      expect(s.runtime.conversation).toBeNull();
+      expect(
+        s.runtime.trace().some((e) => e.event === "peer_redirect_refused" && e.detail["landedOn"] === ELSEWHERE),
+        "no peer_redirect_refused entry names the landing origin",
+      ).toBe(true);
+    },
+  );
+
   /**
    * INVARIANT (§5, "the runtime MUST NOT execute undeclared peer code"): a peer
    * agent carrying upstream's coded-tool or toolbox markers is not offered to

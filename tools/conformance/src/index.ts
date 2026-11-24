@@ -182,9 +182,17 @@ export async function runChecksOn(target: Target, options: RunOptions = {}): Pro
   // not listed cannot be read as a pass, a failure or a declined item.
   //
   // `Record<CheckId, CheckResult>` is TOTAL. Leaving a check out is a compile
-  // error, naming one twice is a compile error, and `CHECK_IDS` fixes the order,
-  // so the reported set is identical in every state by construction rather than by
-  // seven branches each remembering to be complete.
+  // error (TS2741), naming one twice is a compile error, and `CHECK_IDS` fixes the
+  // order -- so no state can assemble a different set, rather than seven branches
+  // each remembering to be complete.
+  //
+  // Where the compiler stops, and this was measured rather than assumed: the
+  // RECORD's totality is enforced, but the emitted LIST's is not. Truncating the
+  // map below -- `CHECK_IDS.slice(2).map(...)`, the same shape as the round-4
+  // regression -- compiles clean. What catches that is the test that asserts the
+  // reported set equals `CHECK_IDS` in all seven states; it fails nine ways. So
+  // the set is held by a type for its membership and by a test for its
+  // completeness, and only the first of those is "by construction".
   const byId: Record<CheckId, CheckResult> = {
     "manifest-reachable": checkManifest(target, manifest),
     "network-selected": checkNetworkSelected(target, manifest),

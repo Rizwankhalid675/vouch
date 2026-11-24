@@ -660,6 +660,19 @@ both were latent code whose status changed on the day a peer was published.
    both the composition walk and this method go through it. There is one route to a
    third-party origin in this runtime, and since fix round 1 both ends of it also
    run the landing check described below.
+
+   **That claim was true of the peer routes and false of the site's own**, which
+   fix round 3 closed. The three artifacts this site reads about itself —
+   `links.json`, its own manifest, its own network definition — were fetched with
+   no landing check, so a redirect from this site's own origin to a third one was
+   parsed and run **as this site's own published network**: no allow-list check,
+   no consent, no trace entry. It needs this site's own server or its DNS, which
+   is narrow, and narrow is not closed; what was wrong was the word "one". All
+   three now run the same check, a same-origin redirect still passes on the
+   fast path, and a redirect off this origin is refused. `links.json` is
+   best-effort, so its refusal leaves the bindings empty and the published
+   network is then refused a step later for an unresolved symbolic reference —
+   fail-closed by a different route, and the trace entry says which.
 2. **A peer's network definition may be on a third origin, and that class has two
    halves, closed to different standards.** §3.2 permits the third origin in as
    many words — the `hocon` value "MAY be a relative path or an absolute HTTP or
@@ -678,12 +691,21 @@ both were latent code whose status changed on the day a peer was published.
    it.** A peer whose `hocon` is a same-origin relative path may serve a 302 to
    anywhere. `fetch` will not reveal a cross-origin `Location` without following
    it, and `redirect: "error"` would refuse an ordinary same-origin
-   trailing-slash or canonical-host redirect along with it. So the redirect is
-   followed, `Response.url` is read, and **nothing whose landing origin the
+   trailing-slash or path-canonicalising redirect along with it. So the redirect
+   is followed, `Response.url` is read, and **nothing whose landing origin the
    visitor has not approved is parsed, run or shown as the peer's** — refused
    before `json()`, with the landing origin on the page. §3.2 permits following
    the redirect, §5 requires the landing origin to be evaluated, and this is
    both at once.
+
+   **What passes without a question is a redirect that stays on the same
+   origin** — a trailing slash, `/x` to `/x/index.json`. A HOST change is not in
+   that set: origins are compared whole, so `example.com` to `www.example.com`
+   is a new destination and is refused unless that host is itself allow-listed
+   and consented. That is stricter than "ordinary redirect" suggests, and it is
+   the fail-closed direction. Both this file and the code said "a canonical host"
+   passes until fix round 3; the behaviour was right and the sentences were
+   describing something else.
 
    **"Evaluated under the same consent policy" means both controls, and that was
    fix round 2.** This check first shipped consulting only the allow-list, which
@@ -714,6 +736,22 @@ both were latent code whose status changed on the day a peer was published.
    not approve is run or believed**, not that it was never contacted. Tests assert
    the refusal, assert the body was never parsed, and assert the GET, because the
    limit is part of the claim.
+
+   **And one fail-open, in a path that is otherwise fail-closed.** The landing
+   origin is read from `Response.url`, and when that is empty
+   `fetchPublicArtifact` falls back to the URL it asked for — it treats missing
+   provenance as "we did not land anywhere else". Every other branch of this
+   check refuses what it cannot vouch for; this one admits it. It is not reachable
+   as the runtime stands: a `mode: "cors"` response always carries its final URL,
+   and an opaque response (`mode: "no-cors"`) could not be read as JSON anyway,
+   so there is no version of this fetch that both yields a document and hides
+   where the document came from. Fixing it would mean guessing at the behaviour of
+   a state nothing produces, which is how the unreachable branch removed in the
+   same round got written in the first place. So it is named here instead: if
+   these artifacts are ever fetched by something other than the browser's own
+   `fetch` — a service worker, a shim, a test double that does not set `url` —
+   this is the line that stops being safe, and it should become a refusal at that
+   point rather than a fallback.
 
 The generalisation is recorded because it will apply again: **anything that was
 safe because nothing was published deserves a second look once something is.** The

@@ -669,10 +669,31 @@ both were latent code whose status changed on the day a peer was published.
    no consent, no trace entry. It needs this site's own server or its DNS, which
    is narrow, and narrow is not closed; what was wrong was the word "one". All
    three now run the same check, a same-origin redirect still passes on the
-   fast path, and a redirect off this origin is refused. `links.json` is
-   best-effort, so its refusal leaves the bindings empty and the published
-   network is then refused a step later for an unresolved symbolic reference —
-   fail-closed by a different route, and the trace entry says which.
+   fast path, and a redirect off this origin is refused.
+
+   **And `links.json`'s refusal names the wrong cause, which is worth stating as
+   plainly as the thing it does right.** That fetch is best-effort — a site with
+   no peers need not publish the file — so its `catch` swallows a refusal along
+   with a missing file. The redirect is therefore refused, nothing from the third
+   origin is parsed, and the bindings come back empty; the published network is
+   then refused a step later because its one symbolic reference no longer
+   resolves. Fail-closed, by a different route than the other two artifacts.
+
+   But the message a reader gets says the three published files disagree. Someone
+   seeing it would go and check `vouch.network.json`, `links.json` and
+   `agent-manifest.json` against each other and find nothing wrong with any of
+   them, because what actually happened was an off-origin redirect. The
+   `peer_redirect_refused` trace entry says so. **So this is the one place in the
+   startup path where the trace knows more than the page** — and on a project
+   whose claim is that a refusal says what it refused and why, that asymmetry is
+   the defect, not the refusal.
+
+   **It is parked, not fixed, and deliberately.** The fix is for
+   `loadPublishedLinks` to distinguish "no such file" from "refused" and report
+   the second, which means deciding what best-effort should mean for a site with
+   no peers — a bigger change than the hole warrants when the case needs this
+   site's own server or its DNS and the refusal is visible either way. Written
+   down here so it is a decision later rather than a rediscovery.
 2. **A peer's network definition may be on a third origin, and that class has two
    halves, closed to different standards.** §3.2 permits the third origin in as
    many words — the `hocon` value "MAY be a relative path or an absolute HTTP or

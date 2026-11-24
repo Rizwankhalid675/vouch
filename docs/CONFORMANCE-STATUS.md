@@ -21,7 +21,7 @@ Last updated 24 November 2026. `docs/OWNER-TODO.md` lists what is blocked and on
 | 1 | Publish a two-agent network and manifest from an ordinary HTTPS host | Built; not hosted | **needs a deployed origin** |
 | 2 | Load and run it with the published default router; demonstrate BYOK too | BYOK path yes; funded-default no | tested; **no browser run with a provider key** |
 | 3 | Call an internal agent **and** a grounded capability via MCP or a site action | Yes, via site actions | tested |
-| 4 | After approval, load an exact named network from a second origin, run it locally | Yes | **browser-verified across two loopback origins** |
+| 4 | After approval, load an exact named network from a second origin, run it locally | Built; **no peer wired in what we publish** | **browser-verified across two loopback origins** |
 | 5 | The second site never receives the user's key and cannot change the caller's router | Yes | **payload-asserted** |
 | 6 | Private context absent at the peer unless explicitly allowed | Yes | **payload-asserted** |
 | 7 | Stop an invalid network, a composition cycle, an over-budget request and a denied origin, visibly | Five refusals, not four | tested; three browser-verified |

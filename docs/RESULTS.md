@@ -28,7 +28,7 @@ has no git remote. Nothing below was improvised around that.
 
 | # | Blocked item | Spec | Command to run the moment a URL exists |
 |---|---|---|---|
-| B1 | **The deployed origins** | §3.3, §6 check 1 | `npm run build && npm run build:peer`, then deploy `dist/` and `peer-dist/` to two separate origins |
+| B1 | **The deployed origins**, and the peer wiring that goes in with them | §3.3, §6 check 1 | `npm run build && npm run build:peer`, then deploy `dist/` and `peer-dist/` to two separate origins; then the three fields in `OWNER-TODO.md` item 1's table, in one commit |
 | B2 | **CORS headers on the three artifacts, read off a real cross-origin response** | §3.2, §3.3, §3.4 | `npm run conformance -- https://<DELI-ORIGIN>/vouch --origin https://agentic-web-conformance.invalid` |
 | B3 | The conformance CLI's verdict on the deployed site | §6 | as B2, and again for the peer: `npm run conformance -- https://<PEER-ORIGIN>/agents/marrow_point` |
 | B4 | Widths and contrast on the deployed build | — | open each origin at 320 / 375 / 570 / 900 / 1440px with a cache-buster; compute ratios in the page |

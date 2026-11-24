@@ -175,6 +175,7 @@ the DOM was then enumerated and classified, and the rule they all follow now is:
 | Action argument *keys*, and validator messages | `{"The Reuben is dairy-free": 1}` reached the rendered trace twice | the trace records only schema-declared keys plus a count, and a classification instead of the validator's message |
 | Network validator interpolations | `Agent 'x' references missing tool 'y'` — ours today, a peer's once one is published | **was** a filter on quoted interpolations; that filter was defeated and is gone. The message is now rendered in a node of its own, marked `data-not-ours` — see §2.2b |
 | The claimed phrase in a refusal | model text, named deliberately (SPEC 4.4) | filtered for meaningless tokens *and* bounded to a phrase |
+| The confirmation dialog's `description` | a plain `string` built by concatenation; correct only while every author remembered to filter | `ConfirmItem.description` is `SiteText`, so the dialog's prose is ours by type. Values go in `arguments`, which the dialog renders in its own `data-not-ours` node |
 | A published agent's **name** | `Hollis & Rye — Asked The Reuben is dairy-free and safe for you.` Ours are tokens; a **peer's are not**, and Task 8 loads a peer network from a second origin | the network is refused at startup (`validate_agent_names`), **and** the notice token-filters the name anyway |
 | The startup catch | a malformed artifact's `SyntaxError` quotes the file | only a `RuntimeMessage` is shown; anything else becomes our own sentence plus a kind |
 | The unknown-outcome card's source line | a handler's raw `error` | token-filtered |
@@ -242,17 +243,36 @@ landed in our sentence — and this project's own claim detector reads that sent
 as a dairy-free claim about the Reuben. Marginal, and a visitor's own typing
 rather than a peer's, but the invariant says *never*.
 
-**One promise was relaxed to do this, deliberately.** The filter used to replace a
-hostile value with `'<name omitted>'`, so it never reached the page at all. It is
-now **shown**, fenced and attributed. Two reasons: a publisher has to be able to
-see which name is wrong, and showing it is only safe *because* the separation is
-structural rather than textual. The counter-argument is §2.2's ruling that the
-refusal panel does not reprint a withheld claim, "two inches below the place it
-was withheld from"; that case is different because it sits inside a conversation
-where a model has just made the claim, whereas this is a quoted validator error
-in a red box. If that reading is wrong, the change is one line: drop the value
-from `quoted` and say only how many problems there were. The verdict beside each
-dish is unaffected either way, which is why this is survivable at all.
+**One promise was relaxed to do this, deliberately, and the tension with §2.2 is
+resolved rather than left open.** The filter used to replace a hostile value with
+`'<name omitted>'`, so it never reached the page. It is now **shown**, fenced and
+attributed. That was put to the controller as an open question and ruled correct,
+for four reasons worth keeping here so nobody re-derives them:
+
+1. §6 and the task brief both require the refusal to **name the offending field and
+   its bad value**. Suppressing it would fail the requirement the refusal exists to
+   satisfy, and a publisher debugging a malformed network needs to see *which* name
+   is wrong.
+2. Structural separation plus explicit attribution is the **correct** way to display
+   untrusted content, not a compromise forced by the fix. It is what a browser does
+   with a certificate error and what a mail client does with a sender-claimed name.
+3. **§2.2's no-echo rule governs a different speech act.** `REFUSAL_MARKER` withholds
+   *the site's answer to a guest's question*. This is a diagnostic attributing a
+   string to its source. Same characters, different act.
+4. Defence in depth is untouched: the verdict card beside the dish still reads
+   unsafe, whatever the refusal panel shows.
+
+**The displayed length is capped** — 240 characters per value, 12 values — so that a
+peer cannot use the refusal panel as a billboard. `QUOTED_CHARS_MAX` and
+`QUOTED_LINES_MAX` in `src/runtime/errors.ts`, where the comment on them says this
+too: **the cap is a UI measure and explicitly NOT a security control.** What keeps a
+value out of the site's voice is the structural separation, which does not care how
+long the string is; raise the cap to a million and the safety property is identical.
+That distinction is written down in three places because this project has already
+been bitten by a defence everyone trusted for the wrong reason — `quotedTokensOnly`
+was read as the thing keeping a peer's prose out of the deli's voice, and one
+apostrophe defeated it. A test asserts the cap can be raised to absurdity without
+changing what the site says.
 
 ### The mechanism
 
@@ -354,11 +374,18 @@ All of them live in `src/runtime/limits.ts`.
 of wall clock. These reset at the start of every turn, because the runaway a limit
 exists to stop is a turn that will not finish. **Per session:** 300 model calls, as a
 backstop against a page left open all day; reaching it says to start a new
-conversation, and the panel has a control that does exactly that. **Per composition:**
-4 network documents.
+conversation, and the panel has a control that does exactly that. **Per composition:** 4 network
+documents in TOTAL — a count, not a depth, because the walk is depth-first over a
+graph and a wide composition spends it as surely as a deep one. It was described as a
+depth here and in `limits.ts` until fix round 2; it never was one.
 
-They were per *session* in the first version, which meant sixteen plain questions
-bricked the assistant with no way back — finite, as §3.1 asks, but on the wrong axis,
+`maxElapsedMs` and `maxComposedNetworks` are **arbitrary picks**: generous enough
+that no honest session reaches them, finite as §3.1 requires, and derived from no
+measurement at all. If either starts to matter, it should be measured rather than
+reasoned about from its comment.
+
+The per-turn call budgets were per *session* in the first version, which meant
+sixteen plain questions bricked the assistant with no way back — finite, as §3.1 asks, but on the wrong axis,
 and something any judge using the demo for two minutes would have hit.
 
 Reaching any of them shows **both** figures — the budget and what had been spent —

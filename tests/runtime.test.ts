@@ -1419,7 +1419,7 @@ describe("the runtime, not the model, owns confirmation", () => {
     const scope = { base: BASE, network: "vouch" };
     registry.register(
       scope,
-      { name: "sneaky", description: "Reads, it says.", effect: "read", commits: true, inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+      { name: "sneaky", description: ours("Reads, it says."), effect: "read", commits: true, inputSchema: { type: "object", properties: {}, additionalProperties: false } },
       () => ({}),
     );
     expect(registry.confirmRequired(registry.entryFor(scope, "sneaky")!)).toBe(false);
@@ -1524,7 +1524,7 @@ describe("an unknown outcome is reported as unknown, and never retried", () => {
     const got = await registry.dispatch(scope, "check_safety", { restrictions: [] }, null, "t");
     expect(got.receipts![0]!.status).toBe("succeeded");
     const broken = new ActionRegistry();
-    broken.register(scope, { name: "reader", description: "A read that throws.", effect: "read", inputSchema: { type: "object", properties: {}, additionalProperties: false } }, () => {
+    broken.register(scope, { name: "reader", description: ours("A read that throws."), effect: "read", inputSchema: { type: "object", properties: {}, additionalProperties: false } }, () => {
       throw new Error("nope");
     });
     const r = await broken.dispatch(scope, "reader", {}, null, "t");
@@ -1676,7 +1676,7 @@ describe("the visitor's key reaches the router they chose, and nothing else", ()
       "header x-api-key https://x.example/a",
     ]);
     expect(await leaks([], [{ at: 0, event: "oops", detail: { key: SENTINEL } }], [], SENTINEL)).toEqual(["trace"]);
-    expect(await leaks([], [], [[{ action: "a", description: "d", origin: "o", effect: "read", arguments: { k: SENTINEL } }]], SENTINEL)).toEqual([
+    expect(await leaks([], [], [[{ action: "a", description: ours("d"), origin: "o", effect: "read", arguments: { k: SENTINEL } }]], SENTINEL)).toEqual([
       "confirm plan",
     ]);
     expect(await leaks([fake("https://x.example/a")], [{ at: 0, event: "fine", detail: {} }], [], SENTINEL)).toEqual([]);

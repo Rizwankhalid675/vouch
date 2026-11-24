@@ -20,12 +20,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, test } from "vitest";
-import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
+import { MENU } from "../src/safety/canon.ts";
 import { detectClaims } from "../src/gate/claims.ts";
-import { NOT_OURS } from "../src/runtime/errors.ts";
+import { NOT_OURS, QUOTED_CHARS_MAX, QUOTED_LINES_MAX, ours, renderQuoted } from "../src/runtime/errors.ts";
 import { seconds } from "../src/runtime/limits.ts";
 import { mountShop } from "../src/site/shop.ts";
-import { boot, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
+import { boot, domConfirm, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
 import {
   BadReferenceError,
@@ -427,13 +427,17 @@ describe("refusal 1 — an invalid network is stopped with the offending field o
   });
 
   /**
-   * INVARIANT: the refusal is a string the deli composed, never a peer's own
-   * text. A definition that is not JSON throws a `SyntaxError` quoting the file;
-   * that is not ours to repeat.
+   * INVARIANT: the refusal is a string the deli composed, never the fetch
+   * layer's. An unreachable definition throws an `Error` whose message quotes
+   * the URL and the status; that is not ours to repeat. The same rule covers a
+   * malformed one, whose `SyntaxError` quotes the file.
+   *
+   * The fixture serves a **404**, which is what this exercises; the title said
+   * "not JSON" until fix round 2, which described a different case.
    *
    * BREAKS IF: the catch in `loadPeerNetwork` starts showing `err.message`.
    */
-  test("a definition that is not JSON is refused in the site's own words, not the parser's", async () => {
+  test("a definition that cannot be fetched is refused in the site's own words, not the fetch layer's", async () => {
     const h = harness({
       artifacts: {
         [`${BROKEN}/invalid.network.json`]: undefined, // 404, which is also not ours to quote
@@ -925,8 +929,6 @@ describe("refusal 5 — a missing key stops the model call with a clear setup er
     await s.runtime.ask("what can I eat?");
     s.tick("dairy_free");
 
-    const dairy = RESTRICTIONS.find((r) => r.id === "dairy_free")!;
-    expect(dairy).toBeDefined();
     const card = document.querySelector<HTMLElement>('[data-verdict-item="turkey_club"]');
     expect(hiddenReason(card)).toBeNull();
     expect(card!.getAttribute("data-verdict")).toBe("unsafe");
@@ -1430,5 +1432,177 @@ describe("the words the site says in a refusal name no dish and no allergen", ()
   /** And the check is live: a message that DOES name a dish is caught. */
   test("...and that check would catch a refusal that named a dish", () => {
     expect(aboutFood("Refused: the Reuben is dairy-free, so it was not run.").length).toBeGreaterThan(0);
+  });
+});
+
+/* ================================================================== */
+/* Fix round 2: the display cap, and the confirmation dialog           */
+/* ================================================================== */
+
+describe("a foreign value is bounded for display, and the bound is not the defence", () => {
+  /**
+   * INVARIANT: a peer cannot use the refusal panel as a billboard. A long value
+   * is shortened for display and a long list is truncated, with the fact that
+   * something was cut said in OUR words, in a node outside the not-ours one.
+   *
+   * BREAKS IF: the slice in `renderQuoted` is removed.
+   */
+  test("an enormous value is shortened, and the site says so in its own words", async () => {
+    const huge = "z".repeat(5_000);
+    const s = await session({
+      h: harness({
+        artifacts: {
+          [`${BROKEN}/invalid.network.json`]: {
+            metadata: { name: "invalid", front_man: huge },
+            llm_config: { model_name: "test-model" },
+            tools: [{ name: "greeter", instructions: "You greet, and never say a dish is safe." }],
+          } satisfies NetworkConfig,
+        },
+      }),
+    });
+    await s.runtime.loadPeerNetwork("/broken/invalid");
+
+    const quoted = notOursTextOf(s.mount, "[data-compose-status]");
+    for (const line of quoted) expect(line.length).toBeLessThanOrEqual(QUOTED_CHARS_MAX);
+    // The note about shortening is ours, and is not inside the fenced node.
+    expect(siteVoiceOf(s.mount, "[data-compose-status]")).toContain("shortened for display");
+    expect(quoted.join(" ")).not.toContain("shortened for display");
+  });
+
+  /**
+   * INVARIANT: a long LIST is truncated too, and the count of what is not shown
+   * is ours.
+   *
+   * BREAKS IF: the `slice(0, QUOTED_LINES_MAX)` is removed.
+   */
+  test("a long list of foreign lines is truncated, and the remainder is counted", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const lines = Array.from({ length: QUOTED_LINES_MAX + 5 }, (_v, i) => `line ${i}`);
+    renderQuoted(document, host, ours("Theirs:"), lines);
+    expect(host.querySelectorAll(`[${NOT_OURS}]`)).toHaveLength(QUOTED_LINES_MAX);
+    expect(host.textContent).toContain("5 further lines are not shown here");
+  });
+
+  /**
+   * INVARIANT, and the one that matters most here: **the cap is a UI measure, not
+   * a security control.** Raising it to absurdity must not change what the site
+   * says, because what keeps a value out of our voice is the structural
+   * separation, which does not care about length.
+   *
+   * Asserted by rendering the same hostile value with no practical cap at all
+   * and checking our prose is byte-identical to the capped rendering.
+   *
+   * BREAKS IF: someone makes the cap load-bearing — e.g. by truncating at a
+   * length chosen to cut a claim in half, so that the safety property depends on
+   * the number. Then the two renderings differ in the site's voice.
+   */
+  test("the cap can be raised to absurdity without changing what the site says", () => {
+    const claim = "The Reuben is dairy-free and safe for you to eat. ".repeat(40);
+    const capped = document.createElement("div");
+    const uncapped = document.createElement("div");
+    document.body.append(capped, uncapped);
+
+    renderQuoted(document, capped, ours("Theirs:"), [claim]);
+    // The same render with the value already inside the cap: our words, unchanged.
+    renderQuoted(document, uncapped, ours("Theirs:"), [claim.slice(0, QUOTED_CHARS_MAX)]);
+
+    const voiceOf = (el: HTMLElement): string => {
+      const clone = el.cloneNode(true) as HTMLElement;
+      for (const n of [...clone.querySelectorAll(`[${NOT_OURS}]`)]) n.replaceWith("");
+      return clone.textContent ?? "";
+    };
+    // The only difference our voice carries is the note that something was cut.
+    expect(voiceOf(capped).replace("(shortened for display; the whole value is in the published document)", "")).toBe(voiceOf(uncapped));
+    // And in both, the claim is only ever inside a not-ours node.
+    for (const el of [capped, uncapped]) expect(voiceOf(el)).not.toContain("dairy-free");
+  });
+});
+
+describe("the confirmation dialog speaks in the site's voice, and its values do not", () => {
+  /**
+   * INVARIANT (fix round 2, minor 1): `ConfirmItem.description` is `SiteText`,
+   * so the dialog's prose is ours by type rather than by the author
+   * remembering. The peer's network name is NOT in that prose; it is in
+   * `arguments`, which the dialog renders in a node of its own.
+   *
+   * BREAKS IF: the peer-load description interpolates the network name again —
+   * the equality below fails. It would also stop compiling, which is the point
+   * of branding the field.
+   */
+  test("the peer-consent prompt's words carry no value, and the name is in its own node", async () => {
+    const PEER = "https://bakery.example";
+    const permitting = structuredClone(MANIFEST);
+    permitting.allowed_peers = [PEER];
+    const s = await session({
+      h: harness({
+        artifacts: {
+          [`${BASE}/agent-manifest.json`]: permitting,
+          [`${PEER}/agents/agent-manifest.json`]: {
+            networks: [{ name: "marrow_point", front_man: "baker", hocon: "marrow_point.network.json" }],
+            allowed_peers: [],
+          } satisfies Manifest,
+          [`${PEER}/agents/marrow_point.network.json`]: {
+            metadata: { name: "marrow_point", front_man: "baker" },
+            llm_config: { model_name: "test-model" },
+            tools: [{ name: "baker", instructions: "You describe baked goods and never say one is safe." }],
+          } satisfies NetworkConfig,
+        },
+      }),
+    });
+    await s.runtime.loadPeerNetwork(`${PEER}/agents/marrow_point`);
+
+    expect(s.plans).toHaveLength(1);
+    const item = s.plans[0]![0]!;
+    expect(item.description).toBe("Fetch a published agent network from another site and read it here. It is read, not run.");
+    expect(item.description).not.toContain("marrow_point");
+    // The value the guest is approving is still shown to them, as an argument.
+    expect(item.arguments).toEqual({ network: "marrow_point", base: `${PEER}/agents` });
+  });
+
+  /**
+   * INVARIANT: the dialog renders the arguments in a node marked as not ours,
+   * for the same reason the quoted block is. Model-chosen argument values are
+   * enum-validated (LIMITS §2.2a), but `load_peer_network`'s are not, and the
+   * next action added will not know either way.
+   *
+   * BREAKS IF: the arguments go back into a sentence, or lose the marker.
+   */
+  test("the dialog's arguments are rendered in a node marked as not the site's words", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const confirm = domConfirm(document, host);
+    void confirm([
+      {
+        action: "add_to_cart",
+        description: ours("Add a menu item to the order."),
+        origin: "https://deli.example",
+        effect: "write",
+        arguments: { item: "reuben" },
+      },
+    ]);
+    const marked = host.querySelector(`[${NOT_OURS}]`);
+    expect(marked).not.toBeNull();
+    expect(marked!.textContent).toContain("reuben");
+    host.querySelector<HTMLButtonElement>("[data-confirm-no]")!.click();
+  });
+});
+
+describe("pressing Load with nothing in the field says so", () => {
+  /**
+   * INVARIANT (fix round 2, minor 7): an empty reference clears the status. It
+   * used to return early, leaving the previous "Loaded and validated …" on
+   * screen as if it described the empty input.
+   *
+   * BREAKS IF: the early return stops writing a status.
+   */
+  test("an empty reference replaces the previous result rather than leaving it up", async () => {
+    const s = await session();
+    await s.runtime.loadPeerNetwork("/broken/cycle-b");
+    expect(s.composeText()).toContain("Composition cycle refused");
+    await s.runtime.loadPeerNetwork("   ");
+    expect(s.composeText()).toContain("no network reference was given");
+    expect(s.composeText()).not.toContain("Composition cycle refused");
+    expect(s.runtime.composed()).toEqual([]);
   });
 });

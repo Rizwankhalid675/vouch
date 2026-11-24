@@ -54,8 +54,14 @@
  *     our `Receipt` type requires one.
  * 10. ADDED `NoEffectError`: a handler that fails before changing anything records
  *     `failed`, not `unknown`, whatever its effect. Upstream has no equivalent.
+ * 11. CHANGED `ActionDefinition.description` and `ActionEntry.description` from
+ *     `string` to `SiteText`, matching `ConfirmItem.description`. Ours, not
+ *     upstream's: the confirmation dialog RENDERS that field, which makes it a
+ *     surface speaking in the site's voice, and this project enforces that with a
+ *     type rather than a convention. No behaviour changed; it is the same strings.
  */
 
+import type { SiteText } from "../errors.ts";
 import type { ActionSchema, ConfirmItem, Receipt } from "../types.ts";
 
 export type Effect = "read" | "write" | "irreversible";
@@ -182,7 +188,8 @@ export interface ActionScope {
 
 export interface ActionDefinition {
   name: string;
-  description: string;
+  /** OURS: `SiteText`, not `string`. The confirmation dialog renders it. */
+  description: SiteText;
   inputSchema: ActionSchema;
   outputSchema?: ActionSchema;
   effect?: Effect;
@@ -201,7 +208,7 @@ export type ActionHandler = (
 export interface ActionEntry extends ActionScope {
   ref: string;
   name: string;
-  description: string;
+  description: SiteText;
   inputSchema: ActionSchema;
   outputSchema?: ActionSchema;
   effect: Effect;

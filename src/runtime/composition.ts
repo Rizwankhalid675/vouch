@@ -279,10 +279,11 @@ async function walk(ref: string, path: string[], loaded: ComposedNetwork[], deps
       ? await deps.confirm([
           {
             action: "load_peer_network",
-            // The confirmation dialog renders this, and the network name came out
-            // of a URL, so it is token-filtered like every other interpolation
-            // into a surface the guest reads.
-            description: `Fetch the published agent network "${tokenOrOmitted(target.name)}" from another site and read it here.`,
+            // Literal. The dialog renders this field, so it follows the same rule
+            // as every other surface that speaks in the site's voice: our prose
+            // carries no value, and the network and base the guest is approving
+            // are in `arguments`, which the dialog renders in a node of its own.
+            description: ours("Fetch a published agent network from another site and read it here. It is read, not run."),
             origin: target.origin,
             effect: "read",
             arguments: { network: target.name, base: target.base },

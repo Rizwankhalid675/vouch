@@ -26,6 +26,7 @@ import { renderVerdicts } from "./verdict-cards.ts";
 import type { ConfirmItem, Manifest, NetworkConfig, Receipt, TraceEntry } from "./types.ts";
 import {
   RuntimeMessage,
+  NOT_OURS,
   TOKEN,
   alsoSay,
   joinSiteText,
@@ -464,7 +465,14 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
 
   async function loadPeerNetwork(ref: string): Promise<void> {
     const wanted = ref.trim();
-    if (!wanted) return;
+    if (!wanted) {
+      // Returning early used to leave the PREVIOUS result on screen, so pressing
+      // Load on an empty field read as if "Loaded and validated ..." described
+      // the empty input. Say what actually happened instead.
+      composed = [];
+      showCompose({ text: ours("Nothing was loaded: no network reference was given.") }, "refused");
+      return;
+    }
     composeBtn.disabled = true;
     try {
       composed = await loadComposition(wanted, {
@@ -960,7 +968,11 @@ export function domConfirm(doc: Document, host: HTMLElement): ConfirmFn {
             {},
             ` — ${p.description} Destination: ${p.origin}. This ${p.effect === "read" ? "reads only" : p.effect === "irreversible" ? "cannot be undone" : "changes your order"}.`,
           ),
-          el(doc, "code", {}, JSON.stringify(p.arguments)),
+          // The arguments are the caller's values, not our words, and they are
+          // rendered in a node of their own. Marked as such for the same reason
+          // the quoted block is: the dialog speaks in the deli's voice, and this
+          // part of it does not.
+          el(doc, "code", { [NOT_OURS]: "" }, JSON.stringify(p.arguments)),
         );
         ul.append(li);
       }

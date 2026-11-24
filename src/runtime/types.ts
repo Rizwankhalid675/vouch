@@ -1,3 +1,5 @@
+import type { SiteText } from "./errors.ts";
+
 /**
  * Shapes of the published artifacts the runtime consumes, and of the runtime's own
  * records. Ours, written here. Key NAMES follow the upstream reference (see
@@ -88,10 +90,20 @@ export interface TraceEntry {
   detail: Record<string, unknown>;
 }
 
-/** What the runtime shows the user before it dispatches a committing action. */
+/**
+ * What the runtime shows the user before it dispatches a committing action.
+ *
+ * `description` is `SiteText`: the dialog renders it, so it is a surface that
+ * speaks in the deli's voice, and it follows the same rule as the transcript and
+ * the error line. It was a plain `string` built by concatenation until fix round
+ * 2 - correct at the time because every value in it was filtered, but resting on
+ * the author remembering, which is the exact thing the branded type exists to
+ * replace. Values a caller wants shown go in `arguments`, which the dialog
+ * renders in a node of its own.
+ */
 export interface ConfirmItem {
   action: string;
-  description: string;
+  description: SiteText;
   origin: string;
   effect: "read" | "write" | "irreversible";
   arguments: Record<string, unknown>;

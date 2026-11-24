@@ -132,6 +132,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1d5fd1; outline-offs
   color: #4a3d30; background: #f1ece4; border: 1px dashed var(--rule); border-left: 3px solid var(--rule);
   border-radius: 3px; padding: .3rem .45rem; white-space: pre-wrap; overflow-wrap: anywhere;
 }
+.report-shortened { display: block; margin-top: .2rem; font-size: .72rem; color: var(--muted); font-style: italic; }
 .turn-report { margin-top: .4rem; }
 
 .transcript { display: grid; gap: .75rem; max-height: 26rem; overflow-y: auto; }

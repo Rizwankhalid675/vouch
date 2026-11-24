@@ -213,22 +213,55 @@ export function renderReport(doc: Document, host: HTMLElement, report: SiteRepor
  * somewhere of its own — the transcript puts it in the turn's `<p>`, and a `<p>`
  * is no place to nest another.
  */
+/**
+ * How much of a foreign value is shown, and how many of them.
+ *
+ * **These are UI measures. They are NOT a security control, and nothing should
+ * ever be written that depends on them for safety.** What keeps a value out of
+ * the site's voice is the structural separation above, which does not care how
+ * long the string is or how many there are — raise these to a million and the
+ * safety property is identical. They exist so that a peer cannot use our refusal
+ * panel as a billboard, which is a layout problem.
+ *
+ * This distinction is written down because this project has already been bitten
+ * by a defence that everyone trusted for the wrong reason: `quotedTokensOnly`
+ * was read as the thing keeping a peer's prose out of the deli's voice, and it
+ * was defeated by one apostrophe. If a later reader decides the cap is the
+ * defence and raises it, nothing breaks — and that is the point.
+ */
+export const QUOTED_CHARS_MAX = 240;
+export const QUOTED_LINES_MAX = 12;
+
 export function renderQuoted(doc: Document, host: HTMLElement, label: SiteText, lines: readonly string[]): void {
   const caption = doc.createElement("p");
   caption.className = "report-quoted-label";
   caption.textContent = label;
   const list = doc.createElement("ul");
   list.className = "report-quoted";
-  for (const line of lines) {
+  for (const line of lines.slice(0, QUOTED_LINES_MAX)) {
     const item = doc.createElement("li");
     const fenced = doc.createElement("code");
     fenced.setAttribute(NOT_OURS, "");
     // `textContent` on a node of its own. Not escaped, not quoted, not filtered:
     // there is nothing for a delimiter in `line` to re-pair with, because `line`
     // is never adjacent to any syntax of ours.
-    fenced.textContent = line;
+    fenced.textContent = line.slice(0, QUOTED_CHARS_MAX);
     item.append(fenced);
+    // The note that something was cut is OURS, so it goes in its own element
+    // outside the not-ours node rather than being appended to the value.
+    if (line.length > QUOTED_CHARS_MAX) {
+      const note = doc.createElement("small");
+      note.className = "report-shortened";
+      note.textContent = "(shortened for display; the whole value is in the published document)";
+      item.append(note);
+    }
     list.append(item);
+  }
+  if (lines.length > QUOTED_LINES_MAX) {
+    const more = doc.createElement("li");
+    more.className = "report-shortened";
+    more.textContent = `(${lines.length - QUOTED_LINES_MAX} further lines are not shown here)`;
+    list.append(more);
   }
   host.append(caption, list);
 }

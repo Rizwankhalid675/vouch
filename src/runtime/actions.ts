@@ -22,6 +22,7 @@ import type { Finding, Menu, MenuItem, Restriction } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
 import { verdictFor } from "../safety/verdict.ts";
 import { containsLine, ingredientNames } from "../site/shop.ts";
+import { ours } from "./errors.ts";
 import { NoEffectError, type ActionDefinition, type ActionRegistry, type ActionScope } from "./upstream/action-registry.ts";
 
 /** What the actions need from the page and from the session. */
@@ -240,16 +241,18 @@ export function actionDefinitions(ctx: Pick<SiteContext, "checkoutTimeoutMs"> & 
   return [
     {
       name: "get_menu_state",
-      description:
+      description: ours(
         "Read the current menu, the guest's restrictions and the cart. Returns published data only: item names, prices, listed ingredients and the derived allergens disclosed on each card. It contains no verdict and must not be read as one.",
+      ),
       effect: "read",
       commits: false,
       inputSchema: { type: "object", additionalProperties: false, properties: {} },
     },
     {
       name: "check_safety",
-      description:
+      description: ours(
         "Ask the site's checker for its verdict (safe, unsafe or unknown, with the deciding ingredient) on menu items under a set of restrictions. This is the only source of a safety verdict. You may ask; you may not conclude. The verdict is also shown beside each dish, and that display, not your summary, is what the guest reads.",
+      ),
       effect: "read",
       commits: false,
       inputSchema: {
@@ -287,7 +290,7 @@ export function actionDefinitions(ctx: Pick<SiteContext, "checkoutTimeoutMs"> & 
     },
     {
       name: "add_to_cart",
-      description: "Add a menu item to the guest's order. This changes the order, so the guest confirms it first.",
+      description: ours("Add a menu item to the guest's order. This changes the order, so the guest confirms it first."),
       effect: "write",
       commits: true,
       inputSchema: {
@@ -312,8 +315,9 @@ export function actionDefinitions(ctx: Pick<SiteContext, "checkoutTimeoutMs"> & 
     },
     {
       name: "checkout_demo_order",
-      description:
+      description: ours(
         "Place the demo order. No payment is taken and no food is made. It commits the order, so the guest confirms it first, and if its outcome cannot be confirmed it is reported as unknown rather than retried.",
+      ),
       effect: "irreversible",
       commits: true,
       timeoutMs: ctx.checkoutTimeoutMs ?? 20000,

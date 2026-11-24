@@ -51,16 +51,31 @@ export interface Limits {
    */
   maxElapsedMs: number;
   /**
-   * How many network documents one composition may chain together — §3.1's
-   * "composition depth" at the site level, as distinct from `maxDepth`, which
-   * bounds delegation *inside* one network.
+   * How many network documents one composition may fetch in TOTAL. A count, not
+   * a depth: the walk is depth-first over a graph, so a wide composition spends
+   * it as surely as a deep one, and that is intended — what is being bounded is
+   * how much of the web one press of Load can pull in.
    *
-   * A cycle check does not make this redundant: A → B → C → D → … of distinct
-   * networks is not a cycle and would walk forever.
+   * It is this project's answer to §3.1's "composition depth" at the site level,
+   * as distinct from `maxDepth`, which bounds delegation *inside* one network.
+   * It was called a depth here and in LIMITS.md §2.6 until fix round 2; it never
+   * was one.
+   *
+   * A cycle check does not make it redundant: A → B → C → D → … of distinct
+   * networks is not a cycle and would walk until the host gave out.
    */
   maxComposedNetworks: number;
 }
 
+/**
+ * The defaults.
+ *
+ * `maxElapsedMs` and `maxComposedNetworks` are **arbitrary picks**: generous
+ * enough that no honest session reaches them, finite as §3.1 requires, and
+ * derived from no measurement at all. The other five were set by Task 6. If one
+ * of these numbers starts to matter, measure it rather than reasoning from this
+ * comment.
+ */
 export const DEFAULT_LIMITS: Limits = {
   maxModelCalls: 16,
   maxAgentCalls: 12,

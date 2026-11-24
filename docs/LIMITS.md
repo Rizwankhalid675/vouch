@@ -697,6 +697,19 @@ both were latent code whose status changed on the day a peer was published.
    asserts the body was never parsed, and asserts the GET, because the limit is
    part of the claim.
 
+   **The consequence of having only the allow-list half, named rather than left
+   to be worked out:** if this site ever allow-lists two peers, approving the
+   first would let it redirect to the second and run the second's network under
+   the first's approval. The visitor consented to an origin and got a network
+   from another one they had also allow-listed but not chosen in that moment.
+   With one entry in `allowed_peers` there is nowhere to redirect to, so this is
+   not reachable in the build that ships — but it becomes reachable with the
+   second entry, and the fix at that point is not a consent card after the
+   contact. A card shown after the thing it asks about has happened is the defect
+   fix round 1 found on the run card, wearing a different hat. It would have to be
+   a refusal: run nothing from a landing origin the visitor did not name for this
+   contact.
+
 The generalisation is recorded because it will apply again: **anything that was
 safe because nothing was published deserves a second look once something is.** The
 same sweep checked, and found nothing wrong with, the peer's schemas and

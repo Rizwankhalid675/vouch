@@ -91,6 +91,16 @@ check the recording shows what the script claims.
 - **Standing note, on screen before anyone types:** "The assistant does not decide whether
   food is safe for you, and is not permitted to. The verdict beside each dish is this site's
   own, worked out from the published ingredient list. Read that, not the reply."
+- **The replayed reply, labelled:** "Replayed reply, not a live model call:" then the scenario's
+  own name — "A model giving a false all-clear" — then the agent name "Front of house" and the
+  reply itself: "Happy to help. [A claim here was withheld; see the ingredient list.]" repeated
+  for each withheld sentence. The label and the scenario name are both on screen, so no viewer
+  can mistake a recording for a live call.
+- **The status line after ticking Dairy-free:** "Checked 34 dishes against Dairy-free: 15
+  unsafe, 3 we cannot tell, 16 with no conflict found. Each verdict is shown beside its dish,
+  with the ingredient that decided it."
+- **The status line before ticking anything:** "Nothing is being checked yet. Tick what you
+  avoid and a verdict appears beside every dish — no account, no key, no assistant."
 - **Unsafe card:** "✕ Unsafe for what you told us / Contains dairy, through Brioche bun →
   Brioche → Butter → Dairy. / Checked against: Dairy-free."
 - **Clear card:** "✓ No conflict found / No dairy in the published ingredients for this item."
@@ -108,8 +118,16 @@ check the recording shows what the script claims.
 status line saying so. That is correct and worth one beat of screen time: the site does not
 pretend to have checked something you have not told it about.
 
-Shots 1–5 and 7 have been confirmed rendering on the built site. Shot 8 needs the deployed
-URL (Task 10).
+Shots 1-5 and 7 have been confirmed rendering on the built site, and shot 3 — the whole video
+— was confirmed as **one frame**: the labelled replayed reply with its three withheld claims,
+and the turkey club's unsafe card naming the butter three steps down, both on screen together.
+The console was silent on load and after the turn. Shot 8 needs the deployed URL (Task 10).
+
+**There are three recorded replies, not one**, and the second is worth knowing about even
+though the script does not use it: `false_all_clear` (shot 3), `true_warning_also_withheld`,
+and `describes_without_vouching`. The second one shows the gate refusing a model that was
+*right* — the cost `LIMITS.md` §2.1 admits in prose. If a judge asks "does it just suppress
+wrong answers?", that scenario is the answer, on screen, in about eight seconds.
 
 **Shot 6's prerequisite exists now** — Task 8 published the peer on a second origin and the
 runtime loads and runs it — but the shot itself has NOT been confirmed on the built site,

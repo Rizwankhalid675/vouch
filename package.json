@@ -1,0 +1,30 @@
+{
+  "name": "vouch",
+  "version": "0.1.0",
+  "type": "module",
+  "//engines": "22.18.0, not 22.0: src imports .ts files directly, which needs Node type stripping, on by default from 22.18. Reasoned from documented behaviour, not tested on 22 (only Node 26 was available).",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "//test:cors": "The conformance CLI's CORS tests, demanded rather than skipped. They bind a loopback port and read a CORS header off a real HTTP response; `npm test` SKIPS them loudly where listen() is refused, because a suite expected to be red is how a real failure gets ignored. This is the command that runs them for real, and it fails rather than skipping. CI runs both.",
+    "test:cors": "CONFORMANCE_CORS_REQUIRED=1 vitest run tools/conformance/tests/cors.test.ts",
+    "typecheck": "tsc --noEmit",
+    "//build": "Two origins means two deployments. `build` makes both; `build:site` and `build:peer` make one each, into separate output directories, so a deploy target can be pointed at either without the other coming with it.",
+    "build": "npm run build:site && npm run build:peer",
+    "build:site": "vite build",
+    "build:peer": "vite build --config peer/vite.config.ts",
+    "//conformance": "The community conformance CLI. Takes a published network's URL, not a site root, and not ours: `npm run conformance -- https://example.com/agents/my_network`. Its own tests run under the root vitest, so `npm test` covers it.",
+    "conformance": "node tools/conformance/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "jsdom": "31.0.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  },
+  "license": "Apache-2.0",
+  "description": "A deli website whose agents describe food but never decide whether it is safe to eat, and an open-agentic-web conformance checker anyone can run."
+}

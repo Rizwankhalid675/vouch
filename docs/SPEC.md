@@ -72,7 +72,7 @@ specification's own acceptance test.
 
 ### 4.1 The site
 
-A deli — **Vouch & Co.** — with a real menu whose items carry structured
+A deli — **Hollis & Rye** — with a real menu whose items carry structured
 ingredients, each tagged with allergens and derivations (e.g. `butter → dairy`,
 `semolina → gluten`). Ordinary HTML/CSS/JS, no framework, no backend. Browsable
 and orderable without ever speaking to an agent, because the spec requires the
@@ -121,18 +121,29 @@ screen**, exactly as `gateSuggestions()` is in Fearless.
 
 ### 4.5 The peer
 
-A second origin, **Marrow Point Bakery**, publishing its own conforming network
-and ingredient data. Vouch calls it for items it does not make. The same rule
-applies across the boundary: a peer's *prose* about safety is never trusted —
-only its published, fetchable ingredient data is, and if that is absent the
-answer is `unknown`. This is the cross-origin half of §6, and it makes the point
-that trust does not transit a hyperlink.
+A second origin, **Marrow Point Bakery**, publishing its own conforming network.
+Vouch calls it for items it does not make. The same rule applies across the
+boundary, and it is the *same mechanism*, not an analogous one: a peer's prose
+goes through the **same gate** as our own model's — `showPeerText` and
+`showModelText` share one private `renderGated` — so a peer's safety claim is
+**withheld**, exactly like the model's. It is not converted into a verdict.
+Verdicts attach to dishes, not to answers, and **nothing fetches a peer's
+ingredient data**: a dish is `unknown` when this site's own published data does
+not say, however confident somebody else is. This is the cross-origin half of §6,
+and it makes the point that trust does not transit a hyperlink.
+
+The deli publishes no peer today. The allow-list entry, the binding and the
+symbolic reference go in when an origin we control exists — `docs/OWNER-TODO.md`
+item 1, and `docs/DECISIONS.md` for why they came out.
 
 ### 4.6 The community tool — `agentic-web-conformance`
 
-A standalone, MIT-licensed CLI that takes the URL of any agentic website and
-runs the §6 checks against it, printing pass / fail / not-demonstrated per check.
-Published as its own repo, usable by every other entrant.
+A standalone, **Apache-2.0**-licensed CLI that takes the URL of any agentic
+website and runs the §6 checks against it, printing pass / fail /
+not-demonstrated per check. It lives in this repository at `tools/conformance/`
+with its own `package.json`, licence and NOTICE, so it is legally shareable —
+but it is **not published anywhere yet**, and a judge cannot score a tool they
+cannot find (`docs/OWNER-TODO.md` item 4).
 
 Potential Impact names this explicitly — *"any tools or services the Entrant
 built and shared with the community"* — and the README's own Testing section

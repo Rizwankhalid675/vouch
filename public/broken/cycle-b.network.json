@@ -1,0 +1,43 @@
+{
+  "metadata": {
+    "name": "cycle-b",
+    "description": "The other half of the two-document composition cycle. This network names /broken/cycle-a as an external network, which closes the loop. As a document it is valid — a validator reports nothing against it, and nothing against cycle-a either — so what must be refused is the pair, not either file. Composing from this end is refused too, with the path starting here: cycle-b, cycle-a, cycle-b.",
+    "front_man": "b_front",
+    "model_settings_are_hints": true
+  },
+  "llm_config": {
+    "model_name": "gpt-4o-mini"
+  },
+  "tools": [
+    {
+      "name": "b_front",
+      "function": {
+        "description": "Front agent of cycle-b. Hands the question back to the network at /broken/cycle-a.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "inquiry": {
+              "type": "string",
+              "description": "What the guest said."
+            }
+          },
+          "required": [
+            "inquiry"
+          ]
+        }
+      },
+      "instructions": "You pass the guest's question to the external network and report what comes back. You decide nothing about whether food is safe for anyone, and never say, state, imply or conclude that a dish is safe, unsafe or suitable for a guest.",
+      "tools": [
+        "/broken/cycle-a"
+      ],
+      "allow": {
+        "to_downstream": {
+          "sly_data": []
+        },
+        "to_upstream": {
+          "sly_data": []
+        }
+      }
+    }
+  ]
+}

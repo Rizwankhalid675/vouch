@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "site": {
+    "name": "Hollis & Rye — deliberately broken fixtures",
+    "description": "Three agent networks that a conforming runtime must refuse, published so the refusals can be demonstrated over HTTP exactly as a real peer artifact would be fetched. Nothing here is part of the deli. The site's own manifest, one directory up, declares one network ('vouch') and does not list these: §3.2 requires an exact name match against the published manifest, so these are reachable by URL and invisible to discovery, which is the correct relationship."
+  },
+  "networks": [
+    {
+      "name": "invalid",
+      "description": "Breaks in one nameable way: metadata.front_man names an agent that does not exist. The failure a real publisher ships, after renaming an agent and forgetting the metadata. It is valid JSON on purpose — a parse error would prove only that JSON.parse works and would never reach the validator.",
+      "front_man": "greeter",
+      "hocon": "invalid.network.json"
+    },
+    {
+      "name": "cycle-a",
+      "description": "Composes cycle-b, which composes this one back. A two-document cycle, not a self-reference: §6 says composition cycle, and composition is across networks.",
+      "front_man": "a_front",
+      "hocon": "cycle-a.network.json"
+    },
+    {
+      "name": "cycle-b",
+      "description": "The other half of the cycle. Valid on its own; it is the pair that is refused.",
+      "front_man": "b_front",
+      "hocon": "cycle-b.network.json"
+    }
+  ],
+  "llm_router": {
+    "protocol": "openai-compatible",
+    "base_url": "https://api.openai.com/v1",
+    "byok_router": "https://api.openai.com/v1",
+    "mock": false,
+    "byok": true
+  },
+  "allowed_peers": [],
+  "peer_policy": {
+    "allowed_peers": [],
+    "consent": "required_before_contact",
+    "private_context": "deny_by_default"
+  },
+  "deployment": {
+    "mode": "static"
+  },
+  "actions": []
+}

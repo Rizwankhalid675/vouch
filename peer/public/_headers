@@ -1,0 +1,21 @@
+# §3.3: a public agent artifact fetched by a browser from another origin MUST be
+# permitted through standard cross-origin controls. These lines are the whole of
+# this site's reason to exist, so the deploy target has to honour this file (or
+# the equivalent vercel.json beside it). GitHub Pages cannot set a response
+# header at all and is disqualified for that reason.
+#
+# All THREE of §3.3's minimum public files, including the link map. An empty link
+# map that a caller cannot fetch cross-origin states nothing to anyone, so it gets
+# the same header as the other two.
+/agents/agent-manifest.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=60
+/agents/marrow_point.network.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=60
+/agents/links.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=60
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

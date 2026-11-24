@@ -1,0 +1,417 @@
+/**
+ * The four site actions Hollis & Rye registers with the runtime. OURS, written
+ * here. This file is where the entry's idea lives, so none of it is adapted.
+ *
+ * The names, purposes, effects and argument schemas are already published in
+ * `public/agent-manifest.json`, in §3.1's own field names (Minimum Runtime Behavior,
+ * spec line 203 — not §2.1, which names neither `purpose` nor `effect`). They are the public
+ * contract; boot.ts cross-checks the names, the effects AND the argument schemas
+ * against that file at start-up and refuses to run if any of them disagree,
+ * because a declared action that does not exist, or a published effect or schema
+ * that lies, is worse than publishing nothing at all.
+ *
+ * The published `parameters` are the `inputSchema`s below with their data enums
+ * removed — see `withoutEnums`, which is also why that start-up check is safe to
+ * make: nothing in the published copy moves when the menu does.
+ *
+ * THE POINT OF `check_safety`
+ *
+ * The agent network can REQUEST a verdict. It can never produce one. No agent's
+ * `tools` list reaches a verdict by any route (pinned in tests/artifacts.test.ts);
+ * the only way to one is this registered site action, whose handler calls
+ * `verdictFor` — a pure function over published ingredient data — and hands back
+ * its `Finding` unaltered. The model's part is asking. The answer is the
+ * checker's, and it goes to the dish's own verdict card as well as to the model.
+ */
+
+import type { Finding, Menu, MenuItem, Restriction } from "../../contracts.ts";
+import { MENU, RESTRICTIONS } from "../safety/canon.ts";
+import { verdictFor } from "../safety/verdict.ts";
+import { containsLine, ingredientNames } from "../site/shop.ts";
+import { cssEscape, ours } from "./errors.ts";
+import { NoEffectError, type ActionDefinition, type ActionRegistry, type ActionScope } from "./upstream/action-registry.ts";
+
+/** What the actions need from the page and from the session. */
+export interface SiteContext {
+  doc: Document;
+  menu: Menu;
+  /** Every published restriction. */
+  restrictions: Restriction[];
+  /** What the guest has currently selected, which is what `check_safety` defaults to. */
+  selected: () => Restriction[];
+  //
+  // There is deliberately NO display hook here.
+  //
+  // This interface used to carry `onFindings`, and `check_safety` called it. That
+  // made a model tool call the source of what the verdict cards showed: a model
+  // asking about nut_free while the guest had ticked dairy_free replaced an unsafe
+  // card with a green tick, with no confirmation and no notice, because
+  // `check_safety` is a read action. The cards are what makes the gate's documented
+  // leaks survivable, so that was the product's central claim being false.
+  //
+  // `check_safety` now returns a Finding to its caller and to nobody else. The cards
+  // are rendered from the guest's own selection by `renderVerdicts`, which does not
+  // accept a Finding at all. Do not add a display callback back to this interface.
+  //
+  /**
+   * Perform the demo order and return its receipt. The default clicks the site's
+   * own checkout button and reads the confirmation back out of the DOM, because a
+   * write that reports success without being read back has not been verified.
+   * Overridable so that a test can make the outcome never arrive.
+   */
+  placeOrder?: (signal: AbortSignal) => Promise<{ summary: string }>;
+  /** How long the committing checkout may take before its outcome is unknown. */
+  checkoutTimeoutMs?: number;
+}
+
+const itemById = (menu: Menu, id: string): MenuItem | undefined => menu.items.find((i) => i.id === id);
+
+/* ------------------------------------------------------------------ */
+/* check_safety: the checker, and the only authority on a verdict      */
+/* ------------------------------------------------------------------ */
+
+export interface CheckSafetyArgs {
+  items?: string[];
+  restrictions?: string[];
+}
+
+/**
+ * Resolve the restriction ids an action was given, failing closed on anything
+ * unrecognised. Silently dropping an id the guest asked about would turn "we did
+ * not check that" into an unqualified verdict, which is the single worst thing
+ * this code could do.
+ */
+export function resolveRestrictions(ids: string[] | undefined, all: Restriction[], fallback: Restriction[]): Restriction[] {
+  if (ids === undefined) return fallback;
+  const out: Restriction[] = [];
+  for (const id of ids) {
+    const found = all.find((r) => r.id === id);
+    if (!found) {
+      throw new Error(`'${id}' is not a restriction this site publishes. The published ids are: ${all.map((r) => r.id).join(", ")}.`);
+    }
+    out.push(found);
+  }
+  return out;
+}
+
+export function resolveItems(ids: string[] | undefined, menu: Menu): MenuItem[] {
+  if (ids === undefined) return menu.items;
+  return ids.map((id) => {
+    const item = itemById(menu, id);
+    if (!item) throw new Error(`'${id}' is not an item on this menu.`);
+    return item;
+  });
+}
+
+/**
+ * The verdict, from the pure layer, unaltered — returned to the caller and to
+ * nowhere else. This function touches no DOM and has no way to reach one: the
+ * agent network may ASK for a verdict, and what it gets back is an answer in the
+ * conversation, never a change to what the guest is shown.
+ */
+export function checkSafety(args: CheckSafetyArgs, ctx: SiteContext): { findings: Finding[]; checked: string[] } {
+  const restrictions = resolveRestrictions(args.restrictions, ctx.restrictions, ctx.selected());
+  const items = resolveItems(args.items, ctx.menu);
+  const findings = items.map((item) => verdictFor(item, restrictions, ctx.menu));
+  return { findings, checked: restrictions.map((r) => r.id) };
+}
+
+/* ------------------------------------------------------------------ */
+/* get_menu_state: published data, no verdict anywhere in it           */
+/* ------------------------------------------------------------------ */
+
+export function menuState(ctx: SiteContext): {
+  items: { id: string; name: string; price: number; ingredients: string[]; contains: string }[];
+  restrictions: { id: string; name: string }[];
+  selected: string[];
+  cart: { item: string; quantity: number }[];
+} {
+  return {
+    items: ctx.menu.items.map((i) => ({
+      id: i.id,
+      name: i.name,
+      price: i.price,
+      ingredients: ingredientNames(i, ctx.menu),
+      // Disclosure of derived allergen data, which is a fact about the ingredient
+      // table. It is NOT a verdict about anyone, and the model must not read it as one.
+      contains: containsLine(i, ctx.menu),
+    })),
+    restrictions: ctx.restrictions.map((r) => ({ id: r.id, name: r.name })),
+    selected: ctx.selected().map((r) => r.id),
+    cart: readCart(ctx.doc),
+  };
+}
+
+export function readCart(doc: Document): { item: string; quantity: number }[] {
+  const out: { item: string; quantity: number }[] = [];
+  for (const line of doc.querySelectorAll<HTMLElement>("[data-cart-line]")) {
+    const item = line.dataset["cartLine"];
+    const qty = Number(line.querySelector<HTMLElement>("[data-qty]")?.textContent ?? "0");
+    if (item && Number.isFinite(qty) && qty > 0) out.push({ item, quantity: qty });
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* add_to_cart and checkout_demo_order: the site's own controls        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Drive the site's own Add button rather than reaching into the cart's state.
+ * The site has to work with no agent at all, so the agent uses what a guest
+ * uses, and the result is verified by reading the cart line back.
+ */
+export function addToCart(doc: Document, menu: Menu, item: string, quantity: number): { item: string; quantity: number; cartQuantity: number } {
+  // Everything before the first click is a NoEffectError: the cart provably did not
+  // change, so the outcome is a failure, not an unknown.
+  if (!itemById(menu, item)) throw new NoEffectError(`'${item}' is not an item on this menu.`);
+  // Escaped for the same reason `verdict-cards.ts` escapes its slot selector,
+  // with the same function: a selector built from data must not depend on ids
+  // staying `[a-z0-9_]`.
+  const card = doc.querySelector<HTMLElement>(`[data-item="${cssEscape(item)}"]`);
+  const button = card?.querySelector<HTMLElement>("[data-add]");
+  if (!button) throw new NoEffectError(`The page has no Add control for '${item}', so nothing was added.`);
+  const before = readCart(doc).find((l) => l.item === item)?.quantity ?? 0;
+  for (let n = 0; n < quantity; n += 1) button.click();
+  const after = readCart(doc).find((l) => l.item === item)?.quantity ?? 0;
+  if (after !== before + quantity) {
+    // Clicks have already happened, so the cart may have changed partially. That
+    // is genuinely unknown, and stays a plain Error.
+    throw new Error(`The cart shows ${after} of '${item}', not the ${before + quantity} expected. Read the order yourself before trying again.`);
+  }
+  return { item, quantity, cartQuantity: after };
+}
+
+/** The default order placement: click the site's checkout, then read the confirmation back. */
+export function placeOrderInPage(doc: Document): { summary: string } {
+  const lines = readCart(doc);
+  // Again: everything before the click provably placed nothing.
+  if (lines.length === 0) throw new NoEffectError("The order is empty, so there is nothing to place.");
+  const button = doc.querySelector<HTMLButtonElement>("[data-checkout]");
+  if (!button) throw new NoEffectError("The page has no checkout control, so no order was placed.");
+  if (button.disabled) throw new NoEffectError("The checkout control is disabled, so no order was placed.");
+  button.click();
+  const confirmation = doc.querySelector<HTMLElement>("[data-confirmation]");
+  if (!confirmation || confirmation.hasAttribute("hidden")) {
+    // The click happened. Whether anything came of it is not something we know.
+    throw new Error("The order was submitted but no confirmation appeared, so its outcome is unknown.");
+  }
+  return { summary: (confirmation.textContent ?? "").replace(/\s+/g, " ").trim() };
+}
+
+/* ------------------------------------------------------------------ */
+/* Registration                                                        */
+/* ------------------------------------------------------------------ */
+
+const FINDING_SCHEMA = {
+  type: "object" as const,
+  additionalProperties: false as const,
+  properties: {
+    item: { type: "string" as const, description: "The menu item id this verdict is about." },
+    verdict: { type: "string" as const, enum: ["safe", "unsafe", "unknown"], description: "The checker's verdict." },
+    covered: {
+      type: "array" as const,
+      description: "The allergen ids this verdict speaks to. An empty list means nothing was checked.",
+      items: { type: "string" as const, description: "An allergen id." },
+    },
+    because: {
+      type: "object" as const,
+      additionalProperties: false as const,
+      description: "The ingredient and rule that decided it. Absent for a safe verdict.",
+      properties: {
+        ingredient: { type: "string" as const, description: "The item ingredient that decided the verdict." },
+        allergen: { type: "string" as const, description: "The allergen id, or the literal 'unknown' for a data gap." },
+        via: {
+          type: "array" as const,
+          description: "The derivation path from the ingredient to the allergen.",
+          items: { type: "string" as const, description: "An ingredient or allergen id." },
+        },
+      },
+      required: ["ingredient", "allergen", "via"],
+    },
+  },
+  required: ["item", "verdict", "covered"],
+};
+
+/**
+ * The definitions, separated from the handlers so a test can read them without a DOM.
+ *
+ * Every id-shaped argument is an `enum` of the ids this site actually publishes.
+ * That is not politeness to the model. An action's arguments are shown to the
+ * guest in the confirmation dialog before a committing action runs, so a free-text
+ * `item` would be a second, unguarded route for model prose to reach the screen:
+ * `add_to_cart({item: "the Reuben is dairy-free"})` would print that claim in the
+ * dialog. Pinning the value set makes such an argument fail validation before any
+ * dialog is drawn. The gate is the only path for prose; this keeps it the only one.
+ */
+/**
+ * A JSON Schema with every `enum` KEYWORD removed, at any depth.
+ *
+ * This is what this site publishes about an action's arguments, and the rule has
+ * one definition because two surfaces consult it: the manifest's `parameters`
+ * (generated from here) and `reconcileActions`, which refuses to start the
+ * assistant if the two disagree.
+ *
+ * WHY THE ENUMS ARE NOT PUBLISHED. The `inputSchema`s below enumerate every menu
+ * item id and every restriction id, and those enums do real work — they are what
+ * stops a model proposing `add_to_cart({item: "the Reuben is dairy-free"})` and
+ * printing that claim in the confirmation dialog. But publishing them put a COPY
+ * OF THE MENU in `agent-manifest.json`, so two published files had to agree
+ * forever, and the copy would have been wrong the first time a dish was added.
+ * The enum was never the check either: the runtime validates against the live
+ * menu, which is stricter than a published list and cannot go stale. So the
+ * published schema carries the typed member and a description saying where the
+ * real list lives, which is still a JSON Schema and all §2.1 asks for.
+ *
+ * It also removed a dilemma. With no data snapshot in the published schema,
+ * nothing in it moves when the data does — so a published schema that disagrees
+ * with the code is a genuine contract break rather than a stale copy, and belongs
+ * at start-up beside the name and effect checks instead of in a test only.
+ *
+ * Keys inside a `properties` map are PROPERTY NAMES, not keywords, so a property
+ * legitimately called `enum` survives. No action has one; the distinction is here
+ * so that adding one is not a silent data loss.
+ */
+export function withoutEnums(node: unknown, insideProperties = false): unknown {
+  if (Array.isArray(node)) return node.map((x) => withoutEnums(x));
+  if (node === null || typeof node !== "object") return node;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (!insideProperties && key === "enum") continue;
+    out[key] = withoutEnums(value, !insideProperties && key === "properties");
+  }
+  return out;
+}
+
+export function actionDefinitions(ctx: Pick<SiteContext, "checkoutTimeoutMs"> & { menu?: Menu; restrictions?: Restriction[] }): ActionDefinition[] {
+  const itemIds = (ctx.menu ?? MENU).items.map((i) => i.id);
+  const restrictionIds = (ctx.restrictions ?? RESTRICTIONS).map((r) => r.id);
+  return [
+    {
+      name: "get_menu_state",
+      description: ours(
+        "Read the current menu, the guest's restrictions and the cart. Returns published data only: item names, prices, listed ingredients and the derived allergens disclosed on each card. It contains no verdict and must not be read as one.",
+      ),
+      effect: "read",
+      commits: false,
+      inputSchema: { type: "object", additionalProperties: false, properties: {} },
+    },
+    {
+      name: "check_safety",
+      description: ours(
+        "Ask the site's checker for its verdict (safe, unsafe or unknown, with the deciding ingredient) on menu items under a set of restrictions. This is the only source of a safety verdict. You may ask; you may not conclude. The verdict is also shown beside each dish, and that display, not your summary, is what the guest reads.",
+      ),
+      effect: "read",
+      commits: false,
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          items: {
+            type: "array",
+            description: "Menu item ids to check. Omit to check the whole menu.",
+            maxItems: 64,
+            items: {
+              type: "string",
+              description: "A menu item id. The valid values are the ids in this site's own menu, which the runtime validates against.",
+              enum: itemIds,
+            },
+          },
+          restrictions: {
+            type: "array",
+            description: "Published restriction ids to check against. Omit to use what the guest has selected on the page.",
+            maxItems: 16,
+            items: {
+              type: "string",
+              description:
+                "A restriction id. The valid values are the ids in this site's own published restriction list, which the runtime validates against.",
+              enum: restrictionIds,
+            },
+          },
+        },
+      },
+      outputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          findings: { type: "array", description: "One finding per item checked.", maxItems: 128, items: FINDING_SCHEMA },
+          checked: {
+            type: "array",
+            description: "The restriction ids actually checked. Empty means nothing was checked.",
+            maxItems: 16,
+            items: { type: "string", description: "A restriction id." },
+          },
+        },
+        required: ["findings", "checked"],
+      },
+    },
+    {
+      name: "add_to_cart",
+      description: ours("Add a menu item to the guest's order. This changes the order, so the guest confirms it first."),
+      effect: "write",
+      commits: true,
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          item: {
+            type: "string",
+            description:
+              "The menu item id to add. The valid values are the ids in this site's own menu, which the runtime validates against.",
+            enum: itemIds,
+          },
+          quantity: { type: "integer", description: "How many to add. Defaults to one.", minimum: 1, maximum: 10 },
+        },
+        required: ["item"],
+      },
+      outputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          item: { type: "string", description: "The item added." },
+          quantity: { type: "integer", description: "How many were added." },
+          cartQuantity: { type: "integer", description: "How many are in the order now, read back from the page." },
+        },
+        required: ["item", "quantity", "cartQuantity"],
+      },
+    },
+    {
+      name: "checkout_demo_order",
+      description: ours(
+        "Place the demo order. No payment is taken and no food is made. It commits the order, so the guest confirms it first, and if its outcome cannot be confirmed it is reported as unknown rather than retried.",
+      ),
+      effect: "irreversible",
+      commits: true,
+      timeoutMs: ctx.checkoutTimeoutMs ?? 20000,
+      inputSchema: { type: "object", additionalProperties: false, properties: {} },
+      outputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: { summary: { type: "string", description: "The confirmation the page showed, read back after the order." } },
+        required: ["summary"],
+      },
+    },
+  ];
+}
+
+/** Register all four, returning their canonical refs in declaration order. */
+export function registerSiteActions(registry: ActionRegistry, scope: ActionScope, ctx: SiteContext): string[] {
+  const handlers: Record<string, (args: Record<string, unknown>, c: { signal: AbortSignal }) => unknown> = {
+    get_menu_state: () => menuState(ctx),
+    check_safety: (args) => checkSafety(args as CheckSafetyArgs, ctx),
+    add_to_cart: (args) => addToCart(ctx.doc, ctx.menu, String(args["item"]), Number(args["quantity"] ?? 1)),
+    checkout_demo_order: (_args, c) =>
+      ctx.placeOrder ? ctx.placeOrder(c.signal) : placeOrderInPage(ctx.doc),
+  };
+  return actionDefinitions(ctx).map((def) => registry.register(scope, def, (args, c) => handlers[def.name]!(args, c)));
+}
+
+/** Where the runtime should look in the DOM to find the shop it drives. */
+export function siteControlsPresent(doc: Document): boolean {
+  return doc.querySelector("[data-menu]") !== null && doc.querySelector("[data-checkout]") !== null;
+}
+
+/** The published defaults, for a caller that has no reason to override them. */
+export function defaultSiteContext(doc: Document, selected: () => Restriction[]): SiteContext {
+  return { doc, menu: MENU, restrictions: RESTRICTIONS, selected };
+}

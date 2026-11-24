@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "site": {
+    "name": "Hollis & Rye",
+    "description": "A deli whose menu can be browsed and ordered without any agent, and whose agents describe food but never decide whether it is safe to eat."
+  },
+  "networks": [
+    {
+      "name": "vouch",
+      "description": "Menu guide, restriction reader and order builder for Hollis & Rye.",
+      "front_man": "front_of_house",
+      "hocon": "vouch.network.json"
+    }
+  ],
+  "llm_router": {
+    "protocol": "openai-compatible",
+    "base_url": "https://api.openai.com/v1",
+    "byok_router": "https://api.openai.com/v1",
+    "mock": false,
+    "default": {
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "requires_key": true,
+      "note": "Model and generation settings are hints. The caller's active router and model policy take precedence."
+    },
+    "byok": true
+  },
+  "peer_policy": {
+    "consent": "required_before_contact",
+    "private_context": "deny_by_default",
+    "router_inherited_by_peers": true
+  },
+  "//allowed_peers": "This is the only place the allow-list lives. §3.3 fixes no location for it, the runtime reads it here, and a nested copy under peer_policy could only ever disagree with it — it was published as an empty array here while this list named a peer, so the document read as deny-all to anyone who looked in the other place. The list names ONE origin: Marrow Point Bakery, the second site of this project, deployed and served by us. HOW IT CAME TO BE EMPTY BEFORE THAT, because the rule outlives the entry: it held an entry for marrow-point-bakery.vercel.app, a claimable *.vercel.app subdomain this project did not own and had never deployed, so anyone who registered that project name would have been an allow-listed peer — fetched and run in a visitor's browser, on the visitor's own router, behind a consent card naming an origin the visitor had every reason to trust. docs/DECISIONS.md had already written the rule down: publishing an allow-list entry for an origin that does not exist is worse than publishing none. That rule is unchanged and it governs this entry too. An allow-listed origin is one WE control, and a Netlify subdomain returns to the pool if the site is deleted, so the day we give this one up the entry, its links.json binding and the symbolic reference in vouch.network.json come out together, in the one commit that put them in — a symbolic reference whose binding is gone is a missing tool to the validator, which refuses the network at startup rather than degrading.",
+  "allowed_peers": [
+    "https://marrow-point-bakery.netlify.app"
+  ],
+  "deployment": {
+    "mode": "static"
+  },
+  "//actions": "Optional metadata: §3.3 lists action descriptions among the manifest's optional blocks. It is published in §3.1's field names — name, purpose, effect, JSON Schema — so a runtime that reads action descriptions finds what it expects. That sentence is spec line 203, under §3.1 Minimum Runtime Behavior: \"Support same-site registered actions described by name, purpose, JSON Schema, effect, and handler\". This note said §2.1 until this round, and §2.1 is Minimum Network Content and contains neither the word purpose nor the word effect, so a reader who checked the section this artifact named found nothing. Each `parameters` is the schema the runtime validates against, with its id enums removed: the valid ids are this site's own menu and restriction data, the runtime checks against that data directly, and a copy of it here would be a second published file that had to agree forever. The runtime refuses to start if these schemas and its own disagree.",
+  "actions": [
+    {
+      "name": "get_menu_state",
+      "purpose": "Read the current menu, the guest's restrictions and the cart.",
+      "effect": "read",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
+    },
+    {
+      "name": "check_safety",
+      "purpose": "Return the checker's verdict (safe, unsafe or unknown, with the deciding ingredient) for menu items under the guest's restrictions. The only source of a safety verdict; not callable from any agent's tools.",
+      "effect": "read",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Menu item ids to check. Omit to check the whole menu.",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "description": "A menu item id. The valid values are the ids in this site's own menu, which the runtime validates against."
+            }
+          },
+          "restrictions": {
+            "type": "array",
+            "description": "Published restriction ids to check against. Omit to use what the guest has selected on the page.",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "description": "A restriction id. The valid values are the ids in this site's own published restriction list, which the runtime validates against."
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "add_to_cart",
+      "purpose": "Add a menu item to the cart after the guest confirms.",
+      "effect": "write",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "The menu item id to add. The valid values are the ids in this site's own menu, which the runtime validates against."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "How many to add. Defaults to one.",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "item"
+        ]
+      }
+    },
+    {
+      "name": "checkout_demo_order",
+      "purpose": "Place a demo order. No payment is taken and nothing is fulfilled.",
+      "effect": "irreversible",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
+    }
+  ]
+}

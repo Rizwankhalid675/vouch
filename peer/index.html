@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marrow Point Bakery</title>
+  <meta name="description" content="A wholesale bakery that publishes an agent network describing the breads, buns and glazes it supplies.">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="masthead">
+    <p class="est">Wholesale bakery &middot; Since 1981</p>
+    <h1>Marrow Point Bakery</h1>
+    <p class="tag">We bake the bread other kitchens put their lunch on.</p>
+  </header>
+
+  <main class="layout">
+    <section class="card">
+      <h2>What we supply</h2>
+      <p>
+        Rye, brioche, ciabatta, bagels, pita and the glaze that goes on the donuts. We sell to
+        delicatessens, canteens and cafes, not to the public, so there is no counter here to
+        queue at.
+      </p>
+      <p>
+        Our glazes are batch recipes. What goes into a batch depends on what we can buy that
+        week, so we publish what a glaze <em>is</em> and not a breakdown of the batch that
+        reached your kitchen. If you need a breakdown for a particular delivery, write to us
+        with the lot number.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Our agent network</h2>
+      <p>
+        This site publishes an agent network so that a kitchen's own assistant can ask us about
+        a product directly. It is two agents of declarative JSON and nothing else: no code is
+        published here and nothing on this site runs a model.
+      </p>
+      <p>
+        A caller loads the network into <strong>their</strong> browser and runs it on
+        <strong>their</strong> own model router, with their own key. We never see that key, and
+        the router block in our manifest is there to be read, not obeyed.
+      </p>
+      <ul class="files">
+        <li><a href="./agents/agent-manifest.json"><code>/agents/agent-manifest.json</code></a> &mdash; the site manifest</li>
+        <li><a href="./agents/marrow_point.network.json"><code>/agents/marrow_point.network.json</code></a> &mdash; the network definition</li>
+      </ul>
+      <p class="ref">
+        The network is named by the URL <code>/agents/marrow_point</code>: the last path
+        component is the network name and the path before it is the site base the manifest is
+        read from.
+      </p>
+    </section>
+
+    <section class="card plain">
+      <h2>What we are not</h2>
+      <p>
+        We are not anybody's allergen check. We answer a kitchen about a component; we do not
+        know who is eating, what they avoid, or what else is on the plate. A kitchen that puts
+        our bread on a plate owns the answer it gives its own customer, and ours is not a
+        substitute for it.
+      </p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Marrow Point Bakery is a demo peer site. It exists on its own origin so that a second
+      site's runtime has somewhere real to load a network from.</p>
+  </footer>
+</body>
+</html>

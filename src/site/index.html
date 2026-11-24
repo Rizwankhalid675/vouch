@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hollis &amp; Rye Delicatessen</title>
+  <meta name="description" content="Sandwiches, soups and baked goods. Every ingredient listed, on every item.">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <a class="skip" href="#menu">Skip to the menu</a>
+  <header class="masthead">
+    <p class="est">Est. 1974 &middot; Sandwiches, soups, bakes</p>
+    <h1>Hollis &amp; Rye</h1>
+    <p class="tag">Delicatessen. Sliced to order, with every ingredient written down.</p>
+  </header>
+
+  <main class="layout">
+    <section id="menu" class="menu" aria-labelledby="menu-h">
+      <h2 id="menu-h">The menu</h2>
+      <p class="note">Each item lists what is in it. Read it before you order. If an item says its ingredients are not listed, ask at the counter.</p>
+      <div class="grid" data-menu>
+        <!-- Rendered from the menu data at build time and again in the browser. -->
+      </div>
+    </section>
+
+    <aside class="cart" aria-labelledby="cart-h">
+      <h2 id="cart-h">Your order <span class="count" data-cart-count>0</span></h2>
+      <p data-cart-empty>Nothing yet. Add something from the menu.</p>
+      <ul class="lines" data-cart-lines></ul>
+      <p class="total">Total <strong data-cart-total>$0.00</strong></p>
+      <button type="button" class="checkout" data-checkout disabled>Place demo order</button>
+      <div class="confirmation" data-confirmation role="status" hidden></div>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    <p>Hollis &amp; Rye is a demo deli. Orders are not real and no payment is taken.</p>
+  </footer>
+
+  <script type="module" src="./shop.ts"></script>
+  <!--
+    The agent panel is additive and creates its own markup at runtime, so this
+    document contains no agent element. If this module never loads, the deli above
+    is unchanged and still works, which is the point.
+  -->
+  <script type="module" src="./agent.ts"></script>
+</body>
+</html>

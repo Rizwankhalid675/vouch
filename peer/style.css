@@ -1,0 +1,41 @@
+/*
+ * Marrow Point Bakery. A second origin, so a deliberately different paper from
+ * the deli's: a judge looking at two tabs should be able to tell at a glance
+ * that these are two sites and not two routes of one.
+ */
+:root {
+  --paper: #f2f4f1;
+  --card: #ffffff;
+  --ink: #1f2a24;
+  --muted: #55645c;
+  --rule: #ccd6cf;
+  --accent: #2f5d4a;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 1rem/1.6 var(--sans); }
+
+.masthead { padding: 2.5rem 1rem 1.5rem; border-bottom: 2px solid var(--ink); text-align: center; }
+.est { margin: 0; font-size: .75rem; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: .4rem 0 .3rem; font: 600 clamp(2rem, 7vw, 3.25rem)/1.05 var(--sans); letter-spacing: -.02em; }
+.tag { margin: 0; color: var(--muted); }
+
+.layout { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; display: grid; gap: 1.25rem; }
+h2 { margin: 0 0 .5rem; font: 600 1.3rem/1.25 var(--sans); }
+.card { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 1.25rem; }
+.card > *, .card { min-width: 0; overflow-wrap: anywhere; }
+.card p { margin: 0 0 .75rem; }
+.card p:last-child { margin-bottom: 0; }
+.card.plain { background: none; border-style: dashed; }
+
+.files { margin: .25rem 0 1rem; padding-left: 1.1rem; }
+.files li { margin: .35rem 0; }
+code { font-family: var(--mono); font-size: .9em; background: var(--paper); padding: .1em .35em; border-radius: 3px; }
+.card.plain code { background: var(--card); }
+a { color: var(--accent); }
+a:focus-visible { outline: 3px solid #1d5fd1; outline-offset: 2px; }
+.ref { color: var(--muted); font-size: .92rem; }
+
+.foot { border-top: 1px solid var(--rule); padding: 1.5rem 1rem; text-align: center; color: var(--muted); font-size: .85rem; }
+.foot p { max-width: 42rem; margin: 0 auto; }

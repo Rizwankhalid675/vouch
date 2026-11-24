@@ -360,10 +360,13 @@ The apostrophes in the value re-pair the quotes. `quotedTokensOnly` saw `'x'` an
 through untouched — then `ours(...)` declared the whole built string the site's own
 words. **That rendered an ungated safety claim in the deli's voice**, on
 `[data-compose-status]` and on the startup error line. It was not reachable while
-`allowed_peers` was `[]`. **`allowed_peers` is no longer `[]`**: Task 8 published a
-peer on a second origin and listed its origin there, so this is a live path and not
-a latent one, and a test drives it through the real walk with a hostile document
-served from the peer's own URL.
+`allowed_peers` was `[]`, and `allowed_peers` is `[]` again — the entry Task 8
+published named an origin this project does not own, and it was withdrawn (§2.8
+below). **That is not why this was fixed and is not a reason to call it latent**: the
+compose field takes a URL the visitor types, a same-origin network needs no
+allow-list entry at all, and the three `/broken/` networks reach the same startup
+error line. A test drives it through the real walk with a hostile document served
+from a peer's own URL.
 
 It was the **third** filter for the same problem: action arguments in the
 confirmation dialog, then agent names in the site's voice, then this. The lesson
@@ -871,15 +874,36 @@ That was true until Task 8 and is now false, so it is replaced rather than softe
 a limits document that understates what a system does is as wrong as one that
 overstates it, and this file has corrected three stale claims already.
 
-What the build now does: `public/vouch.network.json` names a peer network
-symbolically, `public/links.json` binds that name to a URL on a **second origin**,
-and `public/agent-manifest.json` lists that origin in its top-level `allowed_peers`.
+What the build now does, **once a peer is wired in**: `public/vouch.network.json`
+names a peer network symbolically, `public/links.json` binds that name to a URL on a
+**second origin**, and `public/agent-manifest.json` lists that origin in its
+top-level `allowed_peers`.
 When our `menu_guide` asks for it, the runtime checks the published allow-list,
 **blocks on a consent card naming the origin and the purpose**, fetches the peer's
 `agent-manifest.json` from the base, selects the exactly-named entry, fetches and
 validates the definition, and then **runs the peer's agents in this browser** on the
 caller's router, under the caller's budgets. The answer comes back through the
 normal tool-result path and reaches the screen through `gate`.
+
+**What the deployed artifacts wire today: nothing.** All three fields are empty or
+absent — `allowed_peers` is `[]`, `links.json` binds no name, and
+`vouch.network.json` carries no symbolic reference. The entry we published named
+`marrow-point-bakery.vercel.app`, a **claimable `*.vercel.app` subdomain this
+project does not own and has never deployed**, so anyone who registered that Vercel
+project name would have been an allow-listed peer of this site — fetched, parsed
+and run in a visitor's browser, on the visitor's own router, behind a consent card
+naming an origin the visitor had every reason to trust. `DECISIONS.md` had written
+the refusal down before we committed it, in its own words.
+
+So the paragraph above describes a **capability that is built, tested and
+unreachable in the deployed build**, and this is the one place in this file that
+says which. Nothing above it is withdrawn: the composition path is exercised
+end to end in `tests/peer.test.ts` against the peer's own published documents on a
+fixture origin in the reserved `.example` TLD, and the three published files go in
+together — one step, one commit — when an origin we control exists
+(`OWNER-TODO.md` item 1). The symbolic reference had to come out with the binding
+rather than after it: unresolved, it is a `missing` tool to upstream's validator,
+which stops the site at startup instead of going quiet.
 
 ### 2.8b Consent: the default is before each contact, and the relaxation is the visitor's
 

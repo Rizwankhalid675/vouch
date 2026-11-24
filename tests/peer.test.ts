@@ -24,10 +24,28 @@
 // FOUR RULES THIS FILE FOLLOWS
 //
 //  1. **The real artifacts.** The peer's manifest and network definition are read
-//     off disk from `peer/public/agents/` and served over the harness fetch at
-//     the origin `public/links.json` actually binds. Nothing here re-types either
-//     document, so a test cannot pass against a fixture that the deployment does
-//     not serve.
+//     off disk from `peer/public/agents/` and served over the harness fetch.
+//     Nothing here re-types either document, so a test cannot pass against a
+//     fixture that the deployment does not serve.
+//
+//     ONE EXCEPTION, AND IT IS THE POINT OF A WHOLE FIX ROUND: the peer's ORIGIN
+//     is a constant here, and the deli's three artifacts are served with the peer
+//     wired in, because the published ones no longer wire it. We published
+//     `allowed_peers: ["https://marrow-point-bakery.vercel.app"]` and a binding to
+//     it — a claimable `*.vercel.app` subdomain this project does not own and has
+//     never deployed. Anyone who registered that Vercel project name became an
+//     allow-listed peer of this site: fetched, parsed and run in a visitor's
+//     browser on the visitor's own router, behind a consent card naming an origin
+//     that looked exactly like the bakery the site talks about. `docs/DECISIONS.md`
+//     had written the rule down first — "publishing an allow-list entry for an
+//     origin that does not exist is worse than publishing none" — and we did it
+//     anyway.
+//
+//     So this file keeps testing the capability, against an origin in the reserved
+//     `.example` TLD that nobody can register, and the §3.2 block below asserts
+//     that the PUBLISHED artifacts wire no peer at all. When a peer origin we
+//     control exists (`docs/OWNER-TODO.md` item 1), `PEER_ORIGIN` becomes the real
+//     one and the three fixture documents collapse back into the published ones.
 //  2. **Payloads, not intent.** Key isolation and private context are asserted by
 //     capturing every outbound request and reading its URL, query, headers and
 //     body at scan time. "A function was not called" proves nothing.
@@ -63,9 +81,9 @@ const root = resolve(import.meta.dirname, "..");
 const html = readFileSync(resolve(root, "src/site/index.html"), "utf8");
 const readJson = (...parts: string[]): unknown => JSON.parse(readFileSync(resolve(root, ...parts), "utf8"));
 
-const MANIFEST = readJson("public", "agent-manifest.json") as Manifest;
-const NETWORK = readJson("public", "vouch.network.json") as NetworkConfig;
-const LINKS = readJson("public", "links.json") as { version: number; networks: Record<string, Record<string, string>> };
+const PUBLISHED_MANIFEST = readJson("public", "agent-manifest.json") as Manifest;
+const PUBLISHED_NETWORK = readJson("public", "vouch.network.json") as NetworkConfig;
+const PUBLISHED_LINKS = readJson("public", "links.json") as { version: number; networks: Record<string, Record<string, string>> };
 
 /** The peer's own published bundle, read from `peer/public/agents/`. */
 const PEER_MANIFEST = readJson("peer", "public", "agents", "agent-manifest.json") as Manifest;
@@ -80,14 +98,31 @@ const PEER_HEADERS = readFileSync(resolve(root, "peer/public/_headers"), "utf8")
 const PEER_VERCEL = readJson("peer", "vercel.json") as { headers: { source: string; headers: { key: string; value: string }[] }[] };
 
 /**
- * Everything about the peer's ADDRESS comes from the published binding, not from
- * a constant here. Change `public/links.json` and this file follows it; mistype
- * it and the §3.2 shape assertions below fail rather than the whole suite
- * quietly testing a different bakery.
+ * Everything about the peer's address except its ORIGIN comes from the peer's own
+ * published manifest, not from a constant here: rename the network there and this
+ * file follows it. The origin is the one invented value in this file, and it is
+ * invented because there is no deployed peer to point at — see rule 1 above. It
+ * is in the reserved `.example` TLD (RFC 2606), so it cannot be registered by
+ * anyone, which is the property the published `*.vercel.app` host lacked.
  */
-const SYMBOLIC = "marrow_point";
-const PEER_REF = LINKS.networks["vouch"]![SYMBOLIC]!;
-const PEER_ORIGIN = new URL(PEER_REF).origin;
+const SYMBOLIC = PEER_NETWORK_NAME;
+const PEER_ORIGIN = "https://marrow-point.example";
+const PEER_REF = `${PEER_ORIGIN}/agents/${SYMBOLIC}`;
+
+/**
+ * The deli's three artifacts AS THEY WILL READ once a peer origin exists: the
+ * published documents, with the symbolic reference, its binding and its
+ * allow-list entry put back. Everything downstream of here runs against these,
+ * so this file tests the composition path rather than testing that the path is
+ * currently unreachable. What is PUBLISHED is asserted in the §3.2 block.
+ */
+const MANIFEST: Manifest = { ...structuredClone(PUBLISHED_MANIFEST), allowed_peers: [PEER_ORIGIN] };
+const NETWORK: NetworkConfig = (() => {
+  const n = structuredClone(PUBLISHED_NETWORK);
+  n.tools!.find((a) => a.name === "menu_guide")!.tools = [SYMBOLIC];
+  return n;
+})();
+const LINKS = { version: 1, networks: { vouch: { [SYMBOLIC]: PEER_REF } } };
 /** §3.2: the preceding path is the site base, the final component is the network name. */
 const PEER_BASE = PEER_REF.slice(0, PEER_REF.lastIndexOf("/"));
 const PEER_NAME = PEER_REF.slice(PEER_REF.lastIndexOf("/") + 1);
@@ -464,19 +499,87 @@ beforeEach(() => {
 
 describe("the peer is a conforming agent site, on an origin of its own", () => {
   /**
-   * INVARIANT: the published binding has the §3.2 shape, so the base the runtime
-   * derives really is where the peer's manifest is published.
+   * INVARIANT: the binding has the §3.2 shape, so the base the runtime derives
+   * really is where the peer's manifest is published. Asserted on the binding
+   * this file composes against — the one the deploy step will publish — because
+   * the published map binds nothing; the test below pins that.
    *
    * BREAKS IF: the binding gains a trailing slash, a query, or a path whose last
-   * component is not the published network name — each of which would make the
+   * component is the peer's network name no longer — each of which would make the
    * runtime fetch a manifest from the wrong place.
    */
-  test("the published binding is an https URL whose last path component is the network name", () => {
+  test("the binding is an https URL whose last path component is the peer's network name", () => {
     expect(PEER_REF).toMatch(/^https:\/\//);
     expect(PEER_NAME).toBe(SYMBOLIC);
     expect(PEER_MANIFEST.networks!.map((n) => n.name)).toContain(PEER_NAME);
     expect(PEER_BASE).toBe(`${PEER_ORIGIN}/agents`);
     expect(PEER_MANIFEST_URL).toBe(`${PEER_ORIGIN}/agents/agent-manifest.json`);
+  });
+
+  /**
+   * THIS SITE PUBLISHES NO PEER, AND THAT IS THE WHOLE STATEMENT.
+   *
+   * We published an allow-list entry and a binding for a claimable
+   * `*.vercel.app` subdomain we do not own, which would have made whoever
+   * registered that project name an allow-listed peer of this site — run in a
+   * visitor's browser, on the visitor's own router, behind a consent card naming
+   * an origin the visitor had every reason to trust. The allow-list is the
+   * control that says "this origin is one we vouch for", and we were vouching for
+   * a stranger. `docs/DECISIONS.md` had refused this in writing first.
+   *
+   * All three published files are asserted, because the exposure needed two of
+   * them and the third — the symbolic reference — cannot be left behind on its
+   * own: unresolved it is a `missing` tool to upstream's validator, which stops
+   * the site at startup rather than going quiet.
+   *
+   * BREAKS IF: a peer is wired into the published artifacts again. Then it should
+   * break, and the fix is `docs/OWNER-TODO.md` item 1: deploy an origin we
+   * control, wire all three files in one step, and point `PEER_ORIGIN` at it.
+   */
+  test("the published artifacts vouch for no origin: no allow-list entry, no binding, no symbolic reference", () => {
+    expect(PUBLISHED_MANIFEST.allowed_peers).toEqual([]);
+    expect(PUBLISHED_LINKS.networks["vouch"]).toEqual({});
+    expect(symbolicRefs(PUBLISHED_NETWORK)).toEqual([]);
+    expect(manifestAllowsPeer(PEER_REF, PUBLISHED_MANIFEST)).toBe(false);
+    // And no published artifact carries a URL on a registrable third-party
+    // subdomain service. Scheme-anchored on purpose: the notes beside the two
+    // emptied fields name `*.vercel.app` in prose, which is the record of why
+    // they are empty and must not trip this.
+    for (const [label, doc] of Object.entries({
+      manifest: PUBLISHED_MANIFEST,
+      network: PUBLISHED_NETWORK,
+      links: PUBLISHED_LINKS,
+    }))
+      expect(JSON.stringify(doc), label).not.toMatch(/https?:\/\/[^"\s]*\.(vercel\.app|netlify\.app|pages\.dev|github\.io)/);
+  });
+
+  /**
+   * AND THE PAGE DOES NOT OFFER A PEER THE PUBLISHED ARTIFACTS DO NOT BIND.
+   *
+   * The compose panel's note read *"Type marrow_point to load the one this site
+   * is bound to: a bakery, on its own origin"*, and its input's placeholder was
+   * `marrow_point`. Emptying the allow-list without this would have left the page
+   * inviting a guest to load a network that resolves to nothing — the artifacts
+   * would be honest and the sentence a guest reads would not. The note is static
+   * text built before any artifact is fetched, so nothing derives it from the
+   * binding and nothing but a test can hold the two together.
+   *
+   * BREAKS IF: a peer name is written back into the panel's prose or its
+   * placeholder without a binding in `public/links.json`, or the placeholder stops
+   * naming a reference that loads.
+   */
+  test("the compose panel offers no peer name the published links.json does not bind", async () => {
+    const s = await session();
+    const note = visibleTextOf(s.mount, "[data-compose] .panel-note");
+    const placeholder = s.mount.querySelector<HTMLInputElement>("[data-compose-input]")!.placeholder;
+    const bound = Object.keys(PUBLISHED_LINKS.networks["vouch"] ?? {});
+    if (!bound.includes(SYMBOLIC)) {
+      expect(note).not.toContain(SYMBOLIC);
+      expect(placeholder).not.toContain(SYMBOLIC);
+    }
+    // And what it does offer is a reference that resolves: a bound name, or one of
+    // the three same-origin networks this site publishes to be refused.
+    expect(bound.includes(placeholder) || placeholder.startsWith("/broken/")).toBe(true);
   });
 
   /**
@@ -492,15 +595,20 @@ describe("the peer is a conforming agent site, on an origin of its own", () => {
   test("the peer origin is not the caller's, and is not loopback", () => {
     expect(PEER_ORIGIN).not.toBe(BASE);
     expect(new URL(PEER_REF).hostname).not.toMatch(/^(localhost|127\.|\[?::1)/);
-    // And the allow-list that permits it is the published one, read top level.
+    // And the allow-list that permits it is read TOP LEVEL, which is where the
+    // runtime reads it. The entry itself is this file's fixture; the published
+    // list is empty, asserted above.
     expect(manifestAllowsPeer(PEER_REF, MANIFEST)).toBe(true);
     expect(MANIFEST.allowed_peers).toEqual([PEER_ORIGIN]);
-    // THERE IS NO NESTED COPY. It used to be published as an empty array beside a
-    // top-level list naming the bakery, so the document read as deny-all to
-    // anyone who consulted the block the runtime does not read. §3.3 fixes no
-    // location for it ("peer policy"), and a second copy can only ever disagree.
-    expect(Object.keys(MANIFEST.peer_policy!)).not.toContain("allowed_peers");
-    expect(MANIFEST.peer_policy!.mode).toBeUndefined();
+    // THERE IS NO NESTED COPY, in the fixture or in what we publish. It used to be
+    // published as an empty array beside a top-level list naming the bakery, so the
+    // document read as deny-all to anyone who consulted the block the runtime does
+    // not read. §3.3 fixes no location for it ("peer policy"), and a second copy
+    // can only ever disagree.
+    for (const m of [MANIFEST, PUBLISHED_MANIFEST]) {
+      expect(Object.keys(m.peer_policy!)).not.toContain("allowed_peers");
+      expect(m.peer_policy!.mode).toBeUndefined();
+    }
   });
 
   /**
@@ -2186,9 +2294,10 @@ describe("a caller's binding is the caller's, and never touches the published fi
     expect(s.runtime.conversation).not.toBeNull();
     // And the published file is untouched, to the byte.
     expect(readFileSync(path).equals(before)).toBe(true);
-    // The publisher's own file still says what it said.
+    // The publisher's own file still says what it said: it binds nothing, and a
+    // caller supplying a binding did not write one into it.
     const onDisk = JSON.parse(readFileSync(path, "utf8")) as typeof LINKS;
-    expect(Object.keys(onDisk.networks["vouch"]!)).toEqual([SYMBOLIC]);
+    expect(onDisk.networks["vouch"]).toEqual({});
   });
 
   /**

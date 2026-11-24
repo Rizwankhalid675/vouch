@@ -299,3 +299,41 @@ compiler.** Only one of them refuses to build.
 still explained them in the present tense — one of them telling a future caller to route raw
 strings through functions that no longer exist, and one asserting that quoting a value is what
 protects it, which is the precise belief four incidents had just disproved.
+
+**We published an allow-list entry for an origin we do not own, two paragraphs after refusing
+to.** `public/agent-manifest.json` listed `https://marrow-point-bakery.vercel.app` in
+`allowed_peers` and `public/links.json` bound the peer name to it. That host is a **claimable
+`*.vercel.app` subdomain**: this project has no hosting account, never deployed it, and
+`docs/RESULTS.md` called it "PLACEHOLDER — not yet deployed" the whole time. Anyone who
+registered that Vercel project name would have become an allow-listed peer of this site —
+fetched, parsed and run in a visitor's browser, on the visitor's own router. The consent card
+still names the origin and the visitor still has to approve, so this was not a silent takeover;
+it was worse than that in one specific way. The allow-list is the control that says *this origin
+is one we vouch for*, and the name the visitor would have read was the bakery the site talks
+about. We would have been lending our vouch to a stranger, to a visitor who checked.
+
+This file already said, in its own words, under **Conformance**: *"Publishing an allow-list entry
+for an origin that does not exist is worse than publishing none."* The paragraph that says it
+also claimed the tripwire beside it "is vacuous today and becomes live the moment a peer is
+added" — which was still written there, unedited, after the peer was added. **The rule was
+written down, the rule was broken, and the sentence recording the rule was left in place as
+evidence that it had not been.** That is the same shape as the consent card above: the principle
+beside the code that breaks it, by the same hand.
+
+Nine review passes and the controller missed it. A documentation audit found it, from a
+different direction entirely: it was chasing whether `RESULTS.md`'s "not yet deployed" agreed
+with everything else that named a peer origin.
+
+The fix publishes no peer at all. The allow-list entry, the binding and the symbolic reference
+in `vouch.network.json` are gone together, because the third cannot be left behind — unresolved,
+it is a `missing` tool to upstream's validator, which stops the site at startup. The capability
+and its tests stay, now run against an origin in the reserved `.example` TLD that nobody can
+register, and `tests/peer.test.ts` gained the assertion that the published artifacts vouch for
+no origin. The three fields go back in together, in one step, when there is an origin we control
+— `docs/OWNER-TODO.md` item 1 carries it.
+
+**The lesson is narrower than "check what you publish".** An allow-list entry is a *claim about
+a third party*, and it is the only kind of claim in this project that a stranger can make true
+of themselves later. Every other false sentence here was wrong the day it was written. This one
+would have become dangerous on a day nobody was looking, and nothing in the repository would
+have changed.

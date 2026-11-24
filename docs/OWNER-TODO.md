@@ -36,6 +36,28 @@ works from here, or you running two deploys yourself. Two projects on one accoun
 they get different origins. The repo already builds both halves: `npm run build` produces
 `dist/` (the deli) and `peer-dist/` (the second site).
 
+**Three published fields are deliberately empty until the peer origin exists, and they go in
+together.** The site currently vouches for no external origin at all:
+
+| File | Field | Today | On deploy |
+|---|---|---|---|
+| `public/agent-manifest.json` | `allowed_peers` | `[]` | `["https://<PEER-ORIGIN>"]` |
+| `public/links.json` | `networks.vouch` | `{}` | `{ "marrow_point": "https://<PEER-ORIGIN>/agents/marrow_point" }` |
+| `public/vouch.network.json` | `menu_guide.tools` | `[]` | `["marrow_point"]` |
+
+All three in one commit, or the site breaks rather than degrades: a symbolic reference with no
+binding is a missing tool to the validator, which refuses the network at startup. Then point
+`PEER_ORIGIN` in `tests/peer.test.ts` at the real origin — the whole peer suite runs against a
+reserved-TLD fixture until then — and delete `tests/peer.test.ts`'s "the published artifacts
+vouch for no origin" test in the same commit, reading its comment first.
+
+**Why they are empty.** They were not. We published `allowed_peers:
+["https://marrow-point-bakery.vercel.app"]` and a binding to it, for a **claimable
+`*.vercel.app` subdomain nobody here owns** — so whoever registered that Vercel project name
+would have been an allow-listed peer of this site, run in a visitor's browser on the visitor's
+own key. If you deploy the peer to Vercel, that project name is fine to claim *because you will
+own it*; until then nothing may name it. `docs/DECISIONS.md` has the full record.
+
 **Why this blocks more than the URL.** A list of things currently verified only on localhost,
 which is where this project has already been bitten once: the page layout at real widths, colour
 contrast on the verdict cards, whether CORS headers actually arrive, and the conformance
@@ -96,5 +118,8 @@ A judge cannot score a tool they cannot find.
 For completeness, so this list does not read as though the entry is stalled: the site, the
 deterministic checker, the gate, five published refusals, cross-origin peer composition behind
 consent, key isolation, the conformance checker, the limits document and the decision record are
-either done or in progress and need nothing from you. The only tasks that touch these four items
+either done or in progress and need nothing from you. One qualification, because it is the one
+piece of built work that is *switched off* in what we publish rather than merely unmeasured:
+cross-origin peer composition is written and tested, and the three fields that point it at a
+peer are empty until item 1 above. The only tasks that touch these four items
 are the deploy-and-measure pass and the submission itself.

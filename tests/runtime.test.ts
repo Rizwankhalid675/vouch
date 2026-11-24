@@ -37,8 +37,39 @@ const readPublic = (f: string): unknown => JSON.parse(readFileSync(resolve(root,
 const MANIFEST = readPublic("agent-manifest.json") as Manifest;
 const NETWORK = readPublic("vouch.network.json") as NetworkConfig;
 const LINKS = readPublic("links.json") as { networks: Record<string, Record<string, string>> };
-/** The publisher's own bindings for the running network, from the real links.json. */
+/** The publisher's own bindings for the running network, from the real links.json. Empty today; see below. */
 const PUBLISHED_BINDINGS = peerBindings(LINKS.networks["vouch"] ?? {});
+
+/**
+ * THE PEER THIS SITE DOES NOT PUBLISH.
+ *
+ * `public/links.json` binds nothing and `allowed_peers` is `[]`, because the one
+ * entry we did publish named a claimable `*.vercel.app` subdomain this project
+ * does not own: anyone who registered that project name became an allow-listed
+ * peer, fetched and run in a visitor's browser. `docs/DECISIONS.md` had written
+ * the rule down before we broke it.
+ *
+ * So the composition machinery is pinned against a FIXTURE pair rather than
+ * against the published files, on an origin in the reserved `.example` TLD that
+ * nobody can register. The published files' emptiness is pinned separately, in
+ * `tests/artifacts.test.ts`; without the fixture, three tests here would pass by
+ * having nothing left to check.
+ *
+ * BREAKS IF: a peer is published again. Then these become the published values
+ * and `PUBLISHED_BINDINGS` stops being empty — which is the deploy step in
+ * `docs/OWNER-TODO.md` item 1, and these tests are where it lands.
+ */
+const PEER_SYMBOLIC = "marrow_point";
+const PEER_ORIGIN = "https://marrow-point.example";
+const PEER_URL = `${PEER_ORIGIN}/agents/${PEER_SYMBOLIC}`;
+const FIXTURE_BINDINGS = peerBindings({ [PEER_SYMBOLIC]: PEER_URL });
+const FIXTURE_LINKS = { version: 1, networks: { vouch: { [PEER_SYMBOLIC]: PEER_URL } } };
+/** The published network as it reads once a peer origin exists: one symbolic reference, on `menu_guide`. */
+const networkWithPeer = (): NetworkConfig => {
+  const n = structuredClone(NETWORK);
+  n.tools!.find((a) => a.name === "menu_guide")!.tools = [PEER_SYMBOLIC];
+  return n;
+};
 
 const BASE = "https://deli.example";
 const ROUTER = "https://api.openai.com/v1";
@@ -1386,23 +1417,42 @@ describe("check_safety is a registered site action, and the only source of a ver
    * The action catalog is offered to the front agent only. Breaks if a sub-agent
    * is ever handed the catalog: `check_safety` would appear among its tools.
    *
-   * `menu_guide` now also carries one tool of its own — the peer network this
-   * site binds — so the assertion is stated as "no registered action reaches a
-   * sub-agent", which is the invariant, with the exact list beside it.
+   * `menu_guide` carries no tool of its own in what we publish today, so the
+   * invariant — "no registered action reaches a sub-agent" — would hold here
+   * against an empty list. It is therefore asserted TWICE: once on the published
+   * network, and once on a network whose `menu_guide` does carry a tool, so a
+   * catalog leaking downstream has something to leak into.
    */
-  test("only the front agent is offered the action catalog", async () => {
-    const h = harness({ replies: [callTool("menu_guide", { question: "x" }), say("ok"), say("done")] });
+  const toolsOffered = async (artifacts: Record<string, unknown> = {}): Promise<{ front: string[]; child: string[] }> => {
+    const h = harness({ replies: [callTool("menu_guide", { question: "x" }), say("ok"), say("done")], artifacts });
     const s = await session({ key: SENTINEL, h });
     await s.runtime.ask("x");
-    const bodies = (await h.routerBodies());
-    const frontTools = (bodies[0]!.tools ?? []).map((t) => t.function.name);
-    const childTools = (bodies[1]!.tools ?? []).map((t) => t.function.name);
-    expect(frontTools).toContain("check_safety");
-    expect(frontTools).toContain("menu_guide");
-    expect(childTools).not.toContain("check_safety");
+    const bodies = await h.routerBodies();
+    return {
+      front: (bodies[0]!.tools ?? []).map((t) => t.function.name),
+      child: (bodies[1]!.tools ?? []).map((t) => t.function.name),
+    };
+  };
+
+  test("only the front agent is offered the action catalog", async () => {
     const actionNames = (MANIFEST.actions ?? []).map((a) => a.name);
-    for (const t of childTools) expect(actionNames, t).not.toContain(t);
-    expect(childTools).toEqual(["marrow_point"]);
+    const published = await toolsOffered();
+    expect(published.front).toContain("check_safety");
+    expect(published.front).toContain("menu_guide");
+    expect(published.child).not.toContain("check_safety");
+    for (const t of published.child) expect(actionNames, t).not.toContain(t);
+    // What we publish: no sub-agent carries a tool at all.
+    expect(published.child).toEqual([]);
+
+    // And with a tool downstream, so the assertion has something to be wrong about.
+    const withPeer = await toolsOffered({
+      [`${BASE}/vouch.network.json`]: networkWithPeer(),
+      [`${BASE}/links.json`]: FIXTURE_LINKS,
+    });
+    expect(withPeer.front).toContain("check_safety");
+    expect(withPeer.child).not.toContain("check_safety");
+    for (const t of withPeer.child) expect(actionNames, t).not.toContain(t);
+    expect(withPeer.child).toEqual([PEER_SYMBOLIC]);
   });
 
   test("get_menu_state hands over published data and no verdict", () => {
@@ -2164,23 +2214,29 @@ describe("the adapted upstream plumbing, run against what we actually publish", 
   });
 
   /**
-   * The published network validates ONCE ITS BINDINGS ARE RESOLVED, and does not
-   * validate without them. That second half is the runtime face of the artifacts
-   * tripwire: a symbolic reference with no binding is a `missing` tool to
-   * upstream's classifier, so forgetting `links.json` does not produce a quietly
-   * inert peer — it stops the network at startup, by name.
+   * The published network validates, and it names no symbolic reference: nothing
+   * has to be resolved before it is valid, because no peer is published.
+   *
+   * The second half is the runtime face of the artifacts tripwire, asserted on
+   * the fixture because the published files no longer carry one: a symbolic
+   * reference with no binding is a `missing` tool to upstream's classifier, so
+   * forgetting `links.json` does not produce a quietly inert peer — it stops the
+   * network at startup, by name. That is also why the symbolic reference had to
+   * come out of `vouch.network.json` in the same commit as the binding: left
+   * behind, it would have taken the live site down rather than gone quiet.
    */
   test("the published network validates, and each kind of defect is caught", () => {
-    expect(symbolicRefs(NETWORK)).toEqual(["marrow_point"]);
-    expect(validate_network(resolveSymbolicRefs(NETWORK, PUBLISHED_BINDINGS))).toEqual([]);
-    expect(validate_network(NETWORK)).toEqual(["Agent 'menu_guide' references missing tool 'marrow_point'."]);
+    expect(symbolicRefs(NETWORK)).toEqual([]);
+    expect(validate_network(NETWORK)).toEqual([]);
+    const withPeer = networkWithPeer();
+    expect(symbolicRefs(withPeer)).toEqual([PEER_SYMBOLIC]);
+    expect(validate_network(withPeer)).toEqual([`Agent 'menu_guide' references missing tool '${PEER_SYMBOLIC}'.`]);
+    expect(validate_network(resolveSymbolicRefs(withPeer, FIXTURE_BINDINGS))).toEqual([]);
     // Upstream's validator concatenates every check rather than stopping at the
     // first, so an empty network reports both its defects. Matched deliberately.
     expect(validate_network({ tools: [] })).toEqual(["Network 'tools' array must not be empty.", "No front-man agent found."]);
     expect(validate_network({})).toEqual(["Network must have a 'tools' array.", "No front-man agent found."]);
-    // The defect cases are built on the RESOLVED network, so each reports its own
-    // one defect rather than that defect plus an unresolved binding.
-    const BOUND = resolveSymbolicRefs(NETWORK, PUBLISHED_BINDINGS);
+    const BOUND = structuredClone(NETWORK);
     const dangling = structuredClone(BOUND);
     dangling.tools![0]!.tools = ["nobody"];
     expect(validate_network(dangling)).toEqual(["Agent 'front_of_house' references missing tool 'nobody'."]);
@@ -2190,26 +2246,25 @@ describe("the adapted upstream plumbing, run against what we actually publish", 
   });
 
   /**
-   * Every reference in the published network is either an in-network agent or the
-   * ONE symbolic peer reference, which classifies as `remote` once its binding is
-   * resolved. Breaks if a bare URL or an MCP descriptor is ever added to an
+   * Every reference in the published network is an in-network agent, and there is
+   * nothing else: no bare URL, no MCP descriptor, and no symbolic peer reference,
+   * because no peer is published. Breaks if any of those is ever added to an
    * agent's tools without that being a deliberate, separately justified change.
+   *
+   * The `remote` classification is asserted on the fixture, so deleting the peer
+   * from the published files did not quietly delete the assertion with it.
    */
-  test("every tool reference is an in-network agent, or the bound peer network", () => {
-    const BOUND = resolveSymbolicRefs(NETWORK, PUBLISHED_BINDINGS);
-    const bound = PUBLISHED_BINDINGS.map((b) => b.symbolic);
+  test("every tool reference is an in-network agent, and a bound peer classifies as remote", () => {
     for (const agent of NETWORK.tools ?? []) {
       for (const ref of agent.tools ?? []) {
-        const label = `${agent.name} -> ${String(ref)}`;
-        if (typeof ref === "string" && bound.includes(ref)) {
-          // Unresolved it reads as missing; resolved it is a peer network.
-          expect(classify_tool(NETWORK, ref), label).toBe("missing");
-          expect(classify_tool(BOUND, PUBLISHED_BINDINGS.find((b) => b.symbolic === ref)!.url), label).toBe("remote");
-          continue;
-        }
-        expect(classify_tool(NETWORK, ref), label).toBe("agent");
+        expect(typeof ref, `${agent.name} -> ${String(ref)}`).toBe("string");
+        expect(classify_tool(NETWORK, ref), `${agent.name} -> ${String(ref)}`).toBe("agent");
       }
     }
+    const withPeer = networkWithPeer();
+    // Unresolved it reads as missing; resolved it is a peer network.
+    expect(classify_tool(withPeer, PEER_SYMBOLIC)).toBe("missing");
+    expect(classify_tool(resolveSymbolicRefs(withPeer, FIXTURE_BINDINGS), PEER_URL)).toBe("remote");
   });
 
   test("the published router rule: no key gives the default route, a key gives the BYOK route", () => {
@@ -2254,10 +2309,17 @@ describe("the adapted upstream plumbing, run against what we actually publish", 
     const h = harness();
     const s = await session({ h });
     expect(h.captured.some((c) => c.url === `${BASE}/links.json`)).toBe(true);
-    // The publisher's own binding, read from the real file rather than restated.
+    // Read from the real file rather than restated. It binds nothing: the published
+    // map is empty on purpose, and that is the one place that fact is asserted here.
     expect(s.runtime.links()).toEqual(LINKS.networks["vouch"]);
-    expect(Object.keys(s.runtime.links())).toEqual(["marrow_point"]);
-    expect(s.runtime.peerBindings().map((b) => b.boundBy)).toEqual(["publisher"]);
+    expect(Object.keys(s.runtime.links())).toEqual([]);
+    expect(PUBLISHED_BINDINGS).toEqual([]);
+    expect(s.runtime.peerBindings()).toEqual([]);
+    // A published binding IS read as the publisher's when there is one, so the
+    // emptiness above is the file's and not this assertion's.
+    const bound = await session({ h: harness({ artifacts: { [`${BASE}/links.json`]: FIXTURE_LINKS } }) });
+    expect(Object.keys(bound.runtime.links())).toEqual([PEER_SYMBOLIC]);
+    expect(bound.runtime.peerBindings().map((b) => b.boundBy)).toEqual(["publisher"]);
     const none = harness({ artifacts: { [`${BASE}/links.json`]: undefined } });
     expect(await loadPublishedLinks(BASE, "vouch", none.fetchImpl)).toEqual({});
   });

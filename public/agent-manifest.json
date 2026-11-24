@@ -30,10 +30,8 @@
     "private_context": "deny_by_default",
     "router_inherited_by_peers": true
   },
-  "//allowed_peers": "This is the only place the allow-list lives. §3.3 fixes no location for it, the runtime reads it here, and a nested copy under peer_policy could only ever disagree with it — it was published as an empty array here while this list named the bakery, so the document read as deny-all to anyone who looked in the other place.",
-  "allowed_peers": [
-    "https://marrow-point-bakery.vercel.app"
-  ],
+  "//allowed_peers": "This is the only place the allow-list lives. §3.3 fixes no location for it, the runtime reads it here, and a nested copy under peer_policy could only ever disagree with it — it was published as an empty array here while this list named a peer, so the document read as deny-all to anyone who looked in the other place. The list is now EMPTY ON PURPOSE, and empty is the statement: this site vouches for no external origin. It held one entry, for a claimable *.vercel.app subdomain this project does not own and has never deployed, so anyone who registered that project name would have been an allow-listed peer — fetched and run in a visitor's browser, on the visitor's own router, behind a consent card naming an origin the visitor had every reason to trust. docs/DECISIONS.md had already written the rule down: publishing an allow-list entry for an origin that does not exist is worse than publishing none. An entry, its links.json binding and the symbolic reference in vouch.network.json go in together, in one step, when a peer origin we control exists — docs/OWNER-TODO.md item 1.",
+  "allowed_peers": [],
   "deployment": {
     "mode": "static"
   },

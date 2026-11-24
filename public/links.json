@@ -1,8 +1,7 @@
 {
+  "//": "§3.3's peer-network link map. The `vouch` map is EMPTY ON PURPOSE, and that is a statement rather than a formality: this site binds no external network, and publishing an empty map says so — absence cannot be told apart from oversight, this can. A caller that resolves a named reference against this file learns, in one GET, that there is nothing here to resolve. It bound `marrow_point` to a claimable *.vercel.app subdomain this project does not own and has never deployed; the manifest's `//allowed_peers` records why that is gone. A binding, its allow-list entry and the symbolic reference that needs it go in together — docs/OWNER-TODO.md item 1.",
   "version": 1,
   "networks": {
-    "vouch": {
-      "marrow_point": "https://marrow-point-bakery.vercel.app/agents/marrow_point"
-    }
+    "vouch": {}
   }
 }

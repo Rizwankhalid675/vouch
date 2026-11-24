@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import raw from "../data/menu.json" with { type: "json" };
 import type { Menu, MenuItem, Restriction } from "../contracts";
 import { loadMenu } from "../src/safety/menu";
-import { allergensOf } from "../src/safety/derive";
+import { allergensOf, firstGap } from "../src/safety/derive";
 import { verdictFor } from "../src/safety/verdict";
 import { loadRestrictions } from "../src/safety/restrictions";
 import { RESTRICTIONS } from "../src/safety/canon";
@@ -31,12 +31,56 @@ describe("verdictFor", () => {
     expect(f.because).toBeDefined();
   });
 
+  /**
+   * THIS TEST DID NOT TEST ITS TITLE, AND THE REVIEW CAUGHT IT.
+   *
+   * It had two halves. The half that could fail used `sesameFree`, whose allergen
+   * **is** in the ingredient table — so it says nothing about a restriction the
+   * menu has never seen. The alien half asserted `alien.some(safe) === true`,
+   * which is the **fail-open** direction: it checks that some items ARE called
+   * safe, the opposite of the title. Deleting the two `sesameFree` lines left the
+   * test passing with nothing asserting the property it is named for.
+   *
+   * The property: an allergen that appears nowhere in the ingredient table cannot
+   * match anything, so the only thing standing between it and "everything is
+   * safe" is that **missing data is never safe**. That is what is asserted here,
+   * against a computed set rather than a count, so a new gap in `menu.json` is
+   * picked up rather than making the figure stale.
+   */
   test("a restriction the menu has never seen does not make everything safe", () => {
+    const KIWI = r("kiwi_free", "kiwi");
+    // The precondition the title rests on, asserted so the test cannot go quiet
+    // if `kiwi` is ever added to the ingredient table.
+    const reachable = new Set(
+      menu.items.flatMap((i) => i.ingredients.flatMap((ing) => allergensOf(ing, menu).map((a) => a.allergen))),
+    );
+    expect(reachable.has("kiwi")).toBe(false);
+
+    const alien = menu.items.map((i) => verdictFor(i, [KIWI], menu));
+
+    // THE TITLE. Not everything is safe, even though nothing can match.
+    expect(alien.every((f) => f.verdict === "safe")).toBe(false);
+
+    // And the reason is the right one: the items that are not safe are exactly the
+    // items whose published data does not say, and none of them is called unsafe.
+    const gapped = menu.items
+      .filter((i) => i.ingredients.length === 0 || i.ingredients.some((ing) => firstGap(ing, menu)))
+      .map((i) => i.id);
+    expect(gapped.length).toBeGreaterThan(0);
+    expect(alien.filter((f) => f.verdict !== "safe").map((f) => f.item).sort()).toEqual([...gapped].sort());
+    expect(alien.filter((f) => f.verdict === "unsafe")).toEqual([]);
+
+    // The fail-open half, kept and labelled: a fully-known item with no match
+    // really is safe, so the assertion above is not passing because everything is
+    // unknown. Both directions, or neither is evidence.
+    expect(alien.some((f) => f.verdict === "safe")).toBe(true);
+  });
+
+  /** The other case, which is what the test above was accidentally checking. */
+  test("a tracked restriction whose allergen IS in the table leaves some items not safe", () => {
     const all = menu.items.map((i) => verdictFor(i, [sesameFree], menu));
     expect(all.every((f) => f.verdict === "safe")).toBe(false);
-    const alien = menu.items.map((i) => verdictFor(i, [r("kiwi_free", "kiwi")], menu));
-    expect(alien.some((f) => f.verdict === "safe")).toBe(true); // fully-known items stay safe
-    expect(alien.find((f) => f.item === "daily_special")?.verdict).toBe("unknown");
+    expect(all.some((f) => f.verdict === "unsafe")).toBe(true);
   });
 
   test("a derived allergen names every hop that led to it", () => {

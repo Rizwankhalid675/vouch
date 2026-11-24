@@ -91,9 +91,50 @@ Yours, because it includes eligibility declarations and I will not complete an a
 your behalf. The required fields are the public URL, a text description of features and
 functionality, the video link, and one or more screenshots.
 
-I will draft the text description and produce the screenshots once there is a deployed site to
-screenshot. Check the video upload is set to **Public**, not Unlisted — an unlisted video
-answers a link check and is still invisible to a judge who searches.
+The text description is written and ready to paste: `docs/SUBMISSION-TEXT.md`.
+
+Check the video upload is set to **Public**, not Unlisted — an unlisted video answers a link
+check and is still invisible to a judge who searches.
+
+### The screenshots are yours too, and here is the shot list
+
+I said earlier that I would produce these. That was wrong in two ways, and correcting it is
+cheaper than leaving you to discover it: they should be of the **deployed** site, and in any
+case I cannot write an image file out of the browser I drive. So this is a shot list, in the
+same form as the video script, and **I have confirmed every state below renders on the built
+site** — so none of it is a guess about what you will see.
+
+Four shots, in priority order. One is enough to satisfy the field; the first two are the ones
+that argue the case.
+
+**1. The verdict cards, with an unsafe one in frame.** Tick **Dairy-free** and scroll to the
+Turkey club. The card reads *"✕ Unsafe for what you told us — Contains dairy, through Brioche
+bun → Brioche → Butter → Dairy. Checked against: Dairy-free."* Butter three steps down a tree,
+in a bun, with nothing in the ingredient line a person would read. Get the status line in frame
+too if you can — *"Checked 34 dishes against Dairy-free: 15 unsafe, 3 we cannot tell, 16 with no
+conflict found"* — because it shows the verdict is a sweep and not a lucky example.
+
+**2. The withheld claim beside the contradicting verdict.** Tick Dairy-free, turn on *"Replay a
+recorded reply instead of calling a model"*, leave the scenario on **A model giving a false
+all-clear**, and ask anything. The transcript shows *"Replayed reply, not a live model call"* and
+three sentences reading *"[A claim here was withheld; see the ingredient list.]"* — with the
+unsafe Turkey club card beside them. This is the whole thesis in one frame and it is the one to
+get right.
+
+**3. A refusal.** Type `/broken/invalid` into *"Load a published agent network"* and press Load.
+It refuses with the validator's own words, fenced and attributed: *"Refused: the published
+network below is not valid, so it was not run… copied exactly from the published document and
+kept apart from our own words, because this site did not write them"*, then the URL, then
+*"metadata.front_man names 'concierge', which is not an agent…"*. Three deliberately broken
+networks are published so this can be watched rather than taken on trust.
+
+**4. The honest empty state.** Before ticking anything: the standing note — *"The assistant does
+not decide whether food is safe for you, and is not permitted to"* — above 34 dishes with no
+verdict cards at all, and the line *"Nothing is being checked yet."* The site does not pretend to
+have checked something you have not told it about. A quiet shot, and the one a judge is least
+likely to have seen from anyone else.
+
+Shoot at a real window width, not a narrow one — the same reason the video script gives.
 
 ---
 

@@ -111,6 +111,38 @@ exactly as it did in Run A.
 
 Run A and Run B agree on all 20 checks.
 
+**Run C — both built sites on loopback, after the final fix round, by the controller,
+24 November 2026.** Run because Runs A and B both predate the ten commits of that round,
+one of which emptied `allowed_peers` and the published link map, and because **the peer
+site had never been checked at all** since it gained a link map.
+
+```
+npx vite preview --port 4178 --strictPort                         # deli  -> dist/
+npx vite preview --config peer/vite.config.ts --port 4179         # peer  -> peer-dist/
+node tools/conformance/cli.ts http://localhost:4178/vouch
+node tools/conformance/cli.ts http://localhost:4179/agents/marrow_point
+```
+
+| Site | Checks made | Result | Exit |
+|---|---|---|---|
+| Deli (`dist/`) | 14 of 20 | **13 pass, 1 fail**, 6 not-demonstrated | 1 |
+| Peer (`peer-dist/`) | 14 of 20 | **13 pass, 1 fail**, 6 not-demonstrated | 1 |
+
+**The single failure on each is the same one, and it is the same one as in Runs A and B:**
+
+```
+FAIL  §3.4  CORS header present on the real response for every public artifact
+```
+
+A `vite preview` server applies neither `public/_headers` nor `vercel.json`, so no
+artifact on either site returns `Access-Control-Allow-Origin`. For a stranger's site that
+result is a true failure. For these two it means loopback is not a host — which is why
+§0 lists the deployed CORS check as the highest-value verification still outstanding.
+
+What Run C adds beyond confirming Runs A and B: the deli still passes all 13 after its
+published artifacts changed, and **the peer site passes the same 13 independently** —
+including the link-map check it could not have passed before it published one.
+
 ### 1.2 Per check
 
 | Check | Spec | Status | Offending value / reason |

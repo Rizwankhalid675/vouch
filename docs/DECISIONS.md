@@ -51,6 +51,27 @@ A model saying "this is not dairy-free" is refused exactly like one saying it is
 real cost, accepted knowingly, and it is survivable only because the verdict is displayed
 beside the prose rather than through it.
 
+**The verdict cards are a pure function of the menu and the guest's restrictions.**
+The first version of this rule said the cards must render independently of model *prose*. A
+model could not write a card — and then a model *tool call* did. Asking the checker for a
+verdict with different arguments overwrote the guest's cards and printed "0 unsafe" against
+their own allergen, reachable on the normal path by a correctly behaving model. The rule now
+names the property rather than the channel: nothing reachable from the model may change what
+any card shows — not its verdict, not its text, not its presence, not its order. It is
+enforced by a signature. The renderer takes the guest's restrictions and computes the verdicts
+itself, so displaying a model-supplied verdict does not compile.
+
+**There is no way to put a runtime string into the site's own prose.**
+Four separate times, a string chosen by a model or a peer reached the screen in the deli's
+voice: through an action argument, through an agent's name, through a field value that
+supplied its own quote and re-paired the filter's delimiters, and finally through a filter
+that stripped whitespace followed by a prettifier that put it back. Each time the fix was a
+better filter. The fourth time the capability was deleted instead. `siteText` now interpolates
+only numbers — a number has no letters and no spaces, so no number can be a sentence — and a
+value that must be shown goes in its own labelled node. There are two kinds of node, because
+attribution has to be truthful: a stranger's string and our own menu data are marked
+differently, since calling our own menu "not ours" would itself be a lie.
+
 ---
 
 ## Honesty about the data
@@ -97,6 +118,19 @@ reference is explicit that private data is already visible to every agent inside
 the documentation may not claim those blocks isolate our own agents from each other — and
 does not.
 
+**Five refusals, not four.** The plan named four — invalid network, composition cycle,
+over-budget, denied origin. The specification requires a fifth that no task owned: a missing
+key must stop the model call with a clear setup error. It is answered with the line only this
+project can add — the checker and the verdict cards keep working with no key at all, because
+they never call a model. A visitor with no AI provider still gets every safety answer this
+site can give.
+
+**Repeated invocation is not a cycle.** The obvious cycle detector — a set of seen agent names
+— would refuse a guest who asks about two dishes, because that invokes the same agent twice.
+The specification forbids treating that as a cycle. Detection happens on the composition path
+across networks, and the false-positive case has its own test, so that a later "fix" cannot
+quietly reintroduce the violation.
+
 ---
 
 ## Process decisions that changed the outcome
@@ -127,6 +161,23 @@ misbehave on cue. The runtime therefore replays a fixed reply through the real g
 verdict path, labelled as replayed. That is also a regression test you can watch, which no
 live-model test can be.
 
+**The compiler enumerates; a grep finds what it cannot see.**
+Removing the interpolation capability was done in two passes, and only the second one was
+unusual. Narrowing the types and deleting the filters turned every unsafe call site into a
+compile error — thirteen of them, named by the compiler rather than by anyone's memory. But a
+raw `textContent =` never touches a typed API, so no type can object to it; one surface had
+survived three careful sweeps for exactly that reason. A grep for the untyped escape routes
+found it, and a fifth surface nobody had named. A type system enforces where its API is used;
+the places that bypass the API need their own search.
+
+**Tests assert properties, and three were rejected for passing the wrong way.**
+One restated a constant it was meant to pin. One asserted an implementation rather than an
+invariant, and so failed on legitimate future code — a test someone eventually loosens. One
+reimplemented the consumer it was testing, more forgivingly than the real thing, so three ways
+of breaking the configuration passed. A fourth checked that an element existed rather than
+that it was visible, and hiding it passed. The habit that catches these is mutation: break the
+thing deliberately, and watch the test fail before trusting it.
+
 ---
 
 ## Mistakes, recorded
@@ -154,3 +205,29 @@ breaking the configuration passed. Found by mutation testing, not by review.
 was accurate after one fix round and wrong after the third. It was caught before shipping. On a
 project whose entire argument is that systems should state what they do not know, that document
 is the one place an error would be fatal.
+
+**An invariant was scoped to a channel instead of a property**, and the product's central
+claim was false as built while every test passed. "Independent of prose" was not "independent
+of the model". The brief is the ceiling on what gets built, so every way the wording was
+narrower than the intent became a hole — and the tests inherited the same blind spot, because
+they were written against the same wording.
+
+**A commit message overstated its own change.** It said the gate withheld a sentence
+unconditionally; the sentence passes the gate standing alone and is withheld only after a dish
+is mentioned. The limits document had said this more precisely than the commit did.
+
+**A false claim was written into published agent instructions** — that the page shows a verdict
+"always and on every dish", when no verdict exists before the guest says what they avoid. An
+unbacked claim, in the file a reader takes as the argument, on a project about not making
+unbacked claims.
+
+**The limits document has been corrected three times**: a leak count that was accurate after
+one fix round and wrong after the third, a claim that a rule had been "applied without
+exception" when four surfaces were exempt and one was live, and a tension described as
+unresolved after it had been resolved. Every one of these was in prose. Nothing pins prose,
+and 324 passing tests say nothing about a sentence.
+
+**Comments outlived the code they described.** After the filters were deleted, three comments
+still explained them in the present tense — one of them telling a future caller to route raw
+strings through functions that no longer exist, and one asserting that quoting a value is what
+protects it, which is the precise belief four incidents had just disproved.

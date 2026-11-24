@@ -19,6 +19,33 @@ Total of your time: about two minutes, plus whatever Vercel's prompts ask.
 
 ---
 
+## Correction: it is ONE command, not two, and then I do the deploys
+
+I had this wrong when I first wrote it. There is no Vercel CLI session on this machine — I checked
+`~/Library/Application Support/com.vercel.cli`, `~/.vercel`, `~/.config/vercel`, the Netlify
+locations, and the environment. Nothing. So authentication has to happen once.
+
+**That once is yours, and it is this:**
+
+```bash
+npx vercel@latest login
+```
+
+It opens a browser or emails you a confirmation. That is the whole of it.
+
+**Why it cannot be me.** Not the sandbox this time — the rule. I do not enter API tokens or
+passwords into fields, and that holds even when you tell me to, because a token that can create and
+delete deployments on your account should not pass through a chat transcript or my shell history.
+A browser login you complete yourself leaves the credential where it belongs: in the CLI's own
+store, which I can then *use* without ever seeing.
+
+**After that one command, both deploys are mine.** The session persists, so I run `vercel --prod`
+for the deli and settle the peer question by measurement, with no further input from you. Steps 1
+and 2 below are then mine to run, not yours — I have left them in because the commands and the
+reasoning are still exactly right.
+
+---
+
 ## Step 1 — the deli. This one is known-good.
 
 From `~/Desktop/PW/hackathons/agenticweb-2027`:

@@ -45,9 +45,9 @@ you can watch, which is worth more than a demo you cannot reproduce.
 |---|---|---|---|
 | 1 | 0:00–0:10 | The deli, scrolling. Ingredients visible on every card. | "This is a deli. Thirty-four dishes, every ingredient listed. No agent involved yet — the site works with scripts off." |
 | 2 | 0:10–0:20 | Type a restriction in plain words: "I'm lactose intolerant." | "I'll tell the agent what I can't eat, in my own words." |
-| 3 | 0:20–0:40 | **The core shot.** The replayed model reply appears with a sentence greyed out and marked withheld. Beside it, on the card, a verdict reading **unsafe — dairy, via brioche bun → brioche → butter**. | "The model said this was fine. It wasn't — there's butter in the bun, two steps down. So the claim was withheld, and the verdict beside it came from the ingredient data, not from the model." |
-| 4 | 0:40–0:50 | A dish with an unknown ingredient. Card reads **unknown**, not safe, not unsafe. | "When the data doesn't say, it says unknown. It never guesses in your favour." |
-| 5 | 0:50–1:05 | The five refusals, fast cuts: invalid network naming the bad field, the composition cycle with its path, over-budget with both numbers, denied origin named, missing key with a setup message. | "The spec asks a runtime to fail visibly. Invalid network, composition cycle, over budget, denied origin, missing key — each one says what it refused and why." |
+| 3 | 0:20–0:40 | **The core shot.** The replayed reply appears with the claim withheld. On the Turkey club card, verbatim: **"✕ Unsafe for what you told us — Contains dairy, through Brioche bun → Brioche → Butter → Dairy. Checked against: Dairy-free."** | "The model said this was fine. It isn't — there is butter in the bun, three steps down, and no dairy anywhere in the ingredient line a person would read. The claim was withheld, and the verdict beside it came from the ingredient data, not from the model." |
+| 4 | 0:40–0:50 | A dish with an unknown ingredient → **unknown**. Then a clear dish, whose card reads **"✓ No conflict found"** — never "safe" — with the line every card carries: *"From the published ingredient list. Not a statement about the kitchen, and not medical advice."* | "When the data doesn't say, it says unknown — it never guesses in your favour. And when the data is clear it still won't say safe. It says it found no conflict, and tells you what it was not looking at." |
+| 5 | 0:50–1:05 | The five refusals, fast cuts. Paste `/broken/invalid`, `/broken/cycle-a`, then an origin outside the allow-list. The cycle shows its path as three fenced nodes: `cycle-a → cycle-b → cycle-a`. Let the panel's own line be readable once. | "The spec asks a runtime to fail visibly. Invalid network, composition cycle, over budget, denied origin, missing key — each says what it refused and why. These three are deliberately broken and published, so the refusals can be watched rather than taken on trust." |
 | 6 | 1:05–1:20 | Consent card naming the peer origin; approve; the peer's network loads and runs locally. Then the peer answers with confident prose → verdict **unknown**. | "A second site's agent network, loaded after approval and run in my browser. It answers with prose, so it gets unknown — a peer is not a source of truth." |
 | 7 | 1:20–1:30 | Key panel: the key is set; network tab shows the key in the router request and absent from the peer request. Then delete the key. | "My key, my browser. It reaches the router I chose and nothing else, and I can delete it." |
 | 8 | 1:30–1:45 | Terminal: the conformance CLI against the deployed URL, passing, with NOT CHECKED lines visible. | "I built a conformance checker anyone can run against any agentic site. It also says which checks it can't make — that's the same discipline." |
@@ -82,3 +82,31 @@ weighted criteria:
   criterion explicitly rewards something built and shared with the community.
 - **Quality of the Idea** — shots 3 and 9: the inversion itself. The model proposes, a
   deterministic gate decides, and the evidence survives.
+
+## Verified on-screen strings
+
+Every string below was read out of the live DOM on the built site, not drafted. Use them to
+check the recording shows what the script claims.
+
+- **Standing note, on screen before anyone types:** "The assistant does not decide whether
+  food is safe for you, and is not permitted to. The verdict beside each dish is this site's
+  own, worked out from the published ingredient list. Read that, not the reply."
+- **Unsafe card:** "✕ Unsafe for what you told us / Contains dairy, through Brioche bun →
+  Brioche → Butter → Dairy. / Checked against: Dairy-free."
+- **Clear card:** "✓ No conflict found / No dairy in the published ingredients for this item."
+- **Every card:** "From the published ingredient list. Not a statement about the kitchen, and
+  not medical advice."
+- **Invalid network:** "Refused: the published network below is not valid, so it was not run.
+  … copied exactly from the published document and kept apart from our own words, because
+  this site did not write them:" then the URL and the validator's words, each fenced.
+- **Cycle:** "Composition cycle refused: the chain below returns to a network already being
+  composed. No further network was fetched and nothing was run."
+- **The panel's own explanation of the fixtures:** "This site publishes three deliberately
+  broken ones so that the refusals can be watched rather than taken on trust."
+
+**Before ticking a restriction there are no verdict cards at all** — 34 empty slots and a
+status line saying so. That is correct and worth one beat of screen time: the site does not
+pretend to have checked something you have not told it about.
+
+Shots 1–5 and 7 have been confirmed rendering on the built site. Shot 6 needs the peer
+(Task 8) and shot 8 needs the deployed URL (Task 10).

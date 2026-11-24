@@ -66,15 +66,19 @@ curl -sL https://raw.githubusercontent.com/cognizant-ai-lab/nsdeploy/486ecf26aa8
 ```
 
 **Re-verified 24 November 2026, and upstream has moved.** All six digests above were
-re-fetched at the pinned SHA and match. `cognizant-ai-lab/nsdeploy` `main` is now
-`71b5037746a5b40e8c096a098e2ecaf8ad1f6adf`, ahead of the pin — and **all six sources
-are byte-identical at that revision too**, so nothing adapted here has changed
-upstream. `cognizant-ai-lab/neuro-san` `main` is `a5537db4ae32d55875ecf275cb9cd7148b444898`,
-and the three reference documents vendored above are byte-identical to it apart from
-the provenance comment our copy prepends; the `build_manifest` excerpt still matches
-`nsdeploy/generate.py` lines 440-512 exactly, and `LICENSE-Apache-2.0.txt` still
-matches `nsdeploy` `LICENSE.txt`. **Nothing was re-vendored**; the pin stands, which is
-the point of pinning. Figures and commands in [`docs/RESULTS.md`](../RESULTS.md) §3.
+re-fetched at the pinned SHA and match. Both upstream repositories have since advanced
+past the revisions these files were fetched at — and **all six adapted sources are
+byte-identical at `nsdeploy`'s current head as well**, so nothing adapted here has
+changed upstream. The three `neuro-san` reference documents are byte-identical to that
+repository's current head apart from the provenance comment our copy prepends; the
+`build_manifest` excerpt still matches `nsdeploy/generate.py` lines 440-512 exactly,
+and `LICENSE-Apache-2.0.txt` still matches `nsdeploy` `LICENSE.txt`.
+**Nothing was re-vendored**; the pin stands, which is the point of pinning.
+
+The two current head revisions are deliberately **not** quoted here, and a test
+enforces that: this file must name exactly one 40-hex SHA, the pin, so that nothing in
+it can be misread as a second thing we adapted from. The dated measurement, with both
+head revisions and the commands, is in [`docs/RESULTS.md`](../RESULTS.md) §3.
 
 One gap this leaves, stated rather than closed on a deadline: the four reference
 documents are pinned by a **fetch date, not a SHA**, so "identical today" is a

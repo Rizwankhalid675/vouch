@@ -88,6 +88,14 @@ exact match exists, it MUST fail rather than select another published network." 
 | **3** | The tool itself hit an error and reached no verdict. Not a verdict about your site. |
 | **4** | **The run was incomplete**: at least one artifact never answered — DNS, a refused connection, a proxy, a timeout, a typo in the hostname. The checks that *were* made still stand, and the output says which they are; the ones that could not be made have been verified by nothing. Non-zero, because an incomplete run is not a clean bill of health; distinct from 1, because your site cannot be at fault for a request that never arrived. |
 
+### What it will always tell you
+
+**Every run reports the same 20 checks**, whatever answered. If an artifact never answers, the
+checks that needed it are reported as not made, with the reason and the URL — they are never
+dropped. A check that is not listed cannot be read as a pass, a failure or a declined item, so the
+set is fixed by the types rather than by the code path a particular run happens to take, and a test
+asserts it across seven states.
+
 A `not-demonstrated` result never affects the exit code on its own — with one exception, exit 4,
 which exists precisely so that "some of this run did not happen" cannot be mistaken for either
 answer. The tool is safe to put in CI and will not go red because it cannot drive a browser.
@@ -250,7 +258,7 @@ instead of CORS.
 
 ## How well tested this is, exactly
 
-104 tests — 74 on the checks, 15 on the command line's exit codes, 10 on CORS, 5 on the structural invariant that an unreached check cannot carry a statement about the site. Each one was watched
+108 tests — 74 on the checks, 15 on the command line's exit codes, 10 on CORS, and 9 on the structural invariants: that an unreached check cannot carry a statement about the site, and that the set of checks a run reports is the same in every state, whatever answered. Each one was watched
 failing against a named one-line mutation of the implementation before it was kept, because a test
 nobody watched fail is not evidence. They run under the repository's root test runner, so
 `npm test` covers them and a change to this tool cannot be green in isolation.

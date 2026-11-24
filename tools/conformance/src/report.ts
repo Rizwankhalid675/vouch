@@ -118,12 +118,45 @@ export function renderText(results: readonly CheckResult[], target: Target): str
     `Result: ${failed.length} failed, ${made.length - failed.length} passed, ${notMade.length} NOT CHECKED ` +
       `— exit ${exitCodeFor(results)}`,
   );
+  // TWO NUMBERS, TWO UNITS. This counted `CheckResult`s and called them artifacts:
+  // thirteen of them, for a site that publishes three. Both readers of that output
+  // repeated the wrong figure, which is worth knowing about this report -- it is
+  // persuasive, so its errors travel. Requests that got no answer is a fact;
+  // results wearing the word "artifacts" is not.
   const unreached = results.filter((r) => r.unreached === true);
-  if (unreached.length > 0) {
+  const unreachedArtifacts = [...new Set(unreached.map((r) => r.unreachedUrl).filter((u): u is string => !!u))];
+  const checkWord = unreached.length === 1 ? "check" : "checks";
+  if (unreached.length > 0 && failed.length > 0) {
+    // THE MIXED STATE, which is real and which a reader needs both halves of. The
+    // old branch printed "Nothing above is a finding about this site's conformance"
+    // underneath a genuine FAIL -- a real site failure disclaimed as the checker's
+    // fault, in the line a reader skims to.
     lines.push("");
-    lines.push(`THIS RUN NEVER REACHED THE HOST for ${unreached.length} of this site's published artifacts, so`);
-    lines.push("it reached no verdict about the site at all. Nothing above is a finding about this site's");
-    lines.push("conformance. Check the URL, then whether this machine can reach that host.");
+    lines.push(
+      `MIXED RESULT. ${unreachedArtifacts.length} of this site's artifacts never answered, so ` +
+        `${unreached.length} ${checkWord} could not be made.`,
+    );
+    lines.push(
+      failed.length === 1
+        ? "But 1 check that WAS made failed, and that finding above stands."
+        : `But ${failed.length} checks that WERE made failed, and those findings above stand.`,
+    );
+    lines.push("Fix those, and check the network for the artifacts that got no answer.");
+    for (const url of unreachedArtifacts) lines.push(`  no answer: ${url}`);
+  } else if (unreached.length > 0) {
+    // NOT "no verdict about the site at all", and not "nothing above is a finding
+    // about this site's conformance". Both were the round-3 pattern one step
+    // further on: a true statement about the wholly-unreachable case, generalised
+    // into a sentence printed when twelve checks had passed. "Incomplete" is true
+    // in every sub-case, which is why it is the sentence.
+    lines.push("");
+    lines.push(
+      `THIS RUN IS INCOMPLETE. ${unreachedArtifacts.length} of this site's artifacts never answered, so ` +
+        `${unreached.length} ${checkWord} could not be made.`,
+    );
+    lines.push("Nothing that was not checked has been verified, and no passing check above covers it.");
+    lines.push("Check the URL, then whether this machine can reach that host.");
+    for (const url of unreachedArtifacts) lines.push(`  no answer: ${url}`);
   } else if (failed.length === 0) {
     lines.push("No check that this tool is able to make has failed. That is not the same as conformance:");
     lines.push(`${notMade.length} of the specification's checks were not made at all. See above for which.`);

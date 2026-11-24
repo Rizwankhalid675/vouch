@@ -117,16 +117,18 @@ describe("exit 2: the tool could not even start, which is not a verdict about an
 describe("exit 3: the checker itself broke and reached no verdict", () => {
   test("a crash in the checker exits 3, never 1", async () => {
     // 1 would say "your site failed a check" about a run that checked nothing.
+    //
+    // The guard used to be a `throw` inside the same `try`, so a `cliMain` that
+    // wrongly RESOLVED was caught by its own `catch`, `reportCrash` returned 3,
+    // and only the stderr assertion could notice. The assertion that says it
+    // directly is `rejects`.
     const out = io(() => Promise.reject(new Error("boom in the checker")));
-    let code: number | undefined;
-    try {
-      await cliMain([NETWORK_URL], out);
-      throw new Error("cliMain should have rejected");
-    } catch (err) {
-      code = reportCrash(err, out);
-    }
-    expect(code).toBe(3);
+    const crash = cliMain([NETWORK_URL], out);
+    await expect(crash).rejects.toThrow("boom in the checker");
+    expect(reportCrash(await crash.catch((err: unknown) => err), out)).toBe(3);
     expect(out.stderr).toContain("boom in the checker");
+    // Nothing was printed to stdout: a crashed run has no report to give.
+    expect(out.stdout).toBe("");
   });
 
   test("the crash message says no verdict was reached, and that it is the checker's fault", async () => {
@@ -166,7 +168,8 @@ describe("exit 0, 1 and 4 come straight from the checks", () => {
     for (const url of Object.keys(files)) files[url] = { throws: "ECONNREFUSED" };
     const out = io(fixtureRunner(files));
     expect(await cliMain([NETWORK_URL], out)).toBe(4);
-    expect(out.stdout).toMatch(/reached no verdict about the site/i);
+    expect(out.stdout).toMatch(/THIS RUN IS INCOMPLETE/);
+    expect(out.stdout).toMatch(/never answered/);
     expect(out.stdout).not.toMatch(/\bFAIL\b/);
   });
 

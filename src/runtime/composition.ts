@@ -25,10 +25,26 @@
  *     through the adapted upstream function. Not a constant, so it keeps working
  *     when a real peer is added, and a permitted-origin test sits beside the
  *     denied one so the check cannot rot into a tautology.
- *  3. **Same-origin is not a peer.** §3.2's consent requirement governs "contact
- *     with third-party origins". A site's own second network is not a third
- *     party, and treating it as one would make the published allow-list a list of
- *     origins including yourself, which no publisher writes.
+ *  3. **Same-origin is not a peer**, so it is exempt from the allow-list and from
+ *     consent. This was flagged as a guess during Task 7 and has since been
+ *     ruled correct against the spec, on two passages rather than one:
+ *
+ *       §3.2 Consent (L238-239): "a consent mechanism governing contact with
+ *       THIRD-PARTY origins ... it MUST identify the EXTERNAL origin and purpose".
+ *
+ *       §3.4 Browser Origin Requirements (L319-320): "Conformance does not
+ *       require a cross-origin deployment. Networks and supporting artifacts MAY
+ *       be co-bundled or hosted under the caller's origin, in which case their
+ *       retrieval does not require CORS."
+ *
+ *     Same-origin is neither third-party nor external, and §3.4 treats a
+ *     co-bundled network as ordinary. Treating one as a peer would also make the
+ *     published allow-list a list of origins that includes yourself, which no
+ *     publisher writes.
+ *
+ *     **This exemption does not reach a peer on a second origin**, which must
+ *     pass the allow-list and obtain consent. Do not route a cross-origin load
+ *     through the same-origin branch to make it easier.
  *  4. **Every refusal is a `RuntimeMessage`**, so the panel can show it in the
  *     deli's voice. Values from a peer document are either token-filtered
  *     through `siteText`/`joinTokens` - which admits no whitespace, so such a

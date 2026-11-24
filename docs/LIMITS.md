@@ -82,7 +82,7 @@ survivable, so that was the product's central claim being false.
 A model may still ASK for a verdict. It gets a `Finding` back in the conversation,
 and the conversation is gated. It does not get the display.
 
-### 2.0 What the key-isolation test can and cannot see
+### 2.0a What the key-isolation test can and cannot see
 
 The §6 key-isolation check asserts on captured payloads: every request a session makes is
 recorded synchronously at the moment it is made, its body read later at scan time, so neither

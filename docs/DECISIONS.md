@@ -94,11 +94,27 @@ been a bad trade at any price.
 ## Conformance
 
 **The published BYOK position is declared honestly instead of faked.**
-A static site has no publishable secret, so we ship no provider key. The specification's
-checklist asks for a run on "the site's published default router". We publish the router
-*protocol and model* and require a visitor key, and say exactly that — rather than inventing
-a funded default we cannot honour. A strict reader may score that check unmet. That is the
-correct way to lose a point.
+A static site has no publishable secret, so we ship no provider key. We publish the router
+protocol, endpoint and model and require a visitor key, and say exactly that — rather than
+inventing a funded default we cannot honour.
+
+Checking this against the spec rather than against memory changed how it should be stated.
+§4's requirement level is **MAY**: "A site MAY publish a default router and model that work
+without a visitor-supplied key." Declining an option is not non-conformance, and an earlier
+draft of this file implied we fell short of a mandate. §6's checklist line assumes a runnable
+default, so its first clause is not demonstrable here without a visitor key — while its second,
+"if BYOK is offered, also demonstrate the user-selected path", is satisfied in full. What the
+specification does not do is say that a BYOK-only site conforms, or that it fails. That silence
+is the actual situation, and naming it is better than resolving it in our own favour.
+
+Upstream corroborates the reading: its runtime now gates publisher funding behind an explicit
+`llm_router.publisher_funded === true`, and run against our published manifest it reports
+`publisherFunded: false` with no error. Our manifest therefore makes no claim that the site pays
+for inference — which is the claim it would be easiest to make by accident.
+
+A strict reader may still score the check unmet. That remains the correct way to lose a point,
+and it is the same three-valued judgement our own conformance CLI makes: `not-demonstrated`,
+never a quiet `pass`.
 
 **Tool references are an allow-list, for the same reason the gate is.**
 A name-based check could not see a verdict-shaped agent under a bland alias, or an MCP tool
@@ -142,6 +158,17 @@ configuration nested a key one level deeper than the runtime reads it: a visitor
 their own API key received *"this site publishes no AI provider route"* instead of a usable
 router. One hundred and twenty-three local tests passed. Tests written about an inferred
 schema only check the inference against itself.
+
+**The pinned spec was re-checked against upstream rather than assumed stable.**
+The entry is judged against a copy pinned on 23 November. On 24 November upstream's repository
+had moved — two commits in the router area, which is our weakest conformance claim — so the
+assumption was worth testing. The specification text itself is byte-identical (SHA-256
+`050c86cd…83763`), but the *runtime* gained a build-time refusal for a manifest whose
+`byok_router` equals its `base_url`. Ours does. The refusal is gated on a flag we do not set, so
+it does not fire; the current router selector was re-run against our published manifest in five
+configurations and all five behave correctly, including the BYOK upgrade that a hundred and
+twenty-three local tests had previously missed. Pinning a dependency and verifying the pin are
+different acts.
 
 **The reference was vendored, with its licence, before any code was taken.**
 Both upstream repositories are Apache 2.0. The licence and a provenance record naming what was

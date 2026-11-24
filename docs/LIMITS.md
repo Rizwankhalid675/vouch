@@ -1021,7 +1021,7 @@ caller's router, under the caller's budgets. The answer comes back through the
 normal tool-result path and reaches the screen through `gate`.
 
 **What the deployed artifacts wire today: one origin, and it is ours.**
-`allowed_peers` names `https://tubular-valkyrie-c8b80c.netlify.app`, `links.json`
+`allowed_peers` names `https://marrow-point-bakery.netlify.app`, `links.json`
 binds `marrow_point` to `/agents/marrow_point` on it, and `vouch.network.json`
 gives `menu_guide` that symbolic reference. All three went in together, in one
 commit, because a symbolic reference whose binding is missing is a `missing` tool

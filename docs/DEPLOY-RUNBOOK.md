@@ -117,7 +117,7 @@ measurement, and the §3.4 check stops being the entry's biggest unknown.
    already shipped a layout bug that appeared only on the real site.
 4. ~~**Put the three manifest fields back, in one commit**~~ — **done, 24 November 2026.**
    `allowed_peers`, the `links.json` binding and `menu_guide.tools` are pointed at
-   `https://tubular-valkyrie-c8b80c.netlify.app`, in one commit, and the peer test's fixture
+   `https://marrow-point-bakery.netlify.app`, in one commit, and the peer test's fixture
    origin is now the real one. `public/_headers` gained the `/broken/*` CORS rule in the same
    commit, because the deployed Netlify site was serving those fixtures without one while
    `vercel.json` said otherwise. **Both need a redeploy to take effect**, and steps 1-3 above are

@@ -32,7 +32,7 @@
   },
   "//allowed_peers": "This is the only place the allow-list lives. §3.3 fixes no location for it, the runtime reads it here, and a nested copy under peer_policy could only ever disagree with it — it was published as an empty array here while this list named a peer, so the document read as deny-all to anyone who looked in the other place. The list names ONE origin: Marrow Point Bakery, the second site of this project, deployed and served by us. HOW IT CAME TO BE EMPTY BEFORE THAT, because the rule outlives the entry: it held an entry for marrow-point-bakery.vercel.app, a claimable *.vercel.app subdomain this project did not own and had never deployed, so anyone who registered that project name would have been an allow-listed peer — fetched and run in a visitor's browser, on the visitor's own router, behind a consent card naming an origin the visitor had every reason to trust. docs/DECISIONS.md had already written the rule down: publishing an allow-list entry for an origin that does not exist is worse than publishing none. That rule is unchanged and it governs this entry too. An allow-listed origin is one WE control, and a Netlify subdomain returns to the pool if the site is deleted, so the day we give this one up the entry, its links.json binding and the symbolic reference in vouch.network.json come out together, in the one commit that put them in — a symbolic reference whose binding is gone is a missing tool to the validator, which refuses the network at startup rather than degrading.",
   "allowed_peers": [
-    "https://tubular-valkyrie-c8b80c.netlify.app"
+    "https://marrow-point-bakery.netlify.app"
   ],
   "deployment": {
     "mode": "static"

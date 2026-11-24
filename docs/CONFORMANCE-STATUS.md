@@ -114,7 +114,7 @@ fetched.
 **And the deli now publishes one peer: the second origin of this project.** The allow-list entry
 that run was made against named a claimable `*.vercel.app` subdomain we did not own, and it was
 withdrawn with its binding and its symbolic reference (`docs/DECISIONS.md`). All three fields are
-wired again, to `https://tubular-valkyrie-c8b80c.netlify.app` — a site we deploy and serve — in
+wired again, to `https://marrow-point-bakery.netlify.app` — a site we deploy and serve — in
 the one commit that `docs/OWNER-TODO.md` item 1 describes. The capability itself is unchanged
 since that run; what changed is that the published artifacts point at it. **The two-port loopback
 run above has not been repeated against the two deployed origins**, so what this file grades for
@@ -149,8 +149,8 @@ refusals can be watched rather than taken on trust.
 
 Both sites are live, public, and served by Netlify, which honours `public/_headers`:
 
-- **Deli:** `https://illustrious-kulfi-3c65a2.netlify.app`
-- **Peer (Marrow Point Bakery):** `https://tubular-valkyrie-c8b80c.netlify.app`
+- **Deli:** `https://vouch-deli.netlify.app`
+- **Peer (Marrow Point Bakery):** `https://marrow-point-bakery.netlify.app`
 
 **CORS is proven on real responses.** A cross-origin GET carrying
 `Origin: https://agentic-web-conformance.invalid`, cache-busted, against all six published

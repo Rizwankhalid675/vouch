@@ -13,8 +13,8 @@ twenty seconds whether this one is interesting.
 
 ## Vouch — a deli whose assistant may never tell you the food is safe
 
-**Live site:** `https://illustrious-kulfi-3c65a2.netlify.app` · **Second origin (the bakery):**
-`https://tubular-valkyrie-c8b80c.netlify.app`
+**Live site:** `https://vouch-deli.netlify.app` · **Second origin (the bakery):**
+`https://marrow-point-bakery.netlify.app`
 
 ### The one idea
 

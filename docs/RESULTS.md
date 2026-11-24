@@ -24,8 +24,8 @@ interoperability checks stands and how strongly.
 
 **The deploy has happened, and this section has not been re-measured since the commit
 that wired the peer in.** Both halves are live on Netlify — deli
-`https://illustrious-kulfi-3c65a2.netlify.app`, peer
-`https://tubular-valkyrie-c8b80c.netlify.app` — and the controller reports all six
+`https://vouch-deli.netlify.app`, peer
+`https://marrow-point-bakery.netlify.app` — and the controller reports all six
 published artifacts returning HTTP 200 with `Access-Control-Allow-Origin: *` on a real
 cross-origin GET with a cache-buster, and the conformance CLI scoring **14 of 14
 machine-checkable checks pass, 0 fail, 6 not checked, exit 0** against each origin on
@@ -202,7 +202,7 @@ was read rather than edited to today, because the run is dated and the figure be
 the run.** *"1 allowed peer origin declared"* was true on 24 November, for an origin we
 did not own; `allowed_peers` then became `[]` (`docs/DECISIONS.md`), and it is **1
 again** since the deploy — this time naming
-`https://tubular-valkyrie-c8b80c.netlify.app`, which we serve. So a re-run reports 1 for
+`https://marrow-point-bakery.netlify.app`, which we serve. So a re-run reports 1 for
 a different reason than the run did. One other thing moves with it: `vouch.network.json`
 carries a symbolic reference again, and `links.json` binds it, so a re-run has a
 reference to resolve rather than nothing. What it reports is for the re-run to say.

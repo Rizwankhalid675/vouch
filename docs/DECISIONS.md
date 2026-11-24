@@ -364,7 +364,7 @@ would have become dangerous on a day nobody was looking, and nothing in the repo
 have changed.
 
 **And the three fields are back in, 24 November 2026, for an origin we hold.** Both halves are
-deployed and the peer is `https://tubular-valkyrie-c8b80c.netlify.app` — a site this project
+deployed and the peer is `https://marrow-point-bakery.netlify.app` — a site this project
 created, serves and has fetched its artifacts from. `allowed_peers`, the `links.json` binding and
 `menu_guide`'s symbolic reference went in in one commit, for the same reason they came out in
 one: the reference without the binding is a `missing` tool to the validator, so the site would

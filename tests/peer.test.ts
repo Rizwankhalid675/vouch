@@ -118,7 +118,7 @@ const PEER_VERCEL = readJson("peer", "vercel.json") as { headers: { source: stri
  * a pin, and the §3.2 block below holds all three published documents to it.
  */
 const SYMBOLIC = PEER_NETWORK_NAME;
-const PEER_ORIGIN = "https://tubular-valkyrie-c8b80c.netlify.app";
+const PEER_ORIGIN = "https://marrow-point-bakery.netlify.app";
 const PEER_REF = `${PEER_ORIGIN}/agents/${SYMBOLIC}`;
 
 /**

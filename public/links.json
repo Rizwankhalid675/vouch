@@ -3,7 +3,7 @@
   "version": 1,
   "networks": {
     "vouch": {
-      "marrow_point": "https://tubular-valkyrie-c8b80c.netlify.app/agents/marrow_point"
+      "marrow_point": "https://marrow-point-bakery.netlify.app/agents/marrow_point"
     }
   }
 }

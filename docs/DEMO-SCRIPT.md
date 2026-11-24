@@ -135,7 +135,7 @@ and `describes_without_vouching`. The second one shows the gate refusing a model
 wrong answers?", that scenario is the answer, on screen, in about eight seconds.
 
 **Shot 6 can be filmed once the site is redeployed.** Both origins are live and the three fields
-are wired: `allowed_peers` names `https://tubular-valkyrie-c8b80c.netlify.app`, `links.json`
+are wired: `allowed_peers` names `https://marrow-point-bakery.netlify.app`, `links.json`
 binds `marrow_point` to it, and `vouch.network.json` carries the symbolic reference. What a judge
 types in the "Load a published agent network" field is `marrow_point` — the panel's own note says
 so now, which it did not while nothing was bound — and the consent card names the bakery's origin

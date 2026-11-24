@@ -57,8 +57,8 @@ are deployed and the peer is ours, so the site vouches for exactly one external 
 
 | File | Field | Now |
 |---|---|---|
-| `public/agent-manifest.json` | `allowed_peers` | `["https://tubular-valkyrie-c8b80c.netlify.app"]` |
-| `public/links.json` | `networks.vouch` | `{ "marrow_point": "https://tubular-valkyrie-c8b80c.netlify.app/agents/marrow_point" }` |
+| `public/agent-manifest.json` | `allowed_peers` | `["https://marrow-point-bakery.netlify.app"]` |
+| `public/links.json` | `networks.vouch` | `{ "marrow_point": "https://marrow-point-bakery.netlify.app/agents/marrow_point" }` |
 | `public/vouch.network.json` | `menu_guide.tools` | `["marrow_point"]` |
 
 All three went in together, because separately the site breaks rather than degrades: a symbolic

@@ -126,13 +126,18 @@ The text description is written and ready to paste: `docs/SUBMISSION-TEXT.md`.
 Check the video upload is set to **Public**, not Unlisted — an unlisted video answers a link
 check and is still invisible to a judge who searches.
 
-### The screenshots are yours too, and here is the shot list
+### The screenshots are done — `docs/screenshots/`
 
-I said earlier that I would produce these. That was wrong in two ways, and correcting it is
-cheaper than leaving you to discover it: they should be of the **deployed** site, and in any
-case I cannot write an image file out of the browser I drive. So this is a shot list, in the
-same form as the video script, and **I have confirmed every state below renders on the built
-site** — so none of it is a guess about what you will see.
+I twice told you these were yours, on the grounds that I could not write an image file out of
+the browser I drive. That was simply wrong: the screenshot tool takes a `save_to_disk` option I
+had not checked for. Correcting it rather than leaving the claim standing.
+
+**Four shots, 1568×740, captured from the deployed site**, with `docs/screenshots/README.md`
+explaining what each one proves. Upload any or all; one satisfies the field and the first two
+argue the case. Re-shoot only if the site changes.
+
+The shot list below is kept because it says *why* each frame was chosen, and because it is the
+recipe if you ever want them retaken.
 
 Four shots, in priority order. One is enough to satisfy the field; the first two are the ones
 that argue the case.

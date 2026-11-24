@@ -1263,10 +1263,18 @@ reason — not because we had been failing a requirement. §3.3's optional listi
 this is an improvement rather than a correction of non-conformance, and both halves
 are said here so that neither can be quoted alone.
 
-The four other optional keys upstream's own example manifests carry and we do not —
-`brand`, `MCP`, `linking`, `theme` — are in the same optional group, so their absence
-is not a gap either. They are absent because this entry does not publish capabilities
-it has not built.
+**Whose examples this was compared against**, since §2.5a is about what happens when
+that is left vague. The comparison was with the four `*_agentified` example manifests in
+`cognizant-ai-labs/agentic-web` — the event's spec-and-starter repository, not the
+`nsdeploy` repository `PROVENANCE.md` pins. All four publish `actions` as an object of
+`{version, module, bridge, agentTools}`: runtime wiring, not a described catalog. So
+nothing there contradicts our shape; §2.1's own field names are the authority, and the
+point was that we were not using them.
+
+The four other optional keys those example manifests carry and we do not — `brand`,
+`MCP`, `linking`, `theme` — are in the same optional group, so their absence is not a
+gap either. They are absent because this entry does not publish capabilities it has not
+built.
 
 ### 4.2 A published schema does not snapshot the site's own data
 

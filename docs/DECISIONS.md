@@ -179,16 +179,20 @@ their own API key received *"this site publishes no AI provider route"* instead 
 router. One hundred and twenty-three local tests passed. Tests written about an inferred
 schema only check the inference against itself.
 
-**The pinned spec was re-checked against upstream rather than assumed stable.**
-The entry is judged against a copy pinned on 23 November. On 24 November upstream's repository
-had moved — two commits in the router area, which is our weakest conformance claim — so the
-assumption was worth testing. The specification text itself is byte-identical (SHA-256
-`050c86cd…83763`), but the *runtime* gained a build-time refusal for a manifest whose
-`byok_router` equals its `base_url`. Ours does. The refusal is gated on a flag we do not set, so
-it does not fire; the current router selector was re-run against our published manifest in five
-configurations and all five behave correctly, including the BYOK upgrade that a hundred and
-twenty-three local tests had previously missed. Pinning a dependency and verifying the pin are
-different acts.
+**The pinned spec was re-checked against its own repository rather than assumed stable.**
+The entry is judged against a copy pinned on 23 November from **`cognizant-ai-labs/agentic-web`**
+— named, because the two repositories `PROVENANCE.md` pins are a different organisation and this
+document has already paid once for leaving that to inference. On 24 November that repository had
+moved — two commits in the router area, which is our weakest conformance claim — so the assumption
+was worth testing. The specification text itself is byte-identical (SHA-256 `050c86cd…83763`),
+re-confirmed again later the same day at the newer commit `05a665e`. But the **starter runtime
+vendored in that repository**, `skills/agentify-website/`, gained a build-time refusal for a
+manifest whose `byok_router` equals its `base_url`. Ours does. The refusal is gated on
+`llm_router.publisher_funded === true`, a flag we do not set, so it does not fire — verified both
+ways, including the counterfactual where setting it refuses our own manifest. That runtime's
+router selector was re-run against our published manifest in five configurations and all five
+behave correctly, including the BYOK upgrade that a hundred and twenty-three local tests had
+previously missed. Pinning a dependency and verifying the pin are different acts.
 
 **The reference was vendored, with its licence, before any code was taken.**
 Both upstream repositories are Apache 2.0. The licence and a provenance record naming what was

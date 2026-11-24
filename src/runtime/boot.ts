@@ -730,8 +730,8 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     const declared = manifest.actions ?? [];
     const mismatch = reconcileActions(registry, scope, declared);
     if (mismatch.length > 0) {
-      // A declared action that does not exist, or a `commits` flag that lies, is
-      // worse than publishing nothing. Refuse to run the agent at all.
+      // A declared action that does not exist, or a published `effect` that lies,
+      // is worse than publishing nothing. Refuse to run the agent at all.
       // The reconciler's sentences are ours, but they interpolate names out of
       // the published catalog, so they go through the same door as the
       // validator's: their own nodes, not ours.
@@ -1066,13 +1066,25 @@ function sourceLine(doc: Document, r: Receipt): HTMLElement {
 
 /**
  * Does the published `actions` catalog describe what the runtime actually has?
- * Checked in BOTH directions, and on the `commits` flag, because a flag that
- * lies is what would let a committing action run without asking.
+ * Checked in BOTH directions, and on the `effect`, because an effect that lies
+ * is what would let a committing action run without asking.
+ *
+ * It was checked on `commits` until fix round 1. `effect` is the stronger of the
+ * two and the only one published now: the registry DERIVES `commits` from
+ * `effect`, so comparing effects catches everything comparing flags caught and
+ * also catches a write published as irreversible, or the reverse.
+ *
+ * What it deliberately does NOT compare is `parameters`. A mismatch here refuses
+ * to start the assistant at all, which is the right answer for a name or an
+ * effect — both stable — and the wrong one for a schema whose id enums move
+ * every time the menu does. `tests/artifacts.test.ts` asserts the published
+ * schema equals the registered one, so drift fails a build instead of bricking
+ * a demo.
  */
 export function reconcileActions(
   registry: ActionRegistry,
   scope: ActionScope,
-  declared: { name: string; purpose?: string; commits?: boolean }[],
+  declared: { name: string; purpose?: string; effect?: string }[],
 ): string[] {
   const problems: string[] = [];
   const live = registry.catalog(scope);
@@ -1088,8 +1100,8 @@ export function reconcileActions(
     //   what we PUBLISH  ===  what the registry RECORDS  ===  when the guest is ASKED.
     // Checking only the first two would let an action be declared and recorded as
     // committing while the runtime quietly dispatched it without asking.
-    if (d.commits !== entry.commits) {
-      problems.push(`'${d.name}' is declared commits=${String(d.commits)} but the runtime records it as commits=${String(entry.commits)}.`);
+    if (d.effect !== entry.effect) {
+      problems.push(`'${d.name}' is declared effect='${String(d.effect)}' but the runtime records it as effect='${entry.effect}'.`);
     }
     const asksFirst = entry.effect !== "read";
     if (entry.commits !== asksFirst) {

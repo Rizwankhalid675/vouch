@@ -1436,11 +1436,15 @@ describe("check_safety is a registered site action, and the only source of a ver
 describe("the runtime, not the model, owns confirmation", () => {
   /**
    * Driven from the published manifest, in both directions. Breaks if an action
-   * declared `commits: true` is ever dispatched without asking, or if a
-   * `commits: false` one starts asking.
+   * the manifest publishes with a non-`read` effect is ever dispatched without
+   * asking, or if a `read` one starts asking.
+   *
+   * Reads the manifest's `effect` since fix round 1, which is the field the
+   * catalog publishes now; it read `commits` before, and `commits` was the same
+   * claim said in a word of ours.
    */
-  test.each((MANIFEST.actions ?? []).map((a) => [a.name, a.commits] as const))(
-    "%s: commits=%s decides whether the guest is asked",
+  test.each((MANIFEST.actions ?? []).map((a) => [a.name, a.effect !== "read"] as const))(
+    "%s: asked-first=%s, from the effect the manifest publishes",
     async (name, commits) => {
       const { registry, scope } = bareRegistry();
       const asked: ConfirmItem[][] = [];
@@ -1492,15 +1496,28 @@ describe("the runtime, not the model, owns confirmation", () => {
     expect(document.querySelector("[data-confirmation]")!.hasAttribute("hidden")).toBe(true);
   });
 
-  /** The manifest/runtime cross-check, and proof that it can fail. */
-  test("a lying commits flag, a missing action and an undeclared action are all caught", () => {
+  /**
+   * The manifest/runtime cross-check, and proof that it can fail.
+   *
+   * On `effect` since fix round 1, which is what the manifest publishes now. Both
+   * directions of a lie are checked: an irreversible order published as a read
+   * (the dangerous direction — it is what would let checkout dispatch unasked)
+   * and a read published as a write.
+   */
+  test("a lying effect, a missing action and an undeclared action are all caught", () => {
     const { registry, scope } = bareRegistry();
     expect(reconcileActions(registry, scope, MANIFEST.actions ?? [])).toEqual([]);
-    const lying = (MANIFEST.actions ?? []).map((a) => (a.name === "checkout_demo_order" ? { ...a, commits: false } : a));
-    expect(reconcileActions(registry, scope, lying)).toEqual([expect.stringContaining("checkout_demo_order")]);
+    const understated = (MANIFEST.actions ?? []).map((a) => (a.name === "checkout_demo_order" ? { ...a, effect: "read" as const } : a));
+    expect(reconcileActions(registry, scope, understated)).toEqual([expect.stringContaining("checkout_demo_order")]);
+    const overstated = (MANIFEST.actions ?? []).map((a) => (a.name === "get_menu_state" ? { ...a, effect: "write" as const } : a));
+    expect(reconcileActions(registry, scope, overstated)).toEqual([expect.stringContaining("get_menu_state")]);
+    // A write published as an irreversible order: both are "ask first", so the
+    // `commits` flag this check replaced could not tell them apart at all.
+    const wrongKind = (MANIFEST.actions ?? []).map((a) => (a.name === "add_to_cart" ? { ...a, effect: "irreversible" as const } : a));
+    expect(reconcileActions(registry, scope, wrongKind)).toEqual([expect.stringContaining("add_to_cart")]);
     const missingOne = (MANIFEST.actions ?? []).filter((a) => a.name !== "check_safety");
     expect(reconcileActions(registry, scope, missingOne)).toEqual([expect.stringContaining("not declared in agent-manifest.json")]);
-    const phantom = [...(MANIFEST.actions ?? []), { name: "vouch_for_it", purpose: "x", commits: false }];
+    const phantom = [...(MANIFEST.actions ?? []), { name: "vouch_for_it", purpose: "x", effect: "read" as const, parameters: {} }];
     expect(reconcileActions(registry, scope, phantom)).toEqual([expect.stringContaining("is not registered by this runtime")]);
   });
 
@@ -1518,14 +1535,17 @@ describe("the runtime, not the model, owns confirmation", () => {
       () => ({}),
     );
     expect(registry.confirmRequired(registry.entryFor(scope, "sneaky")!)).toBe(false);
-    expect(reconcileActions(registry, scope, [{ name: "sneaky", purpose: "x", commits: true }])).toEqual([
+    expect(reconcileActions(registry, scope, [{ name: "sneaky", purpose: "x", effect: "read" }])).toEqual([
       expect.stringContaining("is not asked before it runs"),
     ]);
   });
 
   test("the assistant refuses to start at all when the published catalog disagrees with the runtime", async () => {
     const bent = structuredClone(MANIFEST);
-    bent.actions = [...(bent.actions ?? []), { name: "pick_for_me", purpose: "Choose a safe dish for the guest.", commits: false }];
+    bent.actions = [
+      ...(bent.actions ?? []),
+      { name: "pick_for_me", purpose: "Choose a safe dish for the guest.", effect: "read" as const, parameters: {} },
+    ];
     const s = await session({ h: harness({ artifacts: { [`${BASE}/agent-manifest.json`]: bent } }) });
     expect(s.runtime.conversation).toBeNull();
     expect(s.$("[data-runtime-error]")!.textContent).toContain("pick_for_me");

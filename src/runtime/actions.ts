@@ -2,11 +2,15 @@
  * The four site actions Hollis & Rye registers with the runtime. OURS, written
  * here. This file is where the entry's idea lives, so none of it is adapted.
  *
- * The names, purposes and `commits` flags are already published in
- * `public/agent-manifest.json`. They are the public contract; boot.ts
- * cross-checks this file against that file at start-up and refuses to run if the
- * two disagree, because a declared action that does not exist, or a `commits`
- * flag that lies, is worse than publishing nothing at all.
+ * The names, purposes, effects and argument schemas are already published in
+ * `public/agent-manifest.json`, in §2.1's own field names. They are the public
+ * contract; boot.ts cross-checks the names and effects against that file at
+ * start-up and refuses to run if the two disagree, because a declared action
+ * that does not exist, or a published effect that lies, is worse than publishing
+ * nothing at all. The published `parameters` are held equal to the `inputSchema`
+ * below by `tests/artifacts.test.ts` rather than at start-up: these schemas carry
+ * id enums that move with the menu, and a drifted schema should fail a build
+ * rather than refuse to start the assistant.
  *
  * THE POINT OF `check_safety`
  *

@@ -37,26 +37,165 @@
   "deployment": {
     "mode": "static"
   },
+  "//actions": "Optional metadata: §3.3 lists action descriptions among the manifest's optional blocks. It is published in §2.1's field names — name, purpose, effect, JSON Schema — so a runtime that reads action descriptions finds what it expects, and `parameters` is held equal to the registered inputSchema by tests/artifacts.test.ts.",
   "actions": [
     {
       "name": "get_menu_state",
       "purpose": "Read the current menu, the guest's restrictions and the cart.",
-      "commits": false
+      "effect": "read",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
     },
     {
       "name": "check_safety",
       "purpose": "Return the checker's verdict (safe, unsafe or unknown, with the deciding ingredient) for menu items under the guest's restrictions. The only source of a safety verdict; not callable from any agent's tools.",
-      "commits": false
+      "effect": "read",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Menu item ids to check. Omit to check the whole menu.",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "description": "A menu item id.",
+              "enum": [
+                "reuben",
+                "pastrami_on_rye",
+                "turkey_club",
+                "egg_and_cheddar_brioche",
+                "lox_bagel",
+                "bagel_with_butter",
+                "italian_sub",
+                "caprese_ciabatta",
+                "hummus_veggie_pita",
+                "falafel_wrap",
+                "egg_salad_sandwich",
+                "tuna_melt",
+                "chicken_salad_sandwich",
+                "roast_beef_sandwich",
+                "chicken_parm_hero",
+                "meatball_sub",
+                "blt",
+                "gluten_free_turkey_plate",
+                "matzo_ball_soup",
+                "tomato_soup",
+                "chicken_noodle_soup",
+                "potato_salad",
+                "coleslaw",
+                "kettle_chips",
+                "pickle_spear",
+                "chocolate_chip_cookie",
+                "walnut_brownie",
+                "cheesecake_slice",
+                "peanut_butter_cookie",
+                "fruit_cup",
+                "lemonade",
+                "daily_special",
+                "chili_chicken_plate",
+                "glazed_donut"
+              ]
+            }
+          },
+          "restrictions": {
+            "type": "array",
+            "description": "Published restriction ids to check against. Omit to use what the guest has selected on the page.",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "description": "A published restriction id.",
+              "enum": [
+                "dairy_free",
+                "gluten_free",
+                "egg_free",
+                "nut_free",
+                "shellfish_free",
+                "fish_free",
+                "pork_free",
+                "soy_free",
+                "sesame_free",
+                "mustard_free",
+                "celery_free"
+              ]
+            }
+          }
+        }
+      }
     },
     {
       "name": "add_to_cart",
       "purpose": "Add a menu item to the cart after the guest confirms.",
-      "commits": true
+      "effect": "write",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "The menu item id to add.",
+            "enum": [
+              "reuben",
+              "pastrami_on_rye",
+              "turkey_club",
+              "egg_and_cheddar_brioche",
+              "lox_bagel",
+              "bagel_with_butter",
+              "italian_sub",
+              "caprese_ciabatta",
+              "hummus_veggie_pita",
+              "falafel_wrap",
+              "egg_salad_sandwich",
+              "tuna_melt",
+              "chicken_salad_sandwich",
+              "roast_beef_sandwich",
+              "chicken_parm_hero",
+              "meatball_sub",
+              "blt",
+              "gluten_free_turkey_plate",
+              "matzo_ball_soup",
+              "tomato_soup",
+              "chicken_noodle_soup",
+              "potato_salad",
+              "coleslaw",
+              "kettle_chips",
+              "pickle_spear",
+              "chocolate_chip_cookie",
+              "walnut_brownie",
+              "cheesecake_slice",
+              "peanut_butter_cookie",
+              "fruit_cup",
+              "lemonade",
+              "daily_special",
+              "chili_chicken_plate",
+              "glazed_donut"
+            ]
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "How many to add. Defaults to one.",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "item"
+        ]
+      }
     },
     {
       "name": "checkout_demo_order",
       "purpose": "Place a demo order. No payment is taken and nothing is fulfilled.",
-      "commits": true
+      "effect": "irreversible",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
     }
   ]
 }

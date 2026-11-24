@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { RESTRICTIONS } from "../src/safety/canon.ts";
+import { actionDefinitions } from "../src/runtime/actions.ts";
 
 const read = (f: string): any => JSON.parse(readFileSync(resolve(import.meta.dirname, "..", "public", f), "utf8"));
 const manifest = read("agent-manifest.json");
@@ -188,11 +189,78 @@ describe("agent-manifest.json (§3.3)", () => {
   test("declares the site actions, and none of them is an agent", () => {
     const acts = manifest.actions.map((x: any) => x.name);
     expect(acts).toEqual(["get_menu_state", "check_safety", "add_to_cart", "checkout_demo_order"]);
-    for (const x of manifest.actions) {
-      expect(x.purpose.length).toBeGreaterThan(10);
-      expect(typeof x.commits).toBe("boolean");
-    }
     for (const n of names) expect(acts).not.toContain(n);
+  });
+
+  /**
+   * THE CATALOG SPEAKS §2.1's VOCABULARY, AND THAT IS PINNED AS A PROPERTY.
+   *
+   * §3.3 lists `action` metadata among the manifest's OPTIONAL blocks, so
+   * publishing it at all is voluntary and no requirement is at stake. What is at
+   * stake is whether a runtime that reads action descriptions finds the fields
+   * §2.1 names for them — "Support same-site registered actions described by
+   * name, purpose, JSON Schema, effect, and handler" — rather than a private
+   * word of ours. It said `commits` until fix round 1.
+   *
+   * Pinned per ENTRY rather than against the four names published today: a fifth
+   * action added later is forced to carry all four fields, which is the thing a
+   * shape test is for.
+   *
+   * BREAKS IF: an entry loses any of the four fields, carries an `effect` outside
+   * the vocabulary the runtime uses, publishes a `parameters` that is not an
+   * object schema, or brings `commits` back beside `effect`.
+   */
+  const EFFECTS = ["read", "write", "irreversible"];
+
+  test("every published action is described by name, purpose, effect and a JSON Schema for its arguments", () => {
+    expect(Array.isArray(manifest.actions)).toBe(true);
+    expect(manifest.actions.length).toBeGreaterThan(0);
+    for (const x of manifest.actions) {
+      expect(typeof x.name, JSON.stringify(x)).toBe("string");
+      expect(x.name.length, x.name).toBeGreaterThan(0);
+      expect(typeof x.purpose, x.name).toBe("string");
+      expect(x.purpose.length, x.name).toBeGreaterThan(10);
+      expect(EFFECTS, x.name).toContain(x.effect);
+      // An action taking no arguments SAYS it takes none. An omitted `parameters`
+      // and an empty one are different claims and only one of them is checkable.
+      expect(x.parameters, x.name).toBeTypeOf("object");
+      expect(x.parameters.type, x.name).toBe("object");
+      expect(x.parameters.properties, x.name).toBeTypeOf("object");
+      expect(x.parameters.additionalProperties, x.name).toBe(false);
+      // Two words for one concept is the defect we spent a round removing from
+      // LIMITS.md. `commits` is derived from `effect` in the registry; a published
+      // copy of a derived value can only ever disagree with it.
+      expect(Object.keys(x), x.name).not.toContain("commits");
+    }
+  });
+
+  /**
+   * ...AND THE PUBLISHED SCHEMA IS THE ONE THE RUNTIME VALIDATES AGAINST.
+   *
+   * A published schema that drifts from the validator is a document overstating
+   * what it describes, which is this project's own named standard for a worse
+   * defect than the gap it hides. So `parameters` is not a transcription of the
+   * implementation, it is asserted equal to it, field for field, enum for enum —
+   * including the id enums, which are not decoration: `actions.ts` records that
+   * pinning the value set is what stops model-chosen prose reaching the
+   * confirmation dialog through an argument.
+   *
+   * Checked here rather than in `reconcileActions`, deliberately. The reconciler
+   * refuses to START THE ASSISTANT on a mismatch, which is right for a name or an
+   * effect — both stable — and wrong for a schema whose enums move every time the
+   * menu does. A drifted schema should fail a build, not brick a demo.
+   *
+   * BREAKS IF: an argument is added, removed, renamed, re-typed or re-bounded in
+   * `actionDefinitions` without the manifest following it, or the other way round.
+   */
+  test("...and each published schema is exactly the one the runtime validates arguments against", () => {
+    const live = actionDefinitions({ checkoutTimeoutMs: 20000 });
+    expect(manifest.actions.map((x: any) => x.name)).toEqual(live.map((d) => d.name));
+    for (const x of manifest.actions) {
+      const def = live.find((d) => d.name === x.name)!;
+      expect(x.effect, x.name).toBe(def.effect);
+      expect(x.parameters, x.name).toEqual(def.inputSchema);
+    }
   });
 });
 

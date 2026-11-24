@@ -63,10 +63,27 @@ export interface ManifestNetwork {
 }
 
 /** The `actions` block is OUR extension; §3.3 lists action metadata as optional and declares no shape. */
+/**
+ * One entry of the published action catalog.
+ *
+ * §3.3 lists `action` metadata among the manifest's OPTIONAL blocks, so this
+ * catalog is published by choice. Its FIELD NAMES are §2.1's, which names what a
+ * runtime must support for a same-site action: "described by name, purpose, JSON
+ * Schema, effect, and handler". `effect` was called `commits` here until fix
+ * round 1 — a private word for a concept the spec had already named, and the
+ * reason the peer consent card could hard-code an effect of its own.
+ *
+ * `handler` has no published form: it is code, and what a visitor's runtime gets
+ * is the registered handler in `actions.ts`. `parameters` is the JSON Schema, by
+ * the name every other schema in these artifacts carries.
+ */
 export interface ManifestAction {
   name: string;
   purpose: string;
-  commits: boolean;
+  /** The same vocabulary the registry and the consent plan use. */
+  effect: "read" | "write" | "irreversible";
+  /** JSON Schema for the arguments. An action taking none says so, rather than omitting this. */
+  parameters: Record<string, unknown>;
 }
 
 export interface Manifest {

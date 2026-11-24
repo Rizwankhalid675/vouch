@@ -208,10 +208,11 @@ export function renderPhrase(doc: Document, host: HTMLElement, phrase: SitePhras
  * Concatenate site text. Every part is already ours, so the result is too.
  *
  * It used to accept `string` as well, which made it a second way to declare a
- * built string ours. A caller holding a raw string must now either filter it
- * (`siteText`, `joinTokens`, `prettyToken`) or put it in a `SiteReport`'s
- * `quoted`, where it is rendered in its own node instead of joined to a
- * sentence.
+ * built string ours. There is no longer any way to filter a runtime string into
+ * our prose: `siteText` interpolates only numbers, and `joinTokens`,
+ * `prettyToken` and `tokenOrOmitted` were deleted rather than fixed, because a
+ * filter is defeated by supplying whatever it strips. A caller holding a raw
+ * string passes it to `theirs()` or `datum()`, which render it in its own node.
  */
 export function joinSiteText(...parts: SiteText[]): SiteText {
   return parts.join("") as SiteText;

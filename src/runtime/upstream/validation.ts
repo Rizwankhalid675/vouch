@@ -120,8 +120,10 @@ export function validate_agent_names(config: NetworkConfig): string[] {
  * and nothing says so.
  *
  * Reported as a named field with its bad value, because "invalid network" is not
- * a structured validation error. The value is quoted so that `quotedTokensOnly`
- * filters it: this validator runs over a peer's document too.
+ * a structured validation error. This validator runs over a peer's document, so
+ * the value is a stranger's string. The quotes around it are cosmetic and protect
+ * nothing — a value supplying its own quote defeated exactly that assumption once.
+ * What keeps it out of our voice is the renderer, which puts it in its own node.
  *
  * Checked only when the field is present. It is optional, and a network that
  * declares nothing is not making a claim that can be wrong.

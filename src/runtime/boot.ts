@@ -385,12 +385,6 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
   const addTrace = (entry: TraceEntry): void => {
     trace.push(entry);
     const li = el(doc, "li", { "data-trace-event": entry.event });
-    // Rendered through `renderableDetail`, which is a SECOND net. Each trace call
-    // site is already responsible for not putting model-chosen prose in a detail
-    // (see loop.ts's `declaredKeys` and `refusalKind`), but the trace is a page
-    // surface and a future call site will forget. This one refuses to print any
-    // string that is not token-shaped or on the allow-list, so forgetting costs a
-    // "<text omitted>" rather than an ungated sentence in the DOM.
     // THE SECOND C1-PRIME SURFACE. This was one built string in `textContent`,
     // with `renderableDetail` token-filtering any value that might be prose -
     // the same premise `prettyToken` broke. The event name is ours and the

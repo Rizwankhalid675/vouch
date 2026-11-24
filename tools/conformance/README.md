@@ -86,16 +86,22 @@ exact match exists, it MUST fail rather than select another published network." 
 | **1** | At least one check failed. A finding about your site. |
 | **2** | Bad usage, or a URL the tool cannot read as a network URL. |
 | **3** | The tool itself hit an error and reached no verdict. Not a verdict about your site. |
-| **4** | The tool **never reached your host** — DNS, a refused connection, a proxy, a timeout, a typo in the hostname. No verdict about your site was reached and nothing in the output is a finding about it. Non-zero, because a run that learned nothing should not be green; distinct from 1, because your site cannot be at fault for a request that never arrived. |
+| **4** | **The run was incomplete**: at least one artifact never answered — DNS, a refused connection, a proxy, a timeout, a typo in the hostname. The checks that *were* made still stand, and the output says which they are; the ones that could not be made have been verified by nothing. Non-zero, because an incomplete run is not a clean bill of health; distinct from 1, because your site cannot be at fault for a request that never arrived. |
 
 A `not-demonstrated` result never affects the exit code on its own — with one exception, exit 4,
-which exists precisely so that "nothing was contacted" cannot be mistaken for either answer. The
-tool is safe to put in CI and will not go red because it cannot drive a browser.
+which exists precisely so that "some of this run did not happen" cannot be mistaken for either
+answer. The tool is safe to put in CI and will not go red because it cannot drive a browser.
 
-If you are triaging in CI: **1 means read the findings, 4 means check the network.** Earlier
-versions of this tool reported a refused connection as `FAIL … not readable` with eleven lines
-blaming the site, which sent at least one reader looking for a fault in hosting that was working
-perfectly. That is the mistake this code exists to not make, so it is worth a paragraph.
+**Triaging in CI: 1 means read the findings. 4 means check the network, and treat the run as
+partial — not as a verdict either way.** Exit 4 fires on a *single* unanswered artifact, so it is
+perfectly possible to get `0 failed, 12 passed … exit 4`: twelve real passes and two checks that
+were never made. The closing banner names the artifacts that got no answer and counts the checks
+they cost, so you can see which half you are looking at.
+
+Why this gets a paragraph: an earlier version of this tool reported a refused connection as
+`FAIL … not readable` with eleven lines blaming the site, and sent a reader looking for a fault in
+hosting that was working perfectly. Telling "I could not look" apart from "I looked and it is
+wrong" is what the tool is for, and the exit code is where a machine reads that distinction.
 
 ### What it never does
 
@@ -220,10 +226,20 @@ import { runChecks, exitCodeFor, renderText, deriveTarget } from "agentic-web-co
 
 const target = deriveTarget("https://example.com/agents/my_network");
 const results = await runChecks(target.networkUrl);
-// results: { check, title, status: "pass" | "fail" | "not-demonstrated",
-//            section, detail, findings, blockedBy? }[]
+// results is a discriminated union on `kind`:
+//   { kind: "made",      status: "pass" | "fail",      check, title, section, detail, findings }
+//   { kind: "declined",  status: "not-demonstrated",   check, title, section, detail, findings, blockedBy }
+//   { kind: "unreached", status: "not-demonstrated",   check, title, section, detail,
+//                        blockedBy: "checker", unreachedUrl, transport }   // no findings field
 process.exit(exitCodeFor(results));
 ```
+
+An `unreached` result has **no `findings` field at all**, and that is deliberate rather than an
+oversight: it is a check the tool did not make because a request got no answer, so there is no
+evidence about the site to put there, and the type makes putting any there a compile error. Use the
+`findingsOf`, `blockerOf` and `isUnreached` helpers if you would rather not narrow by hand. In
+`--json`, `summary.neverReached` counts the blocked checks and `summary.artifactsNeverAnswered`
+counts the distinct artifacts that got no answer — two different numbers with two different units.
 
 `runChecks` takes an optional second argument: `{ fetchImpl, timeoutMs, probeOrigin }`. `fetchImpl`
 is there so the checks are testable; the CORS check is tested against a real loopback HTTP server

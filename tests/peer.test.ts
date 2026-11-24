@@ -70,6 +70,12 @@ const LINKS = readJson("public", "links.json") as { version: number; networks: R
 /** The peer's own published bundle, read from `peer/public/agents/`. */
 const PEER_MANIFEST = readJson("peer", "public", "agents", "agent-manifest.json") as Manifest;
 const PEER_NETWORK = readJson("peer", "public", "agents", "marrow_point.network.json") as NetworkConfig;
+const PEER_LINKS = readJson("peer", "public", "agents", "links.json") as {
+  version: number;
+  networks: Record<string, Record<string, string>>;
+};
+/** From the peer's own manifest, so a rename there cannot leave this file testing a different network. */
+const PEER_NETWORK_NAME = PEER_MANIFEST.networks![0]!.name!;
 const PEER_HEADERS = readFileSync(resolve(root, "peer/public/_headers"), "utf8");
 const PEER_VERCEL = readJson("peer", "vercel.json") as { headers: { source: string; headers: { key: string; value: string }[] }[] };
 
@@ -559,8 +565,8 @@ describe("the peer is a conforming agent site, on an origin of its own", () => {
    * BREAKS IF: either artifact loses its `Access-Control-Allow-Origin`, in either
    * file, or the two files drift apart.
    */
-  test("the peer publishes CORS for both artifacts, in both deploy formats", () => {
-    for (const path of ["/agents/agent-manifest.json", "/agents/marrow_point.network.json"]) {
+  test("the peer publishes CORS for all three artifacts, in both deploy formats", () => {
+    for (const path of ["/agents/agent-manifest.json", "/agents/marrow_point.network.json", "/agents/links.json"]) {
       const block = PEER_HEADERS.split(/\n(?=\S)/).find((b) => b.startsWith(path));
       expect(block, path).toBeDefined();
       expect(block, path).toMatch(/Access-Control-Allow-Origin:\s*\*/);
@@ -569,6 +575,60 @@ describe("the peer is a conforming agent site, on an origin of its own", () => {
     expect(cors).toBeDefined();
     expect(cors!.source).toContain("agent-manifest.json");
     expect(cors!.source).toContain("marrow_point.network.json");
+    expect(cors!.source).toContain("links.json");
+  });
+
+  /**
+   * INVARIANT (§3.3): the peer publishes a link map. §3.3's minimum-public-files
+   * table marks exactly one entry optional — the coded-tool bundle — and this is
+   * not it.
+   *
+   * WHY AN EMPTY ONE IS NOT A FORMALITY. This network binds no external network,
+   * so the map is empty, and an empty map is an AFFIRMATIVE STATEMENT: "this
+   * network binds nothing." Absence cannot be told apart from oversight; a
+   * published empty map can. It is the same reasoning this site already applies
+   * to an action that takes no arguments, which publishes
+   * `{"type":"object","properties":{},"additionalProperties":false}` rather than
+   * omitting `parameters` and leaving a reader to guess whether we forgot.
+   *
+   * Found by our own conformance CLI (`tools/conformance`) run against
+   * `peer-dist/`: it failed `links-reachable` on this origin, which is the tool
+   * working.
+   *
+   * BREAKS IF: the file goes missing, loses its `networks` object, or stops
+   * naming this network.
+   */
+  test("the peer publishes a link map that states, rather than implies, that it binds nothing", () => {
+    expect(PEER_LINKS.version).toBe(1);
+    expect(Object.keys(PEER_LINKS.networks)).toEqual([PEER_NETWORK_NAME]);
+    const bindings = PEER_LINKS.networks[PEER_NETWORK_NAME];
+    expect(bindings).toBeDefined();
+    // An object, not null and not an array: §3.3's shape maps names to URLs.
+    expect(Object.prototype.toString.call(bindings)).toBe("[object Object]");
+    expect(Object.keys(bindings!)).toEqual([]);
+  });
+
+  /**
+   * INVARIANT: the link map's claim is CHECKED against the network, not taken on
+   * trust. An empty map is only an honest statement while the network really
+   * references nothing symbolically; the moment an agent gains an unbound
+   * symbolic reference, the published map is a false statement and this fails.
+   *
+   * This is the assertion that makes the empty file worth publishing. A test that
+   * only asserted `{}` would pin a constant and would keep passing after the
+   * network grew a reference the map does not bind.
+   *
+   * BREAKS IF: the peer network gains a symbolic reference with no binding, or
+   * the map binds a name no agent in the network asks for.
+   */
+  test("every symbolic reference in the peer network is bound, and nothing is bound that is not referenced", () => {
+    const referenced = [...new Set(symbolicRefs(PEER_NETWORK))].sort();
+    const bound = Object.keys(PEER_LINKS.networks[PEER_NETWORK_NAME] ?? {}).sort();
+    expect(bound).toEqual(referenced);
+    // ...and the check is live: a planted reference is not bound by this map.
+    const planted = { ...PEER_NETWORK, tools: [{ ...PEER_NETWORK.tools![0]!, tools: ["weather_desk"] }] };
+    expect([...new Set(symbolicRefs(planted as typeof PEER_NETWORK))]).toEqual(["weather_desk"]);
+    expect(bound).not.toContain("weather_desk");
   });
 
   /**

@@ -1,0 +1,7 @@
+{
+  "//": "§3.3's peer-network link map. It is EMPTY ON PURPOSE, and that is a statement rather than a formality: the `marrow_point` network binds no external network, and publishing an empty map says so. Absence cannot be told apart from oversight; this can. It is the same reasoning the deli already applies to a site action that takes no arguments, which publishes an empty `properties` object rather than omitting `parameters` and leaving a reader to guess. A caller that resolves a named reference against this file learns, in one GET, that there is nothing here to resolve. The claim is checked rather than asserted: tests/peer.test.ts compares these keys against the symbolic references in marrow_point.network.json, so the moment an agent here gains an unbound reference this file becomes a false statement and the suite fails.",
+  "version": 1,
+  "networks": {
+    "marrow_point": {}
+  }
+}

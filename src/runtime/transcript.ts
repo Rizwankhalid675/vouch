@@ -55,8 +55,14 @@ export function claimedLabel(claimed: string): string {
  * the compile-time machinery saw it.
  *
  * It returns a PHRASE now. The dish names are our published data (`datum`), the
- * claimed phrase is the model's (`theirs`), and `r.why` is the gate's own prose,
- * which is written in this repository. `claimedLabel`'s bound is kept: a phrase
+ * claimed phrase is the model's (`theirs`), and `r.why` is `SiteText` already: the
+ * gate builds it from `ours(...)` literals, so nothing here has to declare it
+ * ours. A `whyText(why: string): SiteText` used to sit at the bottom of this file
+ * doing exactly that - the one unguarded `as SiteText` cast in `src/`, rendered as
+ * part of our prose rather than in a node, so every "not in the site's voice"
+ * assertion was blind to it. It was not exploitable: the only producer was the
+ * gate's closed table. But it is the capability this project has deleted five
+ * times elsewhere, and nothing failed at compile time if someone widened it. `claimedLabel`'s bound is kept: a phrase
  * may be named, a sentence may not ride in as one, and now it cannot anyway,
  * because it lands in a node.
  */
@@ -70,18 +76,8 @@ export function refusalPhrase(r: Refusal, menu: Menu = MENU): SitePhrase {
       parts.push(datum(name));
     }
   }
-  parts.push(ours(" \u2014 the phrase was "), theirs(claimedLabel(r.claimed)), ours(". "), whyText(r.why));
+  parts.push(ours(" \u2014 the phrase was "), theirs(claimedLabel(r.claimed)), ours(". "), r.why);
   return parts;
-}
-
-/**
- * The gate's reason, as site text. The gate is in this repository and its
- * reasons are literals it wrote, so they are ours - but `Refusal.why` is typed
- * `string`, and `ours` takes a literal only, so the trust is stated here in one
- * place rather than assumed at the call site.
- */
-function whyText(why: string): SiteText {
-  return why as SiteText;
 }
 
 export interface ShownResult {

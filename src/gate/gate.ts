@@ -1,4 +1,5 @@
 import type { Finding, Menu } from "../../contracts.ts";
+import { ours, type SiteText } from "../runtime/errors.ts";
 import { MENU } from "../safety/canon.ts";
 import type { Claim } from "./claims.ts";
 import { classifySegment, derivation, segments } from "./claims.ts";
@@ -21,19 +22,36 @@ export interface Refusal {
   /** The withheld sentence, verbatim. For the UI's refusal panel, never for the page body. */
   sentence: string;
   reason: RefusalReason;
-  /** Human-readable why. */
-  why: string;
+  /** Human-readable why: one of `WHY`'s literals, and site text by construction. */
+  why: SiteText;
 }
 
-const WHY: Record<RefusalReason, string> = {
-  no_finding: "No checker finding backs this claim.",
-  unknown: "The checker could not determine this item's safety (missing ingredient data), so it cannot be called safe.",
-  unsafe: "The checker found a conflict for this item.",
-  item_unresolved: "The claim does not clearly name a menu item, so no finding can back it.",
-  not_checked: "This claim was not checked: the checker's verdict does not cover what it asserts. That does not mean it is false.",
-  not_derivable:
+/**
+ * The gate's own reason for each refusal, and the ONLY source of `Refusal.why`.
+ *
+ * Exported so a test can assert that a refusal arriving through the real gate
+ * carries one of these verbatim, rather than merely a non-empty string. The only
+ * assertion on `why` through the gate used to be `length > 0`, which `why: "x"`
+ * passes, and so does `` why: `${WHY[reason]} — ${claimed}` `` — a model-chosen
+ * phrase in the site's prose, outside any `data-not-ours` node.
+ *
+ * Every entry is a literal written in this repository, declared through `ours`,
+ * which accepts a literal and nothing else. `Refusal.why` is `SiteText`, so a
+ * built string cannot be put there by any route the compiler allows: it is the
+ * same door `errors.ts` shut on `ours(errors.map(filter).join())`, applied to the
+ * one cast that still took an arbitrary `string` (`transcript.ts`'s `whyText`,
+ * now deleted).
+ */
+export const WHY: Record<RefusalReason, SiteText> = {
+  no_finding: ours("No checker finding backs this claim."),
+  unknown: ours("The checker could not determine this item's safety (missing ingredient data), so it cannot be called safe."),
+  unsafe: ours("The checker found a conflict for this item."),
+  item_unresolved: ours("The claim does not clearly name a menu item, so no finding can back it."),
+  not_checked: ours("This claim was not checked: the checker's verdict does not cover what it asserts. That does not mean it is false."),
+  not_derivable: ours(
     "This sentence could not be derived from the menu (item names, prices, ingredients) or backed by a checker finding. That does not mean it is false.",
-  ingredient_subject: "The claim is about an ingredient, not a checked item.",
+  ),
+  ingredient_subject: ours("The claim is about an ingredient, not a checked item."),
 };
 
 /**

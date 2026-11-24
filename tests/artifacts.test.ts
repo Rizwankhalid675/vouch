@@ -914,3 +914,57 @@ describe("docs/LIMITS.md §2.1 counts its own corrections once, from its own lis
     expect(found, "the count belongs to §2.1's list and to nowhere else").toEqual([]);
   });
 });
+
+/**
+ * EVERY `as SiteText` IN `src/` IS GUARDED, AND THEY ALL LIVE IN ONE FILE.
+ *
+ * `SiteText` is a branded type: the only way into it is a cast, so the casts are
+ * the whole trust boundary. There were four. Three were guarded by the signature
+ * they sat behind — `siteText(strings, ...values: number[])`, `ours(LiteralOnly<T>)`
+ * and `joinSiteText(...parts: SiteText[])`, each of which refuses a built string at
+ * compile time. The fourth took an arbitrary `string`:
+ *
+ *     function whyText(why: string): SiteText { return why as SiteText; }
+ *
+ * and it was rendered as part of our prose rather than in a `theirs()` node, so it
+ * was inside `siteVoiceOfPage()` by construction and every "not in the site's
+ * voice" assertion was blind to it. Not exploitable — its only producer was the
+ * gate's closed table of literals — but it is the capability this project has
+ * deleted five times elsewhere, and nothing failed at compile time if someone
+ * widened it. `Refusal.why` is `SiteText` now and `whyText` deleted itself.
+ *
+ * So the rule is structural: the casts live in `errors.ts`, beside the signatures
+ * that guard them, and a new one anywhere else fails here. An `as unknown as
+ * SiteText` is counted too — that is how the mutation for this had to be written to
+ * compile at all.
+ *
+ * BREAKS IF: a cast into `SiteText` appears outside `src/runtime/errors.ts`, or a
+ * fourth one appears inside it (which would be a fourth signature to justify).
+ */
+describe("the SiteText trust boundary is three guarded casts in one file", () => {
+  const SRC = resolve(import.meta.dirname, "..", "src");
+
+  /** Every `.ts` under `src/`, recursively. */
+  const sources = (dir: string = SRC, out: string[] = []): string[] => {
+    for (const name of readdirSync(dir, { withFileTypes: true })) {
+      const path = resolve(dir, name.name);
+      if (name.isDirectory()) sources(path, out);
+      else if (name.name.endsWith(".ts")) out.push(path);
+    }
+    return out;
+  };
+
+  test("no file but errors.ts casts into SiteText, and errors.ts has exactly three", () => {
+    const CAST = /\bas\s+(?:unknown\s+as\s+)?SiteText\b/g;
+    const counts = new Map<string, number>();
+    for (const path of sources()) {
+      // Comments discuss the cast by name; only code counts. Strip block and line
+      // comments first, which is crude and errs on the side of counting more.
+      const code = readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      const n = [...code.matchAll(CAST)].length;
+      if (n > 0) counts.set(path.slice(SRC.length + 1), n);
+    }
+    expect([...counts.keys()].sort()).toEqual(["runtime/errors.ts"]);
+    expect(counts.get("runtime/errors.ts")).toBe(3);
+  });
+});

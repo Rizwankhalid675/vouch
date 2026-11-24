@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Finding, Restriction } from "../contracts.ts";
 import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
 import { verdictFor } from "../src/safety/verdict.ts";
-import { gate, REFUSAL_MARKER } from "../src/gate/gate.ts";
+import { gate, REFUSAL_MARKER, WHY } from "../src/gate/gate.ts";
 import { mountShop } from "../src/site/shop.ts";
 import { boot, loadPublishedLinks, reconcileActions, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { actionDefinitions, checkSafety, registerSiteActions, type SiteContext } from "../src/runtime/actions.ts";
@@ -1411,7 +1411,9 @@ describe("model prose reaches the screen only through the gate", () => {
     renderPhrase(
       document,
       host,
-      refusalPhrase({ claimed: "0", items: ["reuben"], sentence: withheld, reason: "no_finding", why: "No checker finding backs this claim." }),
+      // `why` is `SiteText`, so this cannot be a hand-written string: the gate's own
+      // table is the only source there is.
+      refusalPhrase({ claimed: "0", items: ["reuben"], sentence: withheld, reason: "no_finding", why: WHY.no_finding }),
     );
     expect(host.textContent).not.toContain('"0"');
     // The dish name is our published data, shown as a value rather than as prose.

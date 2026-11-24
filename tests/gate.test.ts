@@ -3,7 +3,7 @@ import type { Finding } from "../contracts";
 import { MENU, RESTRICTIONS } from "../src/safety/canon.ts";
 import { verdictFor } from "../src/safety/verdict.ts";
 import { detectClaims } from "../src/gate/claims.ts";
-import { gate, REFUSAL_MARKER } from "../src/gate/gate.ts";
+import { gate, REFUSAL_MARKER, WHY, type RefusalReason } from "../src/gate/gate.ts";
 
 const dairyFree = RESTRICTIONS.find((r) => r.id === "dairy_free")!;
 const find = (id: string): Finding => {
@@ -285,5 +285,72 @@ describe("the gate: no unbacked safety claim reaches the screen", () => {
     expect(r.claimed).toBe("free from");
     expect(r.sentence).toBe("The soup is free from dairy.");
     expect(r.why.length).toBeGreaterThan(0);
+  });
+});
+
+/* ================================================================== */
+/* `Refusal.why` is the gate's own prose, and nothing else             */
+/* ================================================================== */
+
+/**
+ * THE ONLY ASSERTION ON `why` THROUGH THE REAL GATE USED TO BE `length > 0`.
+ *
+ * `why: "x"` passed it. So did `` why: `${WHY[reason]} — ${claimed}` `` — which
+ * puts a **model-chosen phrase into the site's own prose**, because
+ * `refusalPhrase` renders `why` as part of our sentence rather than inside a
+ * `data-not-ours` node, so every "not in the site's voice" assertion in this
+ * project was blind to it. This is the test that should have been the enforcement
+ * for the one unguarded `as SiteText` cast in `src/`.
+ *
+ * Asserted through `gate` over inputs that reach every one of the seven reasons,
+ * and the coverage is itself asserted — a test that only ever saw `no_finding`
+ * would say nothing about the other six.
+ *
+ * The compiler now refuses the mutation as well (`Refusal.why` is `SiteText` and
+ * `WHY` is built from `ours(...)` literals), but the types are the first door and
+ * this is the second: a cast or an `as unknown as` would walk past the first.
+ *
+ * BREAKS IF: anything is appended to, prepended to or interpolated into a `why`,
+ * or a reason is given prose that is not its own table entry.
+ */
+describe("Refusal.why is one of the gate's own literals, verbatim", () => {
+  /** Inputs chosen to reach every `RefusalReason`, with the reason each is for. */
+  const PROBES: { text: string; findings: Finding[]; reason: RefusalReason }[] = [
+    { text: "The Reuben is dairy-free.", findings: [], reason: "no_finding" },
+    { text: "The turkey club is dairy-free.", findings: [find("turkey_club")], reason: "unsafe" },
+    { text: "The glazed donut is dairy-free.", findings: [find("glazed_donut")], reason: "unknown" },
+    { text: "It is completely safe.", findings: [], reason: "item_unresolved" },
+    { text: "The fruit cup is nut-free.", findings: [safe("fruit_cup", ["dairy"])], reason: "not_checked" },
+    { text: "The Reuben's brioche is dairy-free.", findings: [], reason: "ingredient_subject" },
+    { text: "We have the Reuben and the Turkey club. Of course it is.", findings: [], reason: "not_derivable" },
+  ];
+
+  test("every reason is reached by a probe, so this block is not testing one branch", () => {
+    const reached = new Set<RefusalReason>();
+    for (const p of PROBES) for (const r of gate(p.text, p.findings).refusals) reached.add(r.reason);
+    for (const p of PROBES) expect(reached, `no probe produced ${p.reason}`).toContain(p.reason);
+    // And every reason the gate can give is covered, not just every reason listed.
+    expect([...reached].sort()).toEqual(Object.keys(WHY).sort());
+  });
+
+  test("each refusal's why is EXACTLY its reason's table entry", () => {
+    const seen: string[] = [];
+    for (const p of PROBES) {
+      for (const r of gate(p.text, p.findings).refusals) {
+        seen.push(r.why);
+        // Identity with the table, not a substring of it and not a prefix.
+        expect(r.why, `${p.reason}: ${r.sentence}`).toBe(WHY[r.reason]);
+      }
+    }
+    expect(seen.length).toBeGreaterThanOrEqual(PROBES.length);
+    // Nothing a model wrote can be inside one: the claimed phrase and the
+    // withheld sentence are carried on their own fields and rendered in nodes.
+    for (const p of PROBES) {
+      for (const r of gate(p.text, p.findings).refusals) {
+        expect(Object.values(WHY)).toContain(r.why);
+        if (r.claimed.length > 2) expect(r.why).not.toContain(r.claimed);
+        expect(r.why).not.toContain(r.sentence);
+      }
+    }
   });
 });

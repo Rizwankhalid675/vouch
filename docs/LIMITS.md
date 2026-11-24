@@ -546,6 +546,38 @@ defensible** — whatever repository it came from.
 **So: not "without exception". Two named exceptions, with a stated condition under
 which each becomes a defect.**
 
+**And one more surface, found by the architecture review after all of the above.**
+`SiteText` is a branded type, so the casts into it are the entire trust boundary.
+There were four in `src/`. Three are guarded by the signature they sit behind —
+`siteText(strings, ...values: number[])`, `ours(LiteralOnly<T>)` and
+`joinSiteText(...parts: SiteText[])` — each of which refuses a built string at
+compile time. The fourth took an arbitrary one:
+
+```ts
+function whyText(why: string): SiteText { return why as SiteText; }
+```
+
+It was rendered at `transcript.ts:73` as part of *our* prose rather than inside a
+`theirs()` or `datum()` node, so it was inside `siteVoiceOfPage()` by construction
+and every "not in the site's voice" assertion in the suite was blind to it. It was
+not exploitable: its only producer was `WHY[reason]`, a closed table of literals in
+`gate.ts`. But `errors.ts` states the exact rule it bypassed — *"The old signature
+took `string`, so `ours(errors.map(filter).join())` compiled — a built string,
+declared ours by assertion"* — and this was that function written with `as` instead
+of `ours`.
+
+`WHY` is now a `Record<RefusalReason, SiteText>` of `ours(...)` literals,
+`Refusal.why` is `SiteText`, and `whyText` deleted itself. `gate.ts` imports `ours`
+from `errors.ts` without giving up its purity, because `errors.ts` has no
+module-scope DOM dependency — `Document` appears in it only as a parameter type.
+Two doors now: the compiler refuses `` why: `${WHY[reason]} — ${claimed}` `` (the
+mutation had to be written `as unknown as SiteText` to compile at all), and
+`tests/gate.test.ts` asserts through the real gate that each refusal's `why` is
+**identically** its reason's table entry, over probes that reach all seven reasons.
+The only assertion on `why` before this was `length > 0`, which `why: "x"` passes.
+`tests/artifacts.test.ts` holds the boundary itself: the casts live in `errors.ts`,
+there are three of them, and a new one anywhere in `src/` fails.
+
 **One promise was relaxed to do this, deliberately, and the tension with §2.2 is
 resolved rather than left open.** The filter used to replace a hostile value with
 `'<name omitted>'`, so it never reached the page. It is now **shown**, fenced and

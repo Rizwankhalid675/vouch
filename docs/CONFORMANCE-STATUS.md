@@ -95,6 +95,52 @@ refusals can be watched rather than taken on trust.
 
 ---
 
+## Our own checker, run against our own site
+
+Run by the controller on 24 November 2026 against the built deli served on loopback, first-hand
+rather than on a report:
+
+```
+14 checks made, 6 not checked.
+Result: 1 failed, 13 passed, 6 NOT CHECKED - exit 1
+```
+
+The thirteen passes cover the manifest and its exact-name match, the resolved network definition,
+the link map, network and agent identity, JSON-Schema invocation shapes, named private-context
+fields, §2.2 portability, full referential integrity, the HTTPS rule, and the absence of any
+published credential.
+
+**The one failure is CORS, and it is the honest answer to what was measured.** A `vite preview`
+server applies neither `public/_headers` nor `vercel.json` — those are host-level configuration —
+so all three artifacts came back with no `Access-Control-Allow-Origin`. The checker read that off
+a real response to a GET carrying a real `Origin` header, not from a config file, and it named all
+three artifacts. For a stranger's site that result would be a true failure; for ours it means only
+that loopback is not a host.
+
+**This is exactly why CORS is the highest-value verification left.** It is the one check that
+passes locally in every wrong configuration and fails deployed, and nothing short of a real
+cross-origin request against the real host can settle it.
+
+The six NOT CHECKED are the six that need a browser and a live model, and the checker's own
+reasoning on the refusals check is worth quoting, because it declines to credit us for something
+we did do: *"it will not read the presence of a broken fixture on a site as evidence that anything
+refuses it."* We publish three deliberately broken networks; the tool correctly treats that as
+unverified rather than as proof.
+
+### Two caveats about the checker's own test coverage
+
+Both weaken claims that the test count would otherwise imply, so they are stated here rather than
+left in a report:
+
+1. The five tests that assert on a real CORS response prove **the checker reads a real header
+   correctly**. They say nothing whatever about our deployed site.
+2. `.github/workflows/ci.yml` has **never run**, because this repository has no remote. Every
+   "CI runs it" claim in the project is about the file, not about a run that happened. The five
+   CORS tests are, today, verified by manual runs outside the restricted local environment —
+   they pass — and nothing else.
+
+---
+
 ## What is only knowable after a deploy
 
 Honest list, so none of it is quietly assumed:

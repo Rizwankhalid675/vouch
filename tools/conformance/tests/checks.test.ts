@@ -441,6 +441,38 @@ describe("§2.2 portable data profile", () => {
     expect(portabilityFindings({ a: "https://cdn.example/x?t=$TOKEN" })).toHaveLength(1);
   });
 
+  test("a URL EMBEDDED in a sentence is exempt too, not just a string that is entirely one", () => {
+    // The same class as the anchoring question. The exemption tested the whole
+    // string, so a bare URL was exempt and a sentence mentioning one was not:
+    //
+    //   "Docs at https://cdn.example/site/config.yaml"
+    //
+    // ...was reported as a publisher-only config file, on the `.yaml` inside a
+    // perfectly portable public URL. Agent instructions are prose that mentions
+    // URLs; a rule that fires on that makes the tool unusable on real sites.
+    expect(portabilityFindings({ a: "Docs at https://cdn.example/site/config.yaml" })).toEqual([]);
+    expect(portabilityFindings({ a: "See https://cdn.example/a/b for the feed." })).toEqual([]);
+    expect(portabilityFindings({ a: "Mirror: http://mirror.example/x/./y (legacy)" })).toEqual([]);
+
+    // ...and the exemption is a span, not a licence: a real local path in the SAME
+    // string still fails, and so does a substitution inside the URL.
+    const alongside = portabilityFindings({ a: "Docs at https://cdn.example/ok.yaml, overrides in ./local.conf" });
+    expect(alongside).toHaveLength(1);
+    expect(alongside[0]!.excerpt).toContain("./local.conf");
+
+    // And the scan must keep going PAST an in-URL match of the SAME rule. Here
+    // the config-file rule matches `ok.yaml` first, inside the URL, and then
+    // `local-overrides.conf` outside it; a scanner that gave up on the first
+    // in-span hit would excuse the second, and no other rule covers this string.
+    const afterTheUrl = portabilityFindings({
+      a: "Docs at https://cdn.example/ok.yaml and overrides in local-overrides.conf",
+    });
+    expect(afterTheUrl).toHaveLength(1);
+    expect(afterTheUrl[0]!.what).toContain("config file");
+    expect(portabilityFindings({ a: "Feed at https://cdn.example/${REGION}/x" })).toHaveLength(1);
+    expect(portabilityFindings({ a: "Config lives at /etc/agents/net.hocon, see https://docs.example/a/b" })).toHaveLength(1);
+  });
+
   test("a HOCON include key fails wherever it sits in the document", async () => {
     const files = conformingSite();
     const net = files[`${BASE}demo.network.json`]!.body as { tools: Record<string, unknown>[] };

@@ -53,7 +53,36 @@ export function walk(
   return out;
 }
 
-const isHttpUrl = (s: string) => /^https?:\/\//i.test(s.trim());
+/**
+ * Where the http(s) URLs are in a string, as [start, end) offsets.
+ *
+ * The terminator set is the characters that cannot appear unescaped in a URL but
+ * routinely end one in prose: whitespace, quotes, angle brackets, and the closers
+ * and separators a sentence puts after an address. Trailing sentence punctuation
+ * is trimmed off the span -- which matters, because leaving it in would widen the
+ * span over the character that begins whatever comes next.
+ */
+function urlSpans(str: string): [number, number][] {
+  const spans: [number, number][] = [];
+  const finder = /https?:\/\/[^\s"'<>)\]}`,]+/gi;
+  for (let m = finder.exec(str); m !== null; m = finder.exec(str)) {
+    const text = m[0].replace(/[.;:!?]+$/, "");
+    spans.push([m.index, m.index + text.length]);
+  }
+  return spans;
+}
+
+/** The first match of `rule` that does not sit inside any URL span, or -1. */
+function matchOutsideUrls(rule: RegExp, str: string, spans: readonly [number, number][]): number {
+  // A fresh global copy: the rules are module-level and must not carry lastIndex.
+  const scanner = new RegExp(rule.source, rule.flags.includes("g") ? rule.flags : `${rule.flags}g`);
+  for (let m = scanner.exec(str); m !== null; m = scanner.exec(str)) {
+    const at = m.index;
+    if (!spans.some(([start, end]) => at >= start && at < end)) return at;
+    if (scanner.lastIndex === m.index) scanner.lastIndex += 1;
+  }
+  return -1;
+}
 
 /** Rules that apply to every string, URL or not. */
 const UNIVERSAL_RULES: readonly [RegExp, string][] = [
@@ -100,14 +129,22 @@ export function portabilityFindings(doc: unknown): Finding[] {
       findings.push({ path, what: `key \`${key}\` is an include or environment hook`, excerpt: "" });
     }
     if (str === undefined) continue;
-    const rules = isHttpUrl(str) ? UNIVERSAL_RULES : [...UNIVERSAL_RULES, ...PATH_RULES];
     const hit: string[] = [];
     let firstIndex = -1;
-    for (const [regexp, what] of rules) {
+    // Universal rules apply everywhere, inside a URL included.
+    for (const [regexp, what] of UNIVERSAL_RULES) {
       const match = regexp.exec(str);
       if (!match) continue;
       hit.push(what);
       if (firstIndex < 0 || match.index < firstIndex) firstIndex = match.index;
+    }
+    // Path rules apply only outside the URL spans in the string.
+    const spans = urlSpans(str);
+    for (const [regexp, what] of PATH_RULES) {
+      const at = matchOutsideUrls(regexp, str, spans);
+      if (at < 0) continue;
+      hit.push(what);
+      if (firstIndex < 0 || at < firstIndex) firstIndex = at;
     }
     if (hit.length > 0) {
       findings.push({ path, what: hit.join(", "), excerpt: excerptAround(str, firstIndex) });

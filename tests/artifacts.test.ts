@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { RESTRICTIONS } from "../src/safety/canon.ts";
-import { actionDefinitions } from "../src/runtime/actions.ts";
+import { actionDefinitions, withoutEnums } from "../src/runtime/actions.ts";
 import { DEFAULT_LIMITS } from "../src/runtime/limits.ts";
 
 const read = (f: string): any => JSON.parse(readFileSync(resolve(import.meta.dirname, "..", "public", f), "utf8"));
@@ -261,31 +261,61 @@ describe("agent-manifest.json (§3.3)", () => {
   });
 
   /**
-   * ...AND THE PUBLISHED SCHEMA IS THE ONE THE RUNTIME VALIDATES AGAINST.
+   * THE PUBLISHED SCHEMA CARRIES NO SNAPSHOT OF THE DATA.
+   *
+   * It did, for one round: `check_safety` enumerated all 34 menu item ids and all
+   * 11 restriction ids, and `add_to_cart` enumerated the 34 again. So the manifest
+   * held a copy of the menu, and two published files had to agree forever. This
+   * project removed two `allowed_peers` that disagreed and a limits document that
+   * disagreed with its own code; a duplicated menu is the same defect with a
+   * longer fuse — it breaks nothing today and is wrong the first time a dish is
+   * added.
+   *
+   * The enum was never the check. The runtime validates ids against the LIVE menu,
+   * which is stricter than any published list and cannot go stale; the published
+   * enum was a second, weaker copy of a check that already existed. What is
+   * published now is the typed member and a description saying where the real list
+   * lives — still a JSON Schema, which is all §2.1 asks for.
+   *
+   * BREAKS IF: an `enum` comes back anywhere in a published `parameters`, at any
+   * depth. `tests/runtime.test.ts` separately pins that the enum STAYS in the
+   * code-side schema, which is where it does the work.
+   */
+  test("no published argument schema enumerates the site's data", () => {
+    for (const x of manifest.actions) {
+      expect(JSON.stringify(x.parameters), x.name).not.toContain('"enum"');
+      expect(withoutEnums(x.parameters), x.name).toEqual(x.parameters);
+    }
+  });
+
+  /**
+   * ...AND IT STILL DESCRIBES EXACTLY WHAT THE RUNTIME VALIDATES.
    *
    * A published schema that drifts from the validator is a document overstating
    * what it describes, which is this project's own named standard for a worse
    * defect than the gap it hides. So `parameters` is not a transcription of the
-   * implementation, it is asserted equal to it, field for field, enum for enum —
-   * including the id enums, which are not decoration: `actions.ts` records that
-   * pinning the value set is what stops model-chosen prose reaching the
-   * confirmation dialog through an argument.
+   * implementation: it is asserted equal to the registered `inputSchema` with the
+   * data enums removed, property for property, bound for bound, description for
+   * description.
    *
-   * Checked here rather than in `reconcileActions`, deliberately. The reconciler
-   * refuses to START THE ASSISTANT on a mismatch, which is right for a name or an
-   * effect — both stable — and wrong for a schema whose enums move every time the
-   * menu does. A drifted schema should fail a build, not brick a demo.
+   * This is also checked at START-UP now, by `reconcileActions`, beside `name` and
+   * `effect`. That became the right place the moment the enum went: with no data
+   * snapshot in the published schema, nothing in it moves when the menu does, so a
+   * disagreement is a genuine contract break rather than a stale copy — the same
+   * class as a lying effect. It is asserted here as well because a build should
+   * fail before a visitor's browser has to.
    *
-   * BREAKS IF: an argument is added, removed, renamed, re-typed or re-bounded in
-   * `actionDefinitions` without the manifest following it, or the other way round.
+   * BREAKS IF: an argument is added, removed, renamed, re-typed, re-bounded or
+   * re-described in `actionDefinitions` without the manifest following it, or the
+   * other way round.
    */
-  test("...and each published schema is exactly the one the runtime validates arguments against", () => {
+  test("...and each published schema is the one the runtime validates arguments against, minus the data enums", () => {
     const live = actionDefinitions({ checkoutTimeoutMs: 20000 });
     expect(manifest.actions.map((x: any) => x.name)).toEqual(live.map((d) => d.name));
     for (const x of manifest.actions) {
       const def = live.find((d) => d.name === x.name)!;
       expect(x.effect, x.name).toBe(def.effect);
-      expect(x.parameters, x.name).toEqual(def.inputSchema);
+      expect(x.parameters, x.name).toEqual(withoutEnums(def.inputSchema));
     }
   });
 });

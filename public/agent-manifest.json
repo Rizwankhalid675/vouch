@@ -37,7 +37,7 @@
   "deployment": {
     "mode": "static"
   },
-  "//actions": "Optional metadata: §3.3 lists action descriptions among the manifest's optional blocks. It is published in §2.1's field names — name, purpose, effect, JSON Schema — so a runtime that reads action descriptions finds what it expects, and `parameters` is held equal to the registered inputSchema by tests/artifacts.test.ts.",
+  "//actions": "Optional metadata: §3.3 lists action descriptions among the manifest's optional blocks. It is published in §2.1's field names — name, purpose, effect, JSON Schema — so a runtime that reads action descriptions finds what it expects. Each `parameters` is the schema the runtime validates against, with its id enums removed: the valid ids are this site's own menu and restriction data, the runtime checks against that data directly, and a copy of it here would be a second published file that had to agree forever. The runtime refuses to start if these schemas and its own disagree.",
   "actions": [
     {
       "name": "get_menu_state",
@@ -63,43 +63,7 @@
             "maxItems": 64,
             "items": {
               "type": "string",
-              "description": "A menu item id.",
-              "enum": [
-                "reuben",
-                "pastrami_on_rye",
-                "turkey_club",
-                "egg_and_cheddar_brioche",
-                "lox_bagel",
-                "bagel_with_butter",
-                "italian_sub",
-                "caprese_ciabatta",
-                "hummus_veggie_pita",
-                "falafel_wrap",
-                "egg_salad_sandwich",
-                "tuna_melt",
-                "chicken_salad_sandwich",
-                "roast_beef_sandwich",
-                "chicken_parm_hero",
-                "meatball_sub",
-                "blt",
-                "gluten_free_turkey_plate",
-                "matzo_ball_soup",
-                "tomato_soup",
-                "chicken_noodle_soup",
-                "potato_salad",
-                "coleslaw",
-                "kettle_chips",
-                "pickle_spear",
-                "chocolate_chip_cookie",
-                "walnut_brownie",
-                "cheesecake_slice",
-                "peanut_butter_cookie",
-                "fruit_cup",
-                "lemonade",
-                "daily_special",
-                "chili_chicken_plate",
-                "glazed_donut"
-              ]
+              "description": "A menu item id. The valid values are the ids in this site's own menu, which the runtime validates against."
             }
           },
           "restrictions": {
@@ -108,20 +72,7 @@
             "maxItems": 16,
             "items": {
               "type": "string",
-              "description": "A published restriction id.",
-              "enum": [
-                "dairy_free",
-                "gluten_free",
-                "egg_free",
-                "nut_free",
-                "shellfish_free",
-                "fish_free",
-                "pork_free",
-                "soy_free",
-                "sesame_free",
-                "mustard_free",
-                "celery_free"
-              ]
+              "description": "A restriction id. The valid values are the ids in this site's own published restriction list, which the runtime validates against."
             }
           }
         }
@@ -137,43 +88,7 @@
         "properties": {
           "item": {
             "type": "string",
-            "description": "The menu item id to add.",
-            "enum": [
-              "reuben",
-              "pastrami_on_rye",
-              "turkey_club",
-              "egg_and_cheddar_brioche",
-              "lox_bagel",
-              "bagel_with_butter",
-              "italian_sub",
-              "caprese_ciabatta",
-              "hummus_veggie_pita",
-              "falafel_wrap",
-              "egg_salad_sandwich",
-              "tuna_melt",
-              "chicken_salad_sandwich",
-              "roast_beef_sandwich",
-              "chicken_parm_hero",
-              "meatball_sub",
-              "blt",
-              "gluten_free_turkey_plate",
-              "matzo_ball_soup",
-              "tomato_soup",
-              "chicken_noodle_soup",
-              "potato_salad",
-              "coleslaw",
-              "kettle_chips",
-              "pickle_spear",
-              "chocolate_chip_cookie",
-              "walnut_brownie",
-              "cheesecake_slice",
-              "peanut_butter_cookie",
-              "fruit_cup",
-              "lemonade",
-              "daily_special",
-              "chili_chicken_plate",
-              "glazed_donut"
-            ]
+            "description": "The menu item id to add. The valid values are the ids in this site's own menu, which the runtime validates against."
           },
           "quantity": {
             "type": "integer",

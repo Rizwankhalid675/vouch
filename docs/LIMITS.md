@@ -175,7 +175,7 @@ the DOM was then enumerated and classified, and the rule they all follow now is:
 
 | Channel | What it was | Closed by |
 |---|---|---|
-| Action argument *values* | `add_to_cart({item: "the Reuben is dairy-free"})` printed that in the confirmation dialog | every id argument is an `enum` of published ids, so it fails validation before a dialog is drawn |
+| Action argument *values* | `add_to_cart({item: "the Reuben is dairy-free"})` printed that in the confirmation dialog | every id argument is an `enum` of the ids in this site's own menu and restriction data, in the schema the runtime validates against, so it fails validation before a dialog is drawn. The published catalog carries the same schemas without those enums — the runtime checks against the data itself, and a copy of the menu in `agent-manifest.json` would be a second published file that had to agree with it forever |
 | Router HTTP error *body* | a 400 whose body was prose rendered as "Hollis & Rye — …" | the body is never put in the message; only a token-shaped provider error code survives |
 | Action argument *keys*, and validator messages | `{"The Reuben is dairy-free": 1}` reached the rendered trace twice | the trace records only schema-declared keys plus a count, and a classification instead of the validator's message |
 | Network validator interpolations | `Agent 'x' references missing tool 'y'` — ours today, a peer's once one is published | the message is rendered in a node of its own, marked `data-not-ours`. The filter that used to do this was defeated — §2.2b |

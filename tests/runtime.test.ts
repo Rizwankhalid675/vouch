@@ -1522,6 +1522,59 @@ describe("the runtime, not the model, owns confirmation", () => {
   });
 
   /**
+   * THE ARGUMENT SCHEMA IS RECONCILED AT START-UP TOO, since fix round 2.
+   *
+   * It was asserted only in `tests/artifacts.test.ts` while the published schema
+   * enumerated every menu item id, because a mismatch here refuses to start the
+   * assistant and a data change must not be able to do that. With the enums gone
+   * from the published copy, nothing in it moves when the menu does, so a
+   * disagreement is a contract break of the same class as a lying effect.
+   *
+   * All three directions, because each is a different lie: a shape the runtime
+   * does not validate, a published enumeration of the site's data (the thing that
+   * made this unsafe to check here in the first place), and no schema at all.
+   *
+   * BREAKS IF: any of the three checks is dropped, or the comparison starts
+   * passing on a schema the runtime does not actually validate against.
+   */
+  test("a published argument schema that is not the runtime's, or that snapshots the menu, is caught at start-up", () => {
+    const { registry, scope } = bareRegistry();
+    expect(reconcileActions(registry, scope, MANIFEST.actions ?? [])).toEqual([]);
+
+    // A property the runtime accepts and the catalog no longer describes.
+    const thinner = (MANIFEST.actions ?? []).map((a) => {
+      if (a.name !== "add_to_cart") return a;
+      const parameters = structuredClone(a.parameters) as any;
+      delete parameters.properties.quantity;
+      return { ...a, parameters };
+    });
+    expect(reconcileActions(registry, scope, thinner)).toEqual([expect.stringContaining("not the one this runtime validates")]);
+
+    // A bound loosened in the published copy only.
+    const looser = (MANIFEST.actions ?? []).map((a) => {
+      if (a.name !== "add_to_cart") return a;
+      const parameters = structuredClone(a.parameters) as any;
+      parameters.properties.quantity.maximum = 1000;
+      return { ...a, parameters };
+    });
+    expect(reconcileActions(registry, scope, looser)).toEqual([expect.stringContaining("not the one this runtime validates")]);
+
+    // The menu snapshot, back. Reported as its own problem rather than as a
+    // mismatch, because it is the one a data change could otherwise cause.
+    const snapshot = (MANIFEST.actions ?? []).map((a) => {
+      if (a.name !== "add_to_cart") return a;
+      const parameters = structuredClone(a.parameters) as any;
+      parameters.properties.item.enum = MENU.items.map((i) => i.id);
+      return { ...a, parameters };
+    });
+    expect(reconcileActions(registry, scope, snapshot)).toEqual([expect.stringContaining("publishes an enumeration of this site's data")]);
+
+    // And no schema at all is not the same claim as an empty one.
+    const silent = (MANIFEST.actions ?? []).map((a) => (a.name === "get_menu_state" ? { ...a, parameters: undefined } : a));
+    expect(reconcileActions(registry, scope, silent)).toEqual([expect.stringContaining("declared without a JSON Schema")]);
+  });
+
+  /**
    * The third link in the chain: published flag === recorded flag === whether the
    * guest is actually asked. Breaks if an action can be recorded as committing
    * while its effect lets it dispatch unasked.
@@ -1535,9 +1588,8 @@ describe("the runtime, not the model, owns confirmation", () => {
       () => ({}),
     );
     expect(registry.confirmRequired(registry.entryFor(scope, "sneaky")!)).toBe(false);
-    expect(reconcileActions(registry, scope, [{ name: "sneaky", purpose: "x", effect: "read" }])).toEqual([
-      expect.stringContaining("is not asked before it runs"),
-    ]);
+    const sneaky = { name: "sneaky", purpose: "x", effect: "read", parameters: { type: "object", properties: {}, additionalProperties: false } };
+    expect(reconcileActions(registry, scope, [sneaky])).toEqual([expect.stringContaining("is not asked before it runs")]);
   });
 
   test("the assistant refuses to start at all when the published catalog disagrees with the runtime", async () => {

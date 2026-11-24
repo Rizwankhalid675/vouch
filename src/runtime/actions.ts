@@ -4,13 +4,14 @@
  *
  * The names, purposes, effects and argument schemas are already published in
  * `public/agent-manifest.json`, in §2.1's own field names. They are the public
- * contract; boot.ts cross-checks the names and effects against that file at
- * start-up and refuses to run if the two disagree, because a declared action
- * that does not exist, or a published effect that lies, is worse than publishing
- * nothing at all. The published `parameters` are held equal to the `inputSchema`
- * below by `tests/artifacts.test.ts` rather than at start-up: these schemas carry
- * id enums that move with the menu, and a drifted schema should fail a build
- * rather than refuse to start the assistant.
+ * contract; boot.ts cross-checks the names, the effects AND the argument schemas
+ * against that file at start-up and refuses to run if any of them disagree,
+ * because a declared action that does not exist, or a published effect or schema
+ * that lies, is worse than publishing nothing at all.
+ *
+ * The published `parameters` are the `inputSchema`s below with their data enums
+ * removed — see `withoutEnums`, which is also why that start-up check is safe to
+ * make: nothing in the published copy moves when the menu does.
  *
  * THE POINT OF `check_safety`
  *
@@ -239,6 +240,45 @@ const FINDING_SCHEMA = {
  * dialog. Pinning the value set makes such an argument fail validation before any
  * dialog is drawn. The gate is the only path for prose; this keeps it the only one.
  */
+/**
+ * A JSON Schema with every `enum` KEYWORD removed, at any depth.
+ *
+ * This is what this site publishes about an action's arguments, and the rule has
+ * one definition because two surfaces consult it: the manifest's `parameters`
+ * (generated from here) and `reconcileActions`, which refuses to start the
+ * assistant if the two disagree.
+ *
+ * WHY THE ENUMS ARE NOT PUBLISHED. The `inputSchema`s below enumerate every menu
+ * item id and every restriction id, and those enums do real work — they are what
+ * stops a model proposing `add_to_cart({item: "the Reuben is dairy-free"})` and
+ * printing that claim in the confirmation dialog. But publishing them put a COPY
+ * OF THE MENU in `agent-manifest.json`, so two published files had to agree
+ * forever, and the copy would have been wrong the first time a dish was added.
+ * The enum was never the check either: the runtime validates against the live
+ * menu, which is stricter than a published list and cannot go stale. So the
+ * published schema carries the typed member and a description saying where the
+ * real list lives, which is still a JSON Schema and all §2.1 asks for.
+ *
+ * It also removed a dilemma. With no data snapshot in the published schema,
+ * nothing in it moves when the data does — so a published schema that disagrees
+ * with the code is a genuine contract break rather than a stale copy, and belongs
+ * at start-up beside the name and effect checks instead of in a test only.
+ *
+ * Keys inside a `properties` map are PROPERTY NAMES, not keywords, so a property
+ * legitimately called `enum` survives. No action has one; the distinction is here
+ * so that adding one is not a silent data loss.
+ */
+export function withoutEnums(node: unknown, insideProperties = false): unknown {
+  if (Array.isArray(node)) return node.map((x) => withoutEnums(x));
+  if (node === null || typeof node !== "object") return node;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (!insideProperties && key === "enum") continue;
+    out[key] = withoutEnums(value, !insideProperties && key === "properties");
+  }
+  return out;
+}
+
 export function actionDefinitions(ctx: Pick<SiteContext, "checkoutTimeoutMs"> & { menu?: Menu; restrictions?: Restriction[] }): ActionDefinition[] {
   const itemIds = (ctx.menu ?? MENU).items.map((i) => i.id);
   const restrictionIds = (ctx.restrictions ?? RESTRICTIONS).map((r) => r.id);
@@ -267,13 +307,22 @@ export function actionDefinitions(ctx: Pick<SiteContext, "checkoutTimeoutMs"> & 
             type: "array",
             description: "Menu item ids to check. Omit to check the whole menu.",
             maxItems: 64,
-            items: { type: "string", description: "A menu item id.", enum: itemIds },
+            items: {
+              type: "string",
+              description: "A menu item id. The valid values are the ids in this site's own menu, which the runtime validates against.",
+              enum: itemIds,
+            },
           },
           restrictions: {
             type: "array",
             description: "Published restriction ids to check against. Omit to use what the guest has selected on the page.",
             maxItems: 16,
-            items: { type: "string", description: "A published restriction id.", enum: restrictionIds },
+            items: {
+              type: "string",
+              description:
+                "A restriction id. The valid values are the ids in this site's own published restriction list, which the runtime validates against.",
+              enum: restrictionIds,
+            },
           },
         },
       },
@@ -301,7 +350,12 @@ export function actionDefinitions(ctx: Pick<SiteContext, "checkoutTimeoutMs"> & 
         type: "object",
         additionalProperties: false,
         properties: {
-          item: { type: "string", description: "The menu item id to add.", enum: itemIds },
+          item: {
+            type: "string",
+            description:
+              "The menu item id to add. The valid values are the ids in this site's own menu, which the runtime validates against.",
+            enum: itemIds,
+          },
           quantity: { type: "integer", description: "How many to add. Defaults to one.", minimum: 1, maximum: 10 },
         },
         required: ["item"],

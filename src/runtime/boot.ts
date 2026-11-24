@@ -17,7 +17,7 @@
 
 import type { Finding, Menu, Restriction } from "../../contracts.ts";
 import { MENU, RESTRICTIONS } from "../safety/canon.ts";
-import { registerSiteActions, checkSafety, type SiteContext } from "./actions.ts";
+import { registerSiteActions, checkSafety, withoutEnums, type SiteContext } from "./actions.ts";
 import { KeyStore, type StorageLike } from "./key-store.ts";
 import { Router, SCRIPTED_ROUTER, SCRIPTS, missingKeyMessage } from "./llm.ts";
 import { BudgetError, Conversation, CycleError, type Limits } from "./loop.ts";
@@ -1093,6 +1093,23 @@ function sourceLine(doc: Document, r: Receipt): HTMLElement {
 }
 
 /**
+ * Are two JSON Schemas the same document? Key ORDER is not part of a JSON
+ * object, so they are compared as key-sorted JSON rather than by a field walk
+ * that would have to be kept in step with the schema vocabulary.
+ */
+function sameSchema(a: unknown, b: unknown): boolean {
+  const stable = (v: unknown): string => {
+    if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+    if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
+    return `{${Object.entries(v as Record<string, unknown>)
+      .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))
+      .map(([k, x]) => `${JSON.stringify(k)}:${stable(x)}`)
+      .join(",")}}`;
+  };
+  return stable(a) === stable(b);
+}
+
+/**
  * Does the published `actions` catalog describe what the runtime actually has?
  * Checked in BOTH directions, and on the `effect`, because an effect that lies
  * is what would let a committing action run without asking.
@@ -1102,17 +1119,19 @@ function sourceLine(doc: Document, r: Receipt): HTMLElement {
  * `effect`, so comparing effects catches everything comparing flags caught and
  * also catches a write published as irreversible, or the reverse.
  *
- * What it deliberately does NOT compare is `parameters`. A mismatch here refuses
- * to start the assistant at all, which is the right answer for a name or an
- * effect — both stable — and the wrong one for a schema whose id enums move
- * every time the menu does. `tests/artifacts.test.ts` asserts the published
- * schema equals the registered one, so drift fails a build instead of bricking
- * a demo.
+ * AND ON THE ARGUMENT SCHEMA, since fix round 2. That was the wrong place for it
+ * while the published schema enumerated every menu item id: a mismatch here
+ * refuses to start the assistant, and a data change must not be able to do that.
+ * With the enums gone (`withoutEnums`, and why, in `actions.ts`) nothing in the
+ * published schema moves when the data does, so a disagreement is a genuine
+ * contract break of the same class as a lying effect, and belongs with the rest
+ * of them — as early as something can fail. `tests/artifacts.test.ts` asserts it
+ * too, so a build fails before a visitor's browser has to.
  */
 export function reconcileActions(
   registry: ActionRegistry,
   scope: ActionScope,
-  declared: { name: string; purpose?: string; effect?: string }[],
+  declared: { name: string; purpose?: string; effect?: string; parameters?: unknown }[],
 ): string[] {
   const problems: string[] = [];
   const live = registry.catalog(scope);
@@ -1137,6 +1156,23 @@ export function reconcileActions(
         `'${d.name}' is recorded as commits=${String(entry.commits)} but its effect '${entry.effect}' means the guest ` +
           `${asksFirst ? "is" : "is not"} asked before it runs. Those must agree.`,
       );
+    }
+    // THE ARGUMENT SCHEMA, in both of its own directions.
+    //
+    // First: the published copy must not enumerate the site's DATA. That is the
+    // check that keeps this comparison safe to make at start-up at all — an
+    // `enum` of menu ids would put a published copy of the menu here, and then
+    // adding a dish would refuse to start the assistant.
+    //
+    // Second: with the data enums removed from both sides, the shapes must be
+    // identical. An argument the runtime accepts and the catalog does not
+    // describe, or the reverse, is a published contract that is not the contract.
+    if (d.parameters === undefined || d.parameters === null || typeof d.parameters !== "object") {
+      problems.push(`'${d.name}' is declared without a JSON Schema for its arguments. An action taking none must publish an empty one.`);
+    } else if (!sameSchema(d.parameters, withoutEnums(d.parameters))) {
+      problems.push(`'${d.name}' publishes an enumeration of this site's data in its argument schema. The runtime validates against the data itself.`);
+    } else if (!sameSchema(d.parameters, withoutEnums(entry.inputSchema))) {
+      problems.push(`'${d.name}' publishes an argument schema that is not the one this runtime validates its arguments against.`);
     }
   }
   for (const name of liveNames) {

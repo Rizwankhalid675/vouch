@@ -480,7 +480,7 @@ A real deployment would need both.
 
 All of them live in `src/runtime/limits.ts`.
 
-**Per turn:** 16 model calls, 12 delegations, depth 4, 6 tool rounds, and 60 seconds
+**Per turn:** 16 model calls, 12 delegations, depth 4, 6 tool rounds, and 90 seconds
 of wall clock. These reset at the start of every turn, because the runaway a limit
 exists to stop is a turn that will not finish. **Per session:** 300 model calls, as a
 backstop against a page left open all day; reaching it says to start a new

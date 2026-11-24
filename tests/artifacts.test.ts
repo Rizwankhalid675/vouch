@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { RESTRICTIONS } from "../src/safety/canon.ts";
 import { actionDefinitions } from "../src/runtime/actions.ts";
+import { DEFAULT_LIMITS } from "../src/runtime/limits.ts";
 
 const read = (f: string): any => JSON.parse(readFileSync(resolve(import.meta.dirname, "..", "public", f), "utf8"));
 const manifest = read("agent-manifest.json");
@@ -547,6 +548,56 @@ describe("links.json (§3.3 peer-network link map)", () => {
     nestedOnly.manifest.allowed_peers = undefined;
     nestedOnly.manifest.peer_policy.allowed_peers = ["https://bakery.example"];
     expect(peerWiring(nestedOnly)).not.toEqual([]);
+  });
+});
+
+/**
+ * THE SUMMARY LINE A READER TRUSTS, HELD TO THE CODE.
+ *
+ * `LIMITS.md` §2.6 opens with one sentence listing every per-turn bound, and that
+ * sentence is what a reader takes away; the paragraphs below it are for whoever
+ * wants the arithmetic. Fix round 1 found it still saying 60 seconds against a
+ * `maxElapsedMs` of 90, edited for `depth 4` in the same hunk that left the
+ * seconds behind — the fourth correction this file has had for stale prose, and
+ * the first three were all caught by a reader rather than by anything that runs.
+ *
+ * So the numbers come from `DEFAULT_LIMITS` and the document is matched against
+ * them. Every figure is asserted to be the ONLY one of its kind in the sentence,
+ * which is what catches a stale number left beside a corrected one.
+ */
+describe("docs/LIMITS.md §2.6 says the numbers limits.ts actually holds", () => {
+  const limitsMd = readFileSync(resolve(import.meta.dirname, "..", "docs/LIMITS.md"), "utf8");
+  const section = (heading: string): string => {
+    const start = limitsMd.indexOf(`### ${heading}`);
+    expect(start, heading).toBeGreaterThan(-1);
+    const rest = limitsMd.slice(start + heading.length);
+    const end = rest.indexOf("\n### ");
+    return end === -1 ? rest : rest.slice(0, end);
+  };
+  const bounds = section("2.6 Execution bounds");
+  /** The opening summary: everything from "**Per turn:**" to the end of that paragraph. */
+  const summary = bounds.slice(bounds.indexOf("**Per turn:**")).split("\n\n")[0]!.replace(/\n/g, " ");
+
+  test("the opening summary carries each per-turn bound, and no stale copy of one", () => {
+    expect(summary).toContain(`${DEFAULT_LIMITS.maxModelCalls} model calls`);
+    expect(summary).toContain(`${DEFAULT_LIMITS.maxAgentCalls} delegations`);
+    expect(summary).toContain(`depth ${DEFAULT_LIMITS.maxDepth}`);
+    expect(summary).toContain(`${DEFAULT_LIMITS.maxRounds} tool rounds`);
+    // The one that was stale. Asserted as the ONLY seconds figure in the summary,
+    // so a corrected number added beside the old one still fails.
+    expect(summary.match(/\d+(\.\d+)?\s+seconds/g)).toEqual([`${DEFAULT_LIMITS.maxElapsedMs / 1000} seconds`]);
+    // And the other two figures the same paragraph publishes.
+    expect(summary).toContain(`${DEFAULT_LIMITS.maxSessionModelCalls} model calls`);
+    expect(summary).toContain(`${DEFAULT_LIMITS.maxComposedNetworks} network documents`);
+  });
+
+  test("...and the depth, rounds and call figures appear exactly once each, so a bump cannot be half-applied", () => {
+    const once = (needle: string): number => summary.split(needle).length - 1;
+    expect(once(`depth ${DEFAULT_LIMITS.maxDepth}`)).toBe(1);
+    expect(once(`${DEFAULT_LIMITS.maxRounds} tool rounds`)).toBe(1);
+    expect(once(`${DEFAULT_LIMITS.maxAgentCalls} delegations`)).toBe(1);
+    // `model calls` appears twice on purpose: per turn and per session.
+    expect(once("model calls")).toBe(2);
   });
 });
 

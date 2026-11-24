@@ -21,7 +21,7 @@ schema had to be either inferred or fetched. We fetched it.
 |---|---|---|
 | `neuro-san-agent-hocon-reference.md` | `cognizant-ai-lab/neuro-san` `docs/agent_hocon_reference.md` | 2026-11-23 |
 | `neuro-san-agent_network_schema.hocon` | `cognizant-ai-lab/neuro-san` `docs/agent_network_schema.hocon` | 2026-11-23 |
-| `neuro-san-example-hello_world.hocon` | `cognizant-ai-lab/neuro-san` `registries/hello_world.hocon` | 2026-11-23 |
+| `neuro-san-example-hello_world.hocon` | `cognizant-ai-lab/neuro-san` `neuro_san/registries/hello_world.hocon` | 2026-11-23 |
 | `nsdeploy-build_manifest-excerpt.md` | excerpt of `cognizant-ai-lab/nsdeploy` `nsdeploy/generate.py` | 2026-11-23 |
 
 These are the authority for upstream key names. They settled three questions our spec could
@@ -64,6 +64,22 @@ To check one yourself:
 ```
 curl -sL https://raw.githubusercontent.com/cognizant-ai-lab/nsdeploy/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/actions.js | shasum -a 256
 ```
+
+**Re-verified 24 November 2026, and upstream has moved.** All six digests above were
+re-fetched at the pinned SHA and match. `cognizant-ai-lab/nsdeploy` `main` is now
+`71b5037746a5b40e8c096a098e2ecaf8ad1f6adf`, ahead of the pin — and **all six sources
+are byte-identical at that revision too**, so nothing adapted here has changed
+upstream. `cognizant-ai-lab/neuro-san` `main` is `a5537db4ae32d55875ecf275cb9cd7148b444898`,
+and the three reference documents vendored above are byte-identical to it apart from
+the provenance comment our copy prepends; the `build_manifest` excerpt still matches
+`nsdeploy/generate.py` lines 440-512 exactly, and `LICENSE-Apache-2.0.txt` still
+matches `nsdeploy` `LICENSE.txt`. **Nothing was re-vendored**; the pin stands, which is
+the point of pinning. Figures and commands in [`docs/RESULTS.md`](../RESULTS.md) §3.
+
+One gap this leaves, stated rather than closed on a deadline: the four reference
+documents are pinned by a **fetch date, not a SHA**, so "identical today" is a
+measurement and not a guarantee. They should carry digests in `upstream-pins.json` as
+the six runtime sources do.
 
 
 | Upstream file | Permalink |

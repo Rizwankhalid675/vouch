@@ -166,6 +166,15 @@ interface Harness {
   /** Requests that went to the peer's origin, whatever the path. */
   toPeer: () => Captured[];
   routerBodies: () => Promise<RouterBody[]>;
+  /**
+   * The final URL of every artifact response whose body was actually PARSED.
+   *
+   * "Refused" and "parsed and then refused" are different claims, and §5's
+   * redirect rule is about the first: nothing from an unapproved landing origin
+   * may be parsed, run or shown. A `json()` call is recorded here, so a test can
+   * assert the body was never read rather than inferring it from the outcome.
+   */
+  parsed: () => string[];
 }
 
 interface RouterBody {
@@ -178,9 +187,21 @@ interface RouterBody {
  * published peer origin, and a queue of model replies.
  */
 function harness(
-  opts: { replies?: ModelJson[]; artifacts?: Record<string, unknown>; peerDown?: boolean } = {},
+  opts: {
+    replies?: ModelJson[];
+    artifacts?: Record<string, unknown>;
+    peerDown?: boolean;
+    /**
+     * Requested URL -> the URL the response came back from, i.e. an HTTP redirect
+     * the browser already followed. A real `fetch` reports it as `Response.url`
+     * and will not reveal a cross-origin `Location` any other way, which is why
+     * the check it drives is necessarily after the request.
+     */
+    redirects?: Record<string, string>;
+  } = {},
 ): Harness {
   const captured: Captured[] = [];
+  const parsed: string[] = [];
   const replies = [...(opts.replies ?? [])];
   const artifacts: Record<string, unknown> = {
     [`${BASE}/agent-manifest.json`]: MANIFEST,
@@ -200,7 +221,19 @@ function harness(
       if (!next) throw new Error("the test ran out of scripted model replies");
       return ok(next);
     }
-    if (Object.hasOwn(artifacts, url) && artifacts[url] !== undefined) return ok(artifacts[url]);
+    if (Object.hasOwn(artifacts, url) && artifacts[url] !== undefined) {
+      const landedOn = opts.redirects?.[url] ?? url;
+      return {
+        ok: true,
+        status: 200,
+        url: landedOn,
+        json: async () => {
+          parsed.push(landedOn);
+          return artifacts[url];
+        },
+        text: async () => JSON.stringify(artifacts[url]),
+      } as unknown as Response;
+    }
     return notFound();
   }) as unknown as typeof fetch;
   return {
@@ -210,6 +243,7 @@ function harness(
     toPeer: () => captured.filter((c) => c.url.startsWith(PEER_ORIGIN)),
     routerBodies: async () =>
       Promise.all(captured.filter((c) => c.url === ROUTER_URL).map(async (c) => JSON.parse(await bodyOf(c)) as RouterBody)),
+    parsed: () => [...parsed],
   };
 }
 
@@ -956,6 +990,106 @@ describe("consent blocks the fetch, rather than announcing it", () => {
     expect(allowed.plans.map((p) => p[0]!.origin)).toEqual([PEER_ORIGIN, ELSEWHERE]);
     expect(allowed.runtime.composed()).toHaveLength(1);
     expect(allowed.runtime.trace().some((e) => e.event === "peer_definition_offsite")).toBe(true);
+  });
+
+  /**
+   * INVARIANT (§5's redirect MUST, the OTHER half): a request whose URL is
+   * on-origin and whose RESPONSE came back from somewhere else landed on a new
+   * destination, and nothing from an origin the allow-list does not name may be
+   * parsed, run or shown as the peer's.
+   *
+   * The declared-URL half above is closed BEFORE the fetch, by an allow-list
+   * check on a URL we can read. This half can only be closed AFTER it: the two
+   * spec lines resolve rather than conflict —
+   *
+   *   §3.2: "This version follows normal browser fetch redirects and relies on
+   *    browser CORS enforcement; it does not require the final network-definition
+   *    URL to remain on the manifest's origin."
+   *   §5: "A redirect to a different origin MUST be treated as a new destination
+   *    and evaluated under the same consent policy."
+   *
+   * — so the redirect is followed and the landing origin is then evaluated. The
+   * limit that leaves is asserted here rather than hidden: the third origin DID
+   * receive one GET. `fetch` will not reveal a cross-origin `Location` without
+   * following it, and `redirect: "error"` would break an ordinary same-origin
+   * trailing-slash redirect. What the check buys is that nothing from an
+   * unapproved origin is parsed or believed, not that it was never contacted.
+   *
+   * BREAKS IF: `Response.url` stops being inspected, or the body is parsed before
+   * the landing origin is judged — `parsed()` is empty here, and a check placed
+   * after `json()` would put the landing URL in it.
+   */
+  test("a definition that REDIRECTS to an unapproved origin is refused, and its body is never parsed", async () => {
+    const LANDED = "https://redirected-elsewhere.example";
+    const landedUrl = `${LANDED}/marrow_point.network.json`;
+    const h = harness({ redirects: { [PEER_HOCON_URL]: landedUrl } });
+    const s = await session({ h });
+    await s.runtime.loadPeerNetwork(SYMBOLIC);
+
+    // Nothing of it was used.
+    expect(s.runtime.composed()).toEqual([]);
+    expect(s.h.parsed()).not.toContain(landedUrl);
+    // The manifest, which did not redirect, was read as usual: the check is on
+    // the landing origin and not on every peer response. Asserted as the exact
+    // set of off-origin bodies parsed, so a second one cannot creep in.
+    expect(s.h.parsed().filter((u) => !u.startsWith(BASE))).toEqual([PEER_MANIFEST_URL]);
+
+    // And the refusal is a visible string that names where it landed.
+    const shown = visibleTextOf(s.mount, "[data-compose-status]");
+    expect(shown).toContain(LANDED);
+    expect(shown).toContain("redirected to a different origin");
+    expect(s.runtime.trace().some((e) => e.event === "peer_redirect_refused" && e.detail["landedOn"] === LANDED)).toBe(true);
+
+    // THE LIMIT, ASSERTED: the request was made. One GET reached the third
+    // origin's server before anything could see where it landed.
+    expect(s.h.urls()).toContain(PEER_HOCON_URL);
+    // The visitor was asked once, about the bakery. The landing origin was never
+    // put to them as a question, because by then the contact had happened.
+    expect(s.plans).toHaveLength(1);
+    expect(s.plans[0]![0]!.origin).toBe(PEER_ORIGIN);
+  });
+
+  /**
+   * ...AND THE CHECK IS NOT "ANY REDIRECT IS REFUSED", which would be the easy
+   * way to make the test above pass and would break an ordinary trailing-slash
+   * or canonical-host redirect on the peer's own origin.
+   *
+   * BREAKS IF: the landing check compares URLs instead of origins.
+   */
+  test("...but a redirect that stays on the peer's own origin is not a new destination at all", async () => {
+    const h = harness({ redirects: { [PEER_HOCON_URL]: `${PEER_BASE}/canonical/marrow_point.network.json` } });
+    const s = await session({ h });
+    await s.runtime.loadPeerNetwork(SYMBOLIC);
+    expect(s.runtime.composed().map((c) => c.ref.name)).toEqual([PEER_NAME]);
+    expect(s.runtime.trace().some((e) => e.event === "peer_redirect_refused")).toBe(false);
+    // Not even recorded as a redirect off-origin, because it is not one. This is
+    // what fails if the check compares URLs rather than origins — a trailing
+    // slash or a canonical host would read as a new destination.
+    expect(s.runtime.trace().some((e) => e.event === "redirect_offsite")).toBe(false);
+  });
+
+  /**
+   * ...AND A REDIRECT TO A DIFFERENT ORIGIN THE ALLOW-LIST DOES NAME IS FOLLOWED.
+   *
+   * §3.2 "does not require the final network-definition URL to remain on the
+   * manifest's origin", so refusing every cross-origin landing would refuse
+   * something the spec permits. The allow-list is the judge, not the fact of a
+   * redirect.
+   *
+   * BREAKS IF: the landing check refuses any off-origin landing, or stops
+   * consulting the allow-list for one.
+   */
+  test("...and a redirect to a DIFFERENT origin the allow-list names is followed, and recorded as a new destination", async () => {
+    const ELSEWHERE = "https://cdn-elsewhere.example";
+    const landedUrl = `${ELSEWHERE}/marrow_point.network.json`;
+    const h = harness({ redirects: { [PEER_HOCON_URL]: landedUrl } });
+    const s = await session({ h, allowedPeers: [ELSEWHERE] });
+    await s.runtime.loadPeerNetwork(SYMBOLIC);
+    expect(s.runtime.composed().map((c) => c.ref.name)).toEqual([PEER_NAME]);
+    expect(s.runtime.trace().some((e) => e.event === "peer_redirect_refused")).toBe(false);
+    expect(s.runtime.trace().some((e) => e.event === "redirect_offsite" && e.detail["landedOn"] === ELSEWHERE)).toBe(true);
+    // And its body WAS read, which is the difference the allow-list makes.
+    expect(s.h.parsed()).toContain(landedUrl);
   });
 });
 

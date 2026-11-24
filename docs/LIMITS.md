@@ -648,15 +648,44 @@ both were latent code whose status changed on the day a peer was published.
    consent — unconsented contact with a third-party origin, which §3.2 forbids. The
    allow-list check and the consent gate are now one function, `clearToContact`, and
    both the composition walk and this method go through it. There is one route to a
-   third-party origin in this runtime.
-2. **A peer manifest may point its network definition at a third origin.** §3.2
-   permits it in as many words — the `hocon` value "MAY be a relative path or an
-   absolute HTTP or HTTPS URL" and "does not require the final network-definition
-   URL to remain on the manifest's origin". So approving the bakery would have
-   silently approved whoever the bakery names. §5 settles it: "A redirect to a
-   different origin MUST be treated as a new destination and evaluated under the
-   same consent policy." That origin now gets its own allow-list check and its own
-   card, named as itself.
+   third-party origin in this runtime, and since fix round 1 both ends of it also
+   run the landing check described below.
+2. **A peer's network definition may be on a third origin, and that class has two
+   halves, closed to different standards.** §3.2 permits the third origin in as
+   many words — the `hocon` value "MAY be a relative path or an absolute HTTP or
+   HTTPS URL" and "does not require the final network-definition URL to remain on
+   the manifest's origin". §5 says what it is: "A redirect to a different origin
+   MUST be treated as a new destination and evaluated under the same consent
+   policy." Both halves are evaluated; only one of them can be evaluated in time.
+
+   **The declared half is closed before the fetch.** A peer manifest naming an
+   absolute `hocon` on a third origin hands us a URL we can read, so that origin
+   goes through the full policy — the allow-list and then its own consent card,
+   named as itself — before anything is requested of it. Nothing reaches it
+   unless the visitor said yes to it specifically. This is the strong half.
+
+   **The redirect half is closed after the fetch, and cannot be closed before
+   it.** A peer whose `hocon` is a same-origin relative path may serve a 302 to
+   anywhere. `fetch` will not reveal a cross-origin `Location` without following
+   it, and `redirect: "error"` would refuse an ordinary same-origin
+   trailing-slash or canonical-host redirect along with it. So the redirect is
+   followed, `Response.url` is read, and **nothing whose landing origin the
+   allow-list does not name is parsed, run or shown as the peer's** — refused
+   before `json()`, with the landing origin on the page. §3.2 permits following
+   the redirect, §5 requires the landing origin to be evaluated, and this is
+   both at once.
+
+   **What that leaves, stated rather than hidden: the third origin receives one
+   GET.** Request headers, the visitor's IP and the fact of the request reach a
+   server nobody approved, before anything could know where it landed. There is
+   no browser mechanism that both prevents this and leaves ordinary redirects
+   working. And a landing origin cannot be put to the visitor as a question
+   either — the contact is how we found out there was one to ask about — so the
+   allow-list is the whole of the policy that applies to it, without the consent
+   half. What the check buys is that **nothing from an unapproved origin is run
+   or believed**, not that it was never contacted. A test asserts the refusal,
+   asserts the body was never parsed, and asserts the GET, because the limit is
+   part of the claim.
 
 The generalisation is recorded because it will apply again: **anything that was
 safe because nothing was published deserves a second look once something is.** The

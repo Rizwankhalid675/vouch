@@ -46,6 +46,7 @@ import {
   SessionConsent,
   clearToContact,
   consentAnswer,
+  landingCheck,
   loadComposition,
   type ComposedNetwork,
   type CompositionDeps,
@@ -172,8 +173,31 @@ export interface Runtime {
  * the caller's private credentials"). The visitor's provider key is not in scope
  * here and could not be attached even by accident — this function cannot see it.
  */
-export async function fetchPublicArtifact(url: string, fetchImpl: typeof fetch): Promise<unknown> {
+export async function fetchPublicArtifact(
+  url: string,
+  fetchImpl: typeof fetch,
+  landedOn?: (finalUrl: string) => void,
+): Promise<unknown> {
   const resp = await fetchImpl(url, { credentials: "omit", cache: "no-store", headers: { Accept: "application/json" } });
+  /*
+   * WHERE DID THIS COME BACK FROM? Asked before the status and before the body.
+   *
+   * §3.2 has this version follow ordinary browser redirects, so `resp.url` is the
+   * only place the landing URL appears; a cross-origin `Location` is not readable
+   * any other way. §5 makes a different landing origin a new destination, and
+   * `landedOn` throws to refuse one.
+   *
+   * It runs FIRST on purpose. "Refused" and "parsed and then refused" are
+   * different claims, and §5 is about the first — nothing from an unapproved
+   * origin may be parsed, run or shown. Asking before the status check also means
+   * an unapproved origin is named as the problem rather than reported as an HTTP
+   * error from the place we asked.
+   *
+   * `resp.url` is empty on a response that never carried one (a test double, an
+   * opaque response), and the requested URL is the honest answer then: we have
+   * been given nothing that says we landed elsewhere.
+   */
+  landedOn?.(typeof resp.url === "string" && resp.url !== "" ? resp.url : url);
   if (!resp.ok) throw new Error(`${url} returned HTTP ${resp.status}.`);
   return resp.json();
 }
@@ -552,7 +576,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
     siteBase: base,
     manifest,
     runtimeAllowedPeers,
-    fetchArtifact: (url) => fetchPublicArtifact(url, fetchImpl),
+    fetchArtifact: (url, landedOn) => fetchPublicArtifact(url, fetchImpl, landedOn),
     confirm: askGuest,
     consent: sessionConsent,
     trace: addTrace,
@@ -1027,9 +1051,12 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
         addTrace({ at: now(), event: "peer_refused", detail: { url, origin } });
         throw new Error(`Policy: ${origin} is not an allowed peer of this site, so it was not contacted.`);
       }
-      await clearToContact(origin, { artifact: url }, { ...compositionDeps(), purpose: "read" });
+      const deps = { ...compositionDeps(), purpose: "read" as const };
+      await clearToContact(origin, { artifact: url }, deps);
       addTrace({ at: now(), event: "peer_fetch", detail: { url, credentials: "omit" } });
-      return fetchPublicArtifact(url, fetchImpl);
+      // §5's redirect rule applies to this route as well: it is the other entry
+      // point to a third-party origin, and there is one policy, not two.
+      return fetchPublicArtifact(url, fetchImpl, landingCheck(url, deps));
     },
     get router() {
       return router;

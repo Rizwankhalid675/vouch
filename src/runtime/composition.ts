@@ -121,6 +121,30 @@ export class DeniedOriginError extends RuntimeMessage {
   }
 }
 
+/**
+ * Refused because the response came back from an origin the allow-list does not
+ * name — an HTTP redirect to a new destination (§5).
+ *
+ * Both URLs are quoted, never interpolated: the landing URL is chosen by whoever
+ * served the redirect, which makes it exactly the kind of stranger's string the
+ * rule at the top of this file exists for.
+ */
+export class RedirectedOriginError extends RuntimeMessage {
+  constructor(
+    readonly requested: string,
+    readonly landedOn: string,
+  ) {
+    super({
+      text: ours(
+        "Refused: that request was redirected to a different origin, which is a new destination, and this site's allowed_peers does not name it. Nothing from it was parsed, run or shown as the other site's. It did receive the request before this could be known.",
+      ),
+      quotedLabel: ours("What was asked for, then the origin the response came back from:"),
+      quoted: [requested, landedOn],
+    });
+    this.name = "RedirectedOriginError";
+  }
+}
+
 /** Refused because the visitor did not approve contacting a third-party origin (§3.2). */
 export class ConsentRefusedError extends RuntimeMessage {
   constructor(readonly origin: string) {
@@ -280,8 +304,13 @@ export interface CompositionDeps {
    * Fetches a public artifact. Injected rather than imported so that the
    * no-ambient-credentials rule stays in one place and this walk cannot route
    * around it.
+   *
+   * `landedOn` is called with the URL the response actually came back from —
+   * after any redirect the browser followed — BEFORE the body is parsed. It
+   * throws to refuse, which is how §5's redirect rule is enforced on a
+   * destination that cannot be known until the request has been made.
    */
-  fetchArtifact: (url: string) => Promise<unknown>;
+  fetchArtifact: (url: string, landedOn?: (finalUrl: string) => void) => Promise<unknown>;
   /** How the visitor approves contact with a third-party origin. `null` means they cannot be asked. */
   confirm: PeerConfirmFn | null;
   /**
@@ -435,6 +464,71 @@ export async function clearToContact(
 }
 
 /**
+ * May this runtime use an artifact served by `origin` at all?
+ *
+ * The first question `clearToContact` asks, without the second. A landing origin
+ * cannot be put to the visitor before contact — the contact is how we found out
+ * where we landed — so this half of the policy is all there is to apply to it,
+ * and saying so is the point of `LIMITS.md` §2.8c.
+ */
+function destinationAllowed(
+  origin: string,
+  deps: Pick<CompositionDeps, "siteBase" | "manifest" | "runtimeAllowedPeers">,
+): boolean {
+  return origin === normOrigin(deps.siteBase) || manifestAllowsPeer(origin, deps.manifest, deps.runtimeAllowedPeers ?? new Set());
+}
+
+/**
+ * §5's REDIRECT MUST, the half that can only be enforced after the request.
+ *
+ * > §3.2: "This version follows normal browser fetch redirects and relies on
+ * >  browser CORS enforcement; it does not require the final network-definition
+ * >  URL to remain on the manifest's origin."
+ * > §5: "A redirect to a different origin MUST be treated as a new destination
+ * >  and evaluated under the same consent policy."
+ *
+ * These resolve rather than conflict. §3.2 permits following the redirect and
+ * permits the final URL being elsewhere; §5 requires the landing origin to be
+ * evaluated as a destination. So: follow it, then refuse to PARSE, run or show
+ * anything whose final origin the allow-list does not name, and say where it
+ * landed.
+ *
+ * WHAT THIS DOES NOT BUY, because a check that overstates itself is worse than
+ * the gap it hides: **the third origin receives one GET.** `fetch` will not
+ * reveal a cross-origin `Location` without following it, and `redirect: "error"`
+ * would refuse an ordinary same-origin trailing-slash redirect as well. So this
+ * closes "nothing from an unapproved origin is run or believed" and does not
+ * close "an unapproved origin is never contacted". `LIMITS.md` §2.8c says so in
+ * the section that reports on exactly this class.
+ *
+ * Returns the callback `fetchArtifact` invokes before parsing. Same-origin
+ * redirects — a trailing slash, a canonical host — pass without comment, because
+ * the rule is about destinations and not about redirects.
+ */
+export function landingCheck(
+  requested: string,
+  deps: Pick<CompositionDeps, "siteBase" | "manifest" | "runtimeAllowedPeers" | "trace" | "now">,
+): (finalUrl: string) => void {
+  const now = deps.now ?? Date.now;
+  const asked = normOrigin(requested);
+  return (finalUrl: string): void => {
+    let landed: string;
+    try {
+      landed = normOrigin(finalUrl);
+    } catch {
+      // An unparseable final URL is not a destination we can evaluate, so it is
+      // not one we use. Fail closed, and name what we were given.
+      throw new RedirectedOriginError(requested, finalUrl);
+    }
+    if (landed === asked) return;
+    deps.trace?.({ at: now(), event: "redirect_offsite", detail: { requested, landedOn: landed, url: finalUrl } });
+    if (destinationAllowed(landed, deps)) return;
+    deps.trace?.({ at: now(), event: "peer_redirect_refused", detail: { requested, landedOn: landed, url: finalUrl } });
+    throw new RedirectedOriginError(requested, landed);
+  };
+}
+
+/**
  * Take a §3.2 reference apart. Relative references resolve against the site base,
  * so a site's own second network can be named `/broken/cycle-a` and stay portable
  * between localhost, a preview host and production.
@@ -494,7 +588,7 @@ async function walk(ref: string, path: string[], loaded: ComposedNetwork[], deps
   await clearToContact(target.origin, { network: target.name, base: target.base }, deps);
 
   const manifestUrl = `${target.base}/agent-manifest.json`;
-  const peerManifest = (await deps.fetchArtifact(manifestUrl)) as Manifest;
+  const peerManifest = (await deps.fetchArtifact(manifestUrl, landingCheck(manifestUrl, deps))) as Manifest;
   // §3.2: the entry whose name matches EXACTLY, or fail. Never another network.
   const entry = (peerManifest?.networks ?? []).find((n) => n.name === target.name);
   if (!entry) throw new NoSuchNetworkError(target.name, manifestUrl);
@@ -527,7 +621,7 @@ async function walk(ref: string, path: string[], loaded: ComposedNetwork[], deps
     });
     await clearToContact(definitionOrigin, { network: target.name, definition: definitionUrl }, deps);
   }
-  const config = (await deps.fetchArtifact(definitionUrl)) as NetworkConfig;
+  const config = (await deps.fetchArtifact(definitionUrl, landingCheck(definitionUrl, deps))) as NetworkConfig;
   const errors = validate_network(config);
   if (errors.length > 0) {
     deps.trace?.({ at: now(), event: "composition_invalid", detail: { url: definitionUrl, errorCount: errors.length } });

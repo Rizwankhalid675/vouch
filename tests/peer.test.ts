@@ -1649,28 +1649,66 @@ describe("a peer that answers with prose instead of ingredient data yields unkno
    * check for a stranger and not a looser one — the SAME check, because the gate
    * only ever asks whether a Finding of ours backs the claim.
    *
-   * BREAKS IF: a peer-specific path is added to the gate in either direction.
+   * BREAKS IF: the two paths stop producing the same rendered text AND the same
+   * refusal reason for the same input. `showModelText` and `showPeerText` are two
+   * methods, and two methods are how one of them quietly becomes more forgiving.
+   * Both halves are needed and both are verified by mutation: gating the peer
+   * against a different finding set moves the REASON while leaving the text
+   * alone, because `shown` is the same marker whatever the reason; treating the
+   * peer as a trusted source moves the text.
+   *
+   * READ OFF BOTH RENDERED ROWS, which is the only version of this test that can
+   * fail. It used to compare `gate(PEER_VOUCHES, findings, MENU)` against a
+   * second call with the same three arguments — no mutation anywhere in the
+   * product could have failed that, and it touched neither renderer. Fix round 1.
    */
-  test("the same claim from our own model and from the peer is refused identically", async () => {
-    const h = harness({ replies: peerExchange() });
-    const s = await session({ key: SENTINEL, h });
-    s.tick("dairy_free");
-    await s.runtime.ask("what is in the glaze?");
-    const findings = s.runtime.findings();
+  test("the same claim rendered from our own model and from the peer is the same text on screen", async () => {
+    // OURS: the front agent says the bakery's sentence itself, with no peer in the
+    // turn at all, so the row is `showModelText`'s.
+    const mine = await session({ key: SENTINEL, h: harness({ replies: [say(PEER_VOUCHES)] }) });
+    mine.tick("dairy_free");
+    await mine.runtime.ask("what is in the glaze?");
+    const ourRow = visibleTextOf(mine.mount, "[data-turn='agent'] .turn-text");
 
-    const fromPeer = gate(PEER_VOUCHES, findings, MENU);
-    const fromUs = gate(PEER_VOUCHES, findings, MENU);
-    expect(fromPeer).toEqual(fromUs);
-    expect(fromPeer.refusals.map((r) => r.reason)).toContain("unknown");
-    expect(fromPeer.shown).toContain(REFUSAL_MARKER);
-    // And the reason is `unknown` rather than `no_finding`: there IS a finding for
-    // the donut, and it says we cannot tell. That distinction is the product.
-    const donut = fromPeer.refusals.find((r) => r.items.includes("glazed_donut"));
-    expect(donut?.reason).toBe("unknown");
+    // THEIRS: the same sentence, arriving from the bakery's own network, through
+    // `showPeerText`.
+    document.documentElement.innerHTML = html;
+    mountShop(document);
+    const peer = await session({ key: SENTINEL, h: harness({ replies: peerExchange() }) });
+    peer.tick("dairy_free");
+    await peer.runtime.ask("what is in the glaze?");
+    const peerRow = visibleTextOf(peer.mount, "[data-turn='peer'] .turn-text");
+
+    // Character for character. Not "both were refused" — the same text.
+    expect(peerRow).toBe(ourRow);
+    expect(peerRow).toContain(REFUSAL_MARKER);
+    expect(peerRow).not.toContain("The glazed donut is dairy-free");
+    // Both rows are marked withheld, by the same attribute, set in the one place
+    // that renders either of them.
+    expect(mine.$("[data-turn='agent']")!.getAttribute("data-withheld")).toBe("true");
+    expect(peer.$("[data-turn='peer']")!.getAttribute("data-withheld")).toBe("true");
+    // ...and the refusal panel gives the SAME REASON for each. `shown` is the
+    // same marker whatever the reason, so this is the half that catches a peer
+    // path gating against a different finding set: the text would not move, the
+    // reason would.
+    // Read from the FIRST refusal block in each: one block per gated row, in
+    // render order, and the row under test is the first gated row in both
+    // sessions. (The peer session renders a second row afterwards — our own
+    // front agent's summary — and that row's refusals are not this comparison.)
+    const reasons = (s: Session): (string | null)[] =>
+      [...s.$("[data-refusals]")!.querySelectorAll("[data-refusal-reason]")].map((e) => e.getAttribute("data-refusal-reason"));
+    expect(reasons(peer)).toEqual(reasons(mine));
+    expect(reasons(mine)).toContain("unknown");
+
+    // And the refusal is `unknown` rather than `no_finding`: there IS a finding
+    // for the donut, and it says we cannot tell. That distinction is the product.
+    const findings = peer.runtime.findings();
+    const refused = gate(PEER_VOUCHES, findings, MENU);
+    expect(refused.refusals.find((r) => r.items.includes("glazed_donut"))?.reason).toBe("unknown");
     // And the distinction is live. A fabricated `safe` finding for the donut is
     // what "the peer is a trusted source" would amount to, and it renders the
-    // sentence instead of withholding it. This is the property that makes the
-    // block above falsifiable, stated where the gate can be asked directly.
+    // sentence instead of withholding it — so the rows above are withheld because
+    // of what our findings say, not because withholding is all this path does.
     const trusted: Finding[] = [
       ...findings.filter((f) => f.item !== "glazed_donut"),
       { item: "glazed_donut", verdict: "safe", covered: DAIRY.avoid },

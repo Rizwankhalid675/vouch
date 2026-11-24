@@ -200,6 +200,12 @@ anaphora list (`ANAPHORA`).
 > one needed a new anaphora entry, and one ("A good pick.") matched neither and
 > needed a new evaluative-noun trigger written for it. A defence that a one-word
 > edit moves by seven is a defence sized by whoever last thought of a word.
+>
+> Those nine were found by hand against the vocabulary as it stood on **23 November
+> 2026**, and the nine sentences are recorded nowhere. The figure is **not
+> reproducible**: the words that closed seven of them are in the lists now, so the
+> same nine sentences no longer leak and a fresh sweep measures a different gate. It
+> is a diagnostic of where to push, not a measurement anyone can repeat.
 
 What makes shipping this defensible is not the lists. It is §2.0: the verdict card
 renders beside the dish from the menu and the guest's restrictions, so a leaked
@@ -430,15 +436,21 @@ Two passes, and the second exists because the first cannot see everything:
 
 1. **The type system enumerated the surfaces.** Narrowing `siteText` to `number`,
    `ours` to a string literal and `joinSiteText` to `SiteText`, and deleting the four
-   filters, turned every site into a compile error. `tsc` named **13** in `src/`, and
-   each was converted deliberately. This pass cannot be forgotten or skipped, which
-   is the point of doing it with types rather than with attention.
+   filters, turned every site into a compile error. `tsc` named **13** in `src/`
+   (counted during that pass, 23 November 2026, and **not reproducible** — the
+   capability whose removal produced the errors is deleted, so the sweep cannot be
+   re-run and the thirteen are recorded nowhere but this sentence), and each was
+   converted deliberately. This pass cannot be forgotten or skipped, which is the
+   point of doing it with types rather than with attention.
 2. **A grep for the class the types cannot see:** `textContent =`, `createTextNode`,
    and `el(...)` called with a non-literal text argument. This is how the fourth
    surface escaped three earlier sweeps — `refusalLine` returned a plain `string`
    assigned to `li.textContent` and never touched `SiteText` at all, so no amount of
    tightening `SiteText` would have found it. The grep found 10 sites; 5 build a
-   string containing a runtime value, and 4 of those are now phrases.
+   string containing a runtime value, and 4 of those are now phrases — again counted
+   on 23 November 2026, against the pre-sweep tree, with the ten sites enumerated
+   nowhere. Re-running the same grep today finds a different number against different
+   code and would not check this claim.
 
 **The surfaces converted in this round**, all four the reviewer named plus one the
 grep found:

@@ -33,7 +33,7 @@ has no git remote. Nothing below was improvised around that.
 | B3 | The conformance CLI's verdict on the deployed site | §6 | as B2, and again for the peer: `npm run conformance -- https://<PEER-ORIGIN>/agents/marrow_point` |
 | B4 | Widths and contrast on the deployed build | — | open each origin at 320 / 375 / 570 / 900 / 1440px with a cache-buster; compute ratios in the page |
 | B5 | The no-JavaScript path on the deployed build | §3.1 | load the deployed page with scripting disabled |
-| B6 | The five CORS tests in our own suite | — | `npm run test:cors` (see §6 below — they are **skipped**, not passed, in this environment) |
+| B6 | The five CORS tests in our own suite | — | `npm run test:cors` (see §5 below — they are **skipped**, not passed, in this environment) |
 
 **One thing to know before running B2 and B3: the CLI asks for a fresh copy, and asking
 is not insisting.** Every GET now carries `Cache-Control: no-cache` and
@@ -95,7 +95,7 @@ This is the run that exercised the real HTTP path.
 
 ```
 14 checks made, 6 not checked.
-Result: 1 failed, 13 passed, 6 NOT CHECKED - exit 1
+Result: 1 failed, 13 passed, 6 NOT CHECKED — exit 1
 ```
 
 **Run B — the same CLI against the current `dist/`, 24 November 2026, through an
@@ -135,6 +135,13 @@ Run A and Run B agree on all 20 checks.
 | With a user key active, the second site never receives it and cannot change the router | §6 | **not-demonstrated** | no browser, no credential |
 | Private context is absent at the peer unless a named field is explicitly allowed | §6 | **not-demonstrated** | no browser |
 | An invalid network, a cycle, an over-budget request and a denied origin all stop visibly | §6 | **not-demonstrated** | *"it will not read the presence of a broken fixture on a site as evidence that anything refuses it."* We publish three broken networks at `/broken/`; the tool correctly declines to credit us for them. |
+
+**One figure in that table has gone stale since the run, and is left as it was read
+rather than edited to today.** The peer row's *"1 allowed peer origin declared"* was
+true on 24 November; `allowed_peers` is now `[]` (`docs/DECISIONS.md` — the origin we
+declared was one we did not own), so a re-run reports **0**. Nothing else in the table
+moves: `links.json` is still published, and with no symbolic reference left there is
+still nothing that fails to resolve. The run is dated and the figure belongs to the run.
 
 **The one failure is the honest answer to what was measured.** The checker read the
 absent header off a real response to a GET carrying
@@ -181,8 +188,13 @@ git clone --depth 1 https://github.com/cognizant-ai-labs/agentic-web /tmp/aw
 diff /tmp/aw/docs/worldwide_agentic_web_mvp_spec.md docs/mvp-spec-2026-11-23.md && echo "zero drift"
 ```
 
-**Re-run this on the submission date.** The claim is dated and the check is one
-command.
+**Re-run this on the submission date — and §3 with it.** Everything in §3 that is a
+measurement rather than a pin is dated the same way this is: §3.2's five reference
+files carry a **fetch date, not a SHA**, so "identical today" expires; §3.1's
+`at main` column is a claim about a moving branch, and both upstream repositories have
+already moved once without changing what we vendored. Only the digests *at the pinned
+SHA* cannot drift. §2's check is one command; §3's are in §3.1 and §3.2 beside their
+tables.
 
 ---
 
@@ -218,11 +230,13 @@ Reproduce one:
 curl -sL https://raw.githubusercontent.com/cognizant-ai-lab/nsdeploy/486ecf26aa8775963f9b765f894734bef1ac9817/nsdeploy/runtime/actions.js | shasum -a 256
 ```
 
-### 3.2 The four reference documents — all four match upstream today
+### 3.2 The five dated reference files — all five match upstream today
 
 These carry a fetch date rather than a SHA, so they were compared against upstream
-directly. All four are byte-identical to upstream apart from the one-or-two-line
-provenance comment our copy prepends, which is the only difference `diff` reports:
+directly. Five files: four reference documents and the licence. **Three** of them differ
+from upstream only by the one-or-two-line provenance comment our copy prepends, which is
+the only difference `diff` reports; the build-manifest excerpt and the licence are
+byte-identical, with nothing prepended. The per-row Result column says which is which:
 
 | Our file | Upstream | Result |
 |---|---|---|
@@ -237,7 +251,7 @@ the hello-world example's source path as `registries/hello_world.hocon`; upstrea
 path is `neuro_san/registries/hello_world.hocon`. The vendored file's own header
 comment has the correct path. Cosmetic, recorded rather than quietly fixed.
 
-**The gap this leaves, stated rather than closed on the deadline:** these four are
+**The gap this leaves, stated rather than closed on the deadline:** these five are
 pinned by a *date*, not a SHA, so "identical today" is a measurement and not a
 guarantee. They should carry digests in `upstream-pins.json` as the six runtime
 sources do.
@@ -330,9 +344,12 @@ paraphrase of it, which has already cost this project one defect — run against
 | explicit model, no key | upgrades to the BYOK route |
 | key `"demo"` (sentinel) | correctly **not** treated as a real key |
 
-And the published peer policy, through that runtime's own `manifestAllowsPeer`: the
-bakery origin is permitted, an unlisted third origin is refused. The same two results
-hold through the starter runtime's copy.
+And the peer policy, through that runtime's own `manifestAllowsPeer`: the allow-listed
+origin is permitted, an unlisted third origin is refused. The same two results hold
+through the starter runtime's copy. **The published allow-list is now empty**
+(`docs/DECISIONS.md`), so the permitted half of that pair is run against a manifest
+carrying one entry rather than against what we publish; the refused half is the
+published document's own answer to every origin there is.
 
 #### The one-letter trap, published because it will catch somebody else
 
@@ -362,7 +379,7 @@ repository, a path and a commit.
 
 ---
 
-## 4. Widths, contrast and the no-JavaScript path
+## 4. Widths, contrast, the no-JavaScript path and the cross-origin flow
 
 Measured on the **built** output in a real browser, 24 November 2026, with ratios
 **computed in the page** rather than judged from a screenshot. **All of §4 is a
@@ -437,6 +454,44 @@ Checked against the built `dist/index.html`, **22,911 bytes**, rather than in js
 - One element is hidden in the static markup: the confirmation dialog's
   `role="status"` container. One script tag. No `<noscript>` block is needed, because
   nothing is missing.
+
+### 4.5 The cross-origin flow, across two loopback origins
+
+This file promised every measurement with the command that produced it, and for a full
+review round it had **no entry for this one at all** while `CONFORMANCE-STATUS.md` called
+it "verified live across two real origins" and rested three of its seven grades on it.
+They were loopback ports. The result is worth keeping and the wording was not; this is
+the row it should always have had.
+
+| | |
+|---|---|
+| **Run by** | the controller, in a real browser |
+| **Date** | 24 November 2026 |
+| **Origins** | `http://localhost:4178` (deli, `dist/`) and `http://localhost:4179` (peer, `peer-dist/`) — **two loopback origins, not two hosts** |
+| **Commands** | `npx vite preview --port 4178 --strictPort` and `npx vite preview --config peer/vite.config.ts --port 4179 --strictPort` |
+| **What was modified** | the **built** `dist/` only: its `links.json` binding and `allowed_peers` entry were pointed at `http://localhost:4179`, then `npm run build` was re-run to discard the change. `src/` was untouched throughout. |
+| **Scope** | the first time §6 checks 4-6 were exercised outside jsdom. It is *not* a cross-origin **HTTP** result: loopback is not a host, two ports are a browser origin boundary but not a CORS deployment, and B2 is still the measurement that settles headers. |
+
+What was observed, in order:
+
+1. The consent card renders with the destination and the arguments in `data-not-ours`
+   nodes, and states the architecture at the moment it matters: *"Your provider key is
+   not sent there. Nothing it says can change the verdict beside a dish."*
+2. **Before approval, zero network requests reached the peer origin.** The browser's own
+   network log, filtered on the peer port, returned *"No requests matching 4179"*. Not
+   "the card appeared first" — nothing went out. This is the part worth keeping: §6's
+   *"After user approval"* demonstrated rather than asserted, and it is a property of the
+   browser's own record rather than of a test's bookkeeping.
+3. After approval the peer loads, validates and runs locally, and the status line says
+   so.
+4. A **second** contact asked again, with the remember box still unticked.
+5. Declining reported that nothing was fetched, and said what did not depend on it.
+
+Two caveats, because the row is only worth having if it carries them. The origins were
+loopback, so nothing here says anything about CORS or about HTTPS. And the binding it ran
+against no longer exists in the published artifacts at all — the allow-list is empty
+(`docs/DECISIONS.md`), so reproducing this run today requires pointing the built `dist/`
+at a local peer exactly as the run above did.
 
 ---
 

@@ -19,9 +19,9 @@ Last updated 24 November 2026. `docs/OWNER-TODO.md` lists what is blocked and on
 | # | Check | Status | How strongly |
 |---|---|---|---|
 | 1 | Publish a two-agent network and manifest from an ordinary HTTPS host | Built; not hosted | **needs a deployed origin** |
-| 2 | Load and run it with the published default router; demonstrate BYOK too | BYOK path yes; funded-default no | tested + browser-verified (BYOK) |
+| 2 | Load and run it with the published default router; demonstrate BYOK too | BYOK path yes; funded-default no | tested; **no browser run with a provider key** |
 | 3 | Call an internal agent **and** a grounded capability via MCP or a site action | Yes, via site actions | tested |
-| 4 | After approval, load an exact named network from a second origin, run it locally | Yes | **browser-verified across two origins** |
+| 4 | After approval, load an exact named network from a second origin, run it locally | Yes | **browser-verified across two loopback origins** |
 | 5 | The second site never receives the user's key and cannot change the caller's router | Yes | **payload-asserted** |
 | 6 | Private context absent at the peer unless explicitly allowed | Yes | **payload-asserted** |
 | 7 | Stop an invalid network, a composition cycle, an over-budget request and a denied origin, visibly | Five refusals, not four | tested; three browser-verified |
@@ -49,6 +49,13 @@ the real situation and we name it rather than resolving it in our own favour.
 
 Our own conformance checker scores this `not-demonstrated` with the reason — never a quiet pass.
 A strict reader may mark it unmet, and that is the correct way to lose a point.
+
+**This row said "browser-verified (BYOK)" for a review round and nothing records such a run.**
+By the scale at the top of this file, browser-verified means someone drove the built site and
+read the result; no browser run anywhere in this project has used a provider key, because none
+has been supplied. What is verified is the *route selection*, run against our published manifest
+by both reference runtimes' own selectors (`RESULTS.md` §3.3), and the key panel's rendering on
+the built site. The request itself has never been made. Downgraded to what is true.
 
 Corroboration, from two different reference runtimes, both checked rather than assumed. They are
 named by repository and path because this project has two "upstreams" whose organisation names
@@ -87,12 +94,26 @@ reads "via MCP **or** a registered local site action", so shipping no MCP server
 it is **not callable from any agent's tools**. The model can describe, rank and converse; it
 cannot reach the thing that decides.
 
-**4 — A named network from a second origin, after approval.** Verified live across two real
-origins, which is the only way three of these checks mean anything. The strongest single result
-this project has: **before approval, zero network requests reached the peer origin.** Not "the
-card appeared first" — nothing went out at all. Consent is a gate, not a notice, which is what
-"After user approval" actually demands. After approval the peer loads, validates and runs locally;
-a second contact asks again with the box unticked; declining reports that nothing was fetched.
+**4 — A named network from a second origin, after approval.** Verified in a real browser across
+**two loopback origins** — `localhost:4178` (the built deli) and `localhost:4179` (the built
+peer) — on 24 November 2026, which is the first time §6 checks 4-6 were exercised outside jsdom.
+Two ports are a browser origin boundary; they are **not** two hosts, so this says nothing about
+CORS or HTTPS, and this file's weakest grade is still "needs a deployed origin". The full record,
+with the commands, the date, what was modified in the built output and what was observed in
+order, is `docs/RESULTS.md` §4.5 — it had no entry there at all for a review round, and three of
+the seven grades in the table above rest on it.
+
+The result worth keeping, and the reason the run was made: **before approval, zero network
+requests reached the peer origin.** Not "the card appeared first" — the browser's own network
+log, filtered on the peer port, returned nothing. Consent is a gate, not a notice, which is what
+"After user approval" actually demands. After approval the peer loads, validates and runs
+locally; a second contact asks again with the box unticked; declining reports that nothing was
+fetched.
+
+**And the deli publishes no peer today.** The allow-list entry this ran against named a claimable
+`*.vercel.app` subdomain we do not own, and it is withdrawn with its binding and its symbolic
+reference (`docs/DECISIONS.md`). The capability is unchanged and tested; what is empty is the
+three published fields, and they go back in at the deploy step (`docs/OWNER-TODO.md` item 1).
 
 **5 — No key at the peer, no router takeover.** Asserted on **captured request payloads**: every
 request a session makes is recorded at the moment it is made and its body read at scan time, so
@@ -125,7 +146,7 @@ rather than on a report:
 
 ```
 14 checks made, 6 not checked.
-Result: 1 failed, 13 passed, 6 NOT CHECKED - exit 1
+Result: 1 failed, 13 passed, 6 NOT CHECKED — exit 1
 ```
 
 The thirteen passes cover the manifest and its exact-name match, the resolved network definition,

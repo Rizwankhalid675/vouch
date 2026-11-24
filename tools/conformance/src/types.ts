@@ -54,6 +54,16 @@ export interface CheckResult {
    * from "nothing was contacted". It drives exit code 4.
    */
   readonly unreached?: boolean;
+  /**
+   * The artifact URL that got no answer, when this check was blocked by one.
+   *
+   * The report's loudest sentence counts these. It used to count `CheckResult`s
+   * and call them artifacts, which made the headline number four times the truth
+   * with the wrong unit -- and both readers of that output repeated the wrong
+   * number. A count of requests that got no answer is a fact; a count of results
+   * wearing the word "artifacts" is not.
+   */
+  readonly unreachedUrl?: string;
 }
 
 /** Why a check that needs an artifact could not be made, and whose limitation that is. */
@@ -62,6 +72,8 @@ export interface Unavailable {
   readonly blockedBy: Blocker;
   /** The artifact was never answered for, as opposed to answered badly. */
   readonly unreached: boolean;
+  /** Which artifact, when one got no answer. Named rather than generalised to "the host". */
+  readonly url?: string;
 }
 
 /** `fetch`, narrowed to what this tool uses, so a test can supply its own. */

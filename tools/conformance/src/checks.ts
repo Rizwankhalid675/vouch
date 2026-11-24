@@ -53,6 +53,7 @@ const notReached = (
   because: string,
   blockedBy: Blocker = "site",
   unreached = false,
+  unreachedUrl?: string,
 ): CheckResult => ({
   check,
   title,
@@ -62,6 +63,7 @@ const notReached = (
   findings: [],
   blockedBy,
   ...(unreached ? { unreached: true } : {}),
+  ...(unreachedUrl !== undefined ? { unreachedUrl } : {}),
 });
 
 /**
@@ -93,6 +95,7 @@ const neverReached = (check: string, title: string, section: string, fetched: Fe
   findings: [describeFetch(fetched)],
   blockedBy: "checker",
   unreached: true,
+  unreachedUrl: fetched.url,
 });
 
 // ---------------------------------------------------------------------------
@@ -239,13 +242,24 @@ export function checkNetworkDefinition(
   ]);
 }
 
-export function checkLinkMap(links: Fetched, symbolicRefs: readonly string[]): CheckResult {
+/**
+ * `symbolicRefs` is null when the network definition could not be read.
+ *
+ * It used to be an empty array in that case, which made a missing link map come
+ * out as "This network declares no symbolic external reference, so the link map
+ * has nothing to bind" -- a statement about a network definition nothing had
+ * fetched. An empty list and an unread document are not the same input and must
+ * not produce the same sentence.
+ */
+export function checkLinkMap(links: Fetched, symbolicRefs: readonly string[] | null): CheckResult {
   const title = "Peer-network link map published (links.json)";
   const section = "§3.3";
   const needed =
-    symbolicRefs.length > 0
-      ? `This network has ${symbolicRefs.length} symbolic external reference(s) that nothing else resolves (${symbolicRefs.join(", ")}), so the link map is what binds them.`
-      : "This network declares no symbolic external reference, so the link map has nothing to bind — but §3.3 lists it among the minimum public files, so its absence is reported rather than waived.";
+    symbolicRefs === null
+      ? "This tool could not read the network definition, so it cannot say whether anything in this network needed the link map."
+      : symbolicRefs.length > 0
+        ? `This network has ${symbolicRefs.length} symbolic external reference(s) that nothing else resolves (${symbolicRefs.join(", ")}), so the link map is what binds them.`
+        : "This network declares no symbolic external reference, so the link map has nothing to bind — but §3.3 lists it among the minimum public files, so its absence is reported rather than waived.";
   if (links.status === null) return neverReached("links-reachable", title, section, links);
   if (links.status !== 200 || links.json === undefined) {
     return fail(
@@ -304,7 +318,7 @@ export function checkNetworkIdentity(
   const title = "Network identity: a stable name, a short description and a named front agent";
   const section = "§2.1";
   if (!entry || !network || network.json === undefined) {
-    return notReached("network-identity", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
+    return notReached("network-identity", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
   }
   const doc = network.json as { metadata?: { description?: unknown; name?: unknown; front_man?: unknown } };
   const problems: string[] = [];
@@ -341,7 +355,7 @@ export function checkAgentDefinitions(network: Fetched | null, unavailable: Unav
   const title = "Agent definitions: unique name, a description, instructions when it uses an LLM";
   const section = "§2.1";
   if (!network || network.json === undefined) {
-    return notReached("agent-definitions", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
+    return notReached("agent-definitions", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
   }
   const agents = agentsOf(network.json);
   const problems: string[] = [];
@@ -406,7 +420,7 @@ export function checkTwoAgentNetwork(network: Fetched | null, unavailable: Unava
   const title = "A two-agent network is published (§6's first interoperability check)";
   const section = "§6";
   if (!network || network.json === undefined) {
-    return notReached("two-agent-network", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
+    return notReached("two-agent-network", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
   }
   const agents = agentsOf(network.json);
   if (agents.length < 2) {
@@ -427,7 +441,7 @@ export function checkInvocationSchemas(network: Fetched | null, unavailable: Una
   const title = "Invocation schemas are JSON-Schema compatible in the honoured form";
   const section = "§2.1";
   if (!network || network.json === undefined) {
-    return notReached("invocation-schemas", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
+    return notReached("invocation-schemas", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
   }
   const agents = agentsOf(network.json);
   const problems: string[] = [];
@@ -480,7 +494,7 @@ export function checkPrivateContextRules(network: Fetched | null, unavailable: U
   const title = "Private-context fields are named, not allowed in bulk";
   const section = "§2.1";
   if (!network || network.json === undefined) {
-    return notReached("private-context-rules", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
+    return notReached("private-context-rules", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
   }
   const problems: string[] = [];
   let namedCount = 0;
@@ -536,7 +550,7 @@ export function checkPortableData(network: Fetched | null, unavailable: Unavaila
   const title = "Published definition is portable data: no includes, substitutions, env or publisher paths";
   const section = "§2.2";
   if (!network || network.json === undefined) {
-    return notReached("portable-data", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
+    return notReached("portable-data", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
   }
   const findings = portabilityFindings(network.json);
   if (findings.length > 0) {
@@ -602,7 +616,7 @@ export function checkReferentialIntegrity(
   const title = "Every reference resolves: front agent, in-network agents, link-map bindings, URLs, MCP";
   const section = "§3.1";
   if (!network || network.json === undefined) {
-    return notReached("referential-integrity", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached);
+    return notReached("referential-integrity", title, section, unavailable.reason, unavailable.blockedBy, unavailable.unreached, unavailable.url);
   }
   const agents = agentsOf(network.json);
   const names = new Set(agents.map((a) => a.name).filter((n) => n !== ""));
@@ -646,6 +660,17 @@ export function checkReferentialIntegrity(
   }
   const frontMan = declarations[0]?.value ?? null;
 
+  // THE FOURTH ARTIFACT PATH. An empty `bound` set means one of two completely
+  // different things -- "the site binds nothing" or "this tool could not read the
+  // bindings" -- and reading it as the first turned an unreachable links.json into
+  // `FAIL ... nor a name bound for this network in links.json (bound: nothing)`.
+  // Exit 1, about a site whose link map may bind that name perfectly.
+  //
+  // So the symbolic references are separated out below. They are the only part of
+  // this check an unreadable link map can excuse; everything else -- a front agent
+  // that names no agent, a `/name` the manifest does not publish -- is wrong
+  // whatever links.json says, stays a finding, and outranks the unreached artifact.
+  const linksUnreached = links.status === null;
   const bindings = ((links.json as { networks?: Record<string, unknown> } | undefined)?.networks ?? {})[networkName];
   const bound = new Set(
     bindings && typeof bindings === "object" && !Array.isArray(bindings) ? Object.keys(bindings) : [],
@@ -656,6 +681,7 @@ export function checkReferentialIntegrity(
       : [],
   );
 
+  const unresolvable: string[] = [];
   for (const ref of toolRefsOf(network.json, names)) {
     if (ref.kind === "internal" || ref.kind === "url" || ref.kind === "mcp") continue;
     if (ref.kind === "external-name") {
@@ -668,6 +694,11 @@ export function checkReferentialIntegrity(
       }
       continue;
     }
+    if (linksUnreached) {
+      // Not a problem. An unknown.
+      unresolvable.push(`${ref.at}: \`${ref.value}\``);
+      continue;
+    }
     if (!bound.has(ref.value)) {
       problems.push(
         `${ref.at}: \`${ref.value}\` is neither an agent in this network, nor a URL, nor an MCP descriptor, nor ` +
@@ -677,13 +708,31 @@ export function checkReferentialIntegrity(
   }
 
   if (problems.length > 0) {
+    // A real finding outranks an unreached artifact, always.
     return fail(
       "referential-integrity",
       title,
       section,
       '§3.1 requires a runtime to "Reject malformed networks, duplicate or missing agent references, an invalid ' +
-        'front agent, and unsupported executable definitions before any model call." These would be rejected.',
+        'front agent, and unsupported executable definitions before any model call." These would be rejected.' +
+        (unresolvable.length > 0
+          ? ` Separately, ${unresolvable.length} symbolic reference(s) could not be resolved either way, because ` +
+            "the link map never answered; that is not counted as a finding below."
+          : ""),
       problems,
+    );
+  }
+  if (unresolvable.length > 0) {
+    return notReached(
+      "referential-integrity",
+      title,
+      section,
+      `the link map never answered, so ${unresolvable.length} symbolic reference(s) in this network ` +
+        `(${unresolvable.join(", ")}) can be neither resolved nor reported unresolved. Everything else in this ` +
+        "check -- the front agent, the in-network references, the URLs and MCP descriptors -- did resolve.",
+      "checker",
+      true,
+      links.url,
     );
   }
   const refs = toolRefsOf(network.json, names);
@@ -879,6 +928,13 @@ const NO_BROWSER =
   "observe this. ";
 
 export function declinedChecks(manifest: Fetched, network: Fetched | null): CheckResult[] {
+  // `manifest.json ?? {}` reads an unread document as an empty one, and every
+  // count below then becomes a confident zero about a site nothing contacted:
+  // "The manifest declares no `llm_router` at all", "0 MCP descriptor(s)",
+  // "0 allowed peer origin(s)". A zero is a number and a number is a claim.
+  const manifestRead = manifest.json !== undefined;
+  const networkRead = network?.json !== undefined;
+  const unread = (what: string) => `unknown (this tool never read the ${what})`;
   const manifestDoc = (manifest.json ?? {}) as Record<string, unknown>;
   const router = (manifestDoc["llm_router"] ?? null) as Record<string, unknown> | null;
   const routerDefault = (router?.["default"] ?? null) as Record<string, unknown> | null;
@@ -889,7 +945,10 @@ export function declinedChecks(manifest: Fetched, network: Fetched | null): Chec
       routerDefault?.["requires_key"] === false ||
       router["requires_key"] === false);
 
-  const routerDetail = router
+  const routerDetail = !manifestRead
+    ? "This tool never read the site manifest, so what this site declares about a default router is unknown. " +
+      "Nothing here is a statement about the site; see the manifest check above for why it could not be read."
+    : router
     ? keyFree
       ? "The manifest does declare a default router that it says needs no visitor key, so the path exists to be " +
         "run; running it is what cannot be done from here."
@@ -901,12 +960,23 @@ export function declinedChecks(manifest: Fetched, network: Fetched | null): Chec
     : "The manifest declares no `llm_router` at all, so there is no default router for this check to run — and " +
       "§4's level is MAY, so that alone is not a failure either.";
 
-  const mcpCount = network?.json
-    ? toolRefsOf(network.json, new Set(agentsOf(network.json).map((a) => a.name))).filter((r) => r.kind === "mcp")
+  const mcpCount: number | null = networkRead
+    ? toolRefsOf(network!.json, new Set(agentsOf(network!.json).map((a) => a.name))).filter((r) => r.kind === "mcp")
         .length
-    : 0;
-  const actions = Array.isArray(manifestDoc["actions"]) ? (manifestDoc["actions"] as unknown[]).length : 0;
-  const peers = Array.isArray(manifestDoc["allowed_peers"]) ? (manifestDoc["allowed_peers"] as unknown[]).length : 0;
+    : null;
+  const actions: number | null = manifestRead
+    ? Array.isArray(manifestDoc["actions"])
+      ? (manifestDoc["actions"] as unknown[]).length
+      : 0
+    : null;
+  const peers: number | null = manifestRead
+    ? Array.isArray(manifestDoc["allowed_peers"])
+      ? (manifestDoc["allowed_peers"] as unknown[]).length
+      : 0
+    : null;
+  const mcpText = mcpCount === null ? unread("network definition") : `${mcpCount} MCP descriptor(s)`;
+  const actionText = actions === null ? unread("site manifest") : `${actions} action(s)`;
+  const peerText = peers === null ? unread("site manifest") : `${peers} allowed peer origin(s) declared`;
 
   return [
     declined(
@@ -921,22 +991,22 @@ export function declinedChecks(manifest: Fetched, network: Fetched | null): Chec
       "grounded-capability",
       "Call an internal agent and a grounded capability through MCP or a site action",
       "§6",
-      `${NO_BROWSER}What is declared can be read: ${mcpCount} MCP descriptor(s) in the network and ${actions} ` +
-        "action(s) in the manifest. A declaration is not a call; whether either one answers, and whether the " +
+      `${NO_BROWSER}What is declared can be read where the document was readable: ${mcpText} in the network and ` +
+        `${actionText} in the manifest. A declaration is not a call; whether either one answers, and whether the ` +
         "runtime validates its arguments, needs the page running.",
-      mcpCount + actions > 0 ? "checker" : "checker-and-site",
-      [`MCP descriptors: ${mcpCount}`, `declared site actions: ${actions}`],
+      (mcpCount ?? 0) + (actions ?? 0) > 0 || mcpCount === null || actions === null ? "checker" : "checker-and-site",
+      [`MCP descriptors: ${mcpText}`, `declared site actions: ${actionText}`],
     ),
     declined(
       "peer-composition",
       "After user approval, load an exact named network from a second origin and run it locally",
       "§6",
       `${NO_BROWSER}Consent is a browser interaction and local execution is a browser runtime; neither exists ` +
-        `here. The link map and allow-list can be read (${peers} allowed peer origin(s)), and this tool can be ` +
-        "pointed at a peer's own network URL to check that peer's published artifacts — but running the peer in " +
-        "a caller's browser, after approval, is not something a shell observes.",
+        `here. The link map and allow-list can be read where they were readable (${peerText}), and this tool can ` +
+        "be pointed at a peer's own network URL to check that peer's published artifacts — but running the peer " +
+        "in a caller's browser, after approval, is not something a shell observes.",
       "checker",
-      [`allowed peer origins declared: ${peers}`],
+      [`allowed peer origins: ${peerText}`],
     ),
     declined(
       "key-isolation",

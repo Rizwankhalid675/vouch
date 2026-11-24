@@ -211,6 +211,129 @@ describe("§3.3 presence: reachable by public GET", () => {
     expect(links.status).toBe("not-demonstrated");
     expect(links.blockedBy).toBe("checker");
     expect(findingsText(links)).toContain("ETIMEDOUT");
+    // Its siblings had this line and this one did not, which is the whole reason
+    // the fourth artifact path survived round 2: the test looked only where the
+    // fix had been applied. Nothing ANYWHERE may blame the site.
+    for (const result of results) expect(result.status, result.check).not.toBe("fail");
+    expect(exitCodeFor(results)).toBe(4);
+  });
+
+  test("an unreachable link map is not the site's broken reference", async () => {
+    // FINDING 1, IN THE FOURTH ARTIFACT PATH. Three were fixed and this one was
+    // missed: `checkReferentialIntegrity` read `bindings` off a `links.json` that
+    // never answered, found nothing bound, and reported
+    //
+    //   FAIL §3.1 `weather_peer` is neither an agent in this network, nor a URL,
+    //   nor an MCP descriptor, nor a name bound for this network in links.json
+    //   (bound: nothing)
+    //
+    // ...and exit 1, which this tool's README defines as "a finding about your
+    // site". The site's link map may bind that name perfectly. An empty `bound`
+    // set means "I could not read the bindings", not "there are none".
+    const files = conformingSite();
+    files[`${BASE}links.json`] = { throws: "ETIMEDOUT" };
+    const { results } = await run(files);
+
+    const integrity = one(results, "referential-integrity");
+    expect(integrity.status).toBe("not-demonstrated");
+    expect(integrity.blockedBy).toBe("checker");
+    expect(integrity.unreached).toBe(true);
+    expect(integrity.detail).toMatch(/weather_peer/);
+    for (const result of results) expect(result.status, result.check).not.toBe("fail");
+    expect(exitCodeFor(results)).toBe(4);
+  });
+
+  test("...but a reference problem the link map could never fix is still the site's failure", async () => {
+    // The symbolic references are the only part an unreadable link map can excuse.
+    // A front agent that names no agent in the network is wrong whatever
+    // links.json says, so it stays a finding and outranks the unreached artifact.
+    const files = conformingSite();
+    files[`${BASE}links.json`] = { throws: "ETIMEDOUT" };
+    const manifest = files[`${BASE}agent-manifest.json`]!.body as { networks: { front_man: string }[] };
+    manifest.networks[0]!.front_man = "reception";
+    const { results } = await run(files);
+    const integrity = one(results, "referential-integrity");
+    expect(integrity.status).toBe("fail");
+    expect(findingsText(integrity)).toMatch(/not the name of any agent/);
+    // ...and it does not smuggle the unresolvable symbolic reference in as a finding.
+    expect(findingsText(integrity)).not.toMatch(/weather_peer/);
+    expect(exitCodeFor(results)).toBe(1);
+  });
+
+  test("an unreachable link map is irrelevant to a network that references nothing symbolically", async () => {
+    const files = siteWithAgents([
+      { name: "front", description: "Takes the question.", instructions: "Route it.", tools: ["leaf"] },
+      { name: "leaf", description: "Answers it.", instructions: "Answer from what you are given." },
+    ]);
+    files[`${BASE}links.json`] = { throws: "ETIMEDOUT" };
+    const { results } = await run(files);
+    // Nothing needed the bindings, so the check is complete and passes.
+    expect(one(results, "referential-integrity").status).toBe("pass");
+  });
+
+  test("a manifest that was never read is not a manifest that declares nothing", async () => {
+    // The same class, in `declinedChecks`. With `manifest.json ?? {}` the router
+    // came out null and check 2 read "The manifest declares no `llm_router` at
+    // all" -- a confident statement about a document this tool never saw. Same
+    // for the MCP and action counts: 0 is a number, and a number is a claim.
+    const files = conformingSite();
+    files[`${BASE}agent-manifest.json`] = { throws: "ECONNREFUSED" };
+    const { results } = await run(files);
+
+    const router = one(results, "run-default-router");
+    expect(router.status).toBe("not-demonstrated");
+    expect(router.detail).not.toMatch(/declares no `llm_router` at all/);
+    expect(router.detail).toMatch(/never read|never reached/i);
+
+    const grounded = one(results, "grounded-capability");
+    expect(grounded.detail).not.toMatch(/\b0 MCP descriptor/);
+    expect(grounded.detail).not.toMatch(/\b0 action\(s\) in the manifest/);
+    expect(grounded.detail).toMatch(/never read|never reached|unknown/i);
+
+    const peers = one(results, "peer-composition");
+    expect(peers.detail).not.toMatch(/\b0 allowed peer origin/);
+  });
+
+  test("a network that was never read is not a network that references nothing", async () => {
+    // And again in the link map's own detail. With the network unread, the list of
+    // symbolic references is empty, so a missing links.json was explained as
+    // "This network declares no symbolic external reference, so the link map has
+    // nothing to bind" -- about a network definition nothing had fetched.
+    const files = conformingSite();
+    files[`${BASE}demo.network.json`] = { throws: "ECONNREFUSED" };
+    delete files[`${BASE}links.json`];
+    const { results } = await run(files);
+    const links = one(results, "links-reachable");
+    expect(links.status).toBe("fail"); // a 404 is still a 404
+    expect(links.detail).not.toMatch(/declares no symbolic external reference/);
+    expect(links.detail).toMatch(/could not be read|never reached|cannot say/i);
+  });
+
+  test("a hocon on another origin that refuses is named, not generalised into the whole host", async () => {
+    // §3.2: the network definition MAY live on a different origin. So "this checker
+    // never reached the host, so no artifact of this site was read" was false
+    // whenever the manifest was read and only the hocon host refused -- and six
+    // checks had passed on artifacts that sentence said were not read.
+    const files = conformingSite();
+    const manifest = files[`${BASE}agent-manifest.json`]!.body as { networks: { hocon: string }[] };
+    manifest.networks[0]!.hocon = "https://cdn.fixture.example/demo.json";
+    delete files[`${BASE}demo.network.json`];
+    files["https://cdn.fixture.example/demo.json"] = { throws: "ECONNREFUSED 203.0.113.9:443" };
+    const { results } = await run(files);
+
+    // The manifest WAS read, and the checks that only needed it still pass.
+    expect(one(results, "manifest-reachable").status).toBe("pass");
+    expect(one(results, "network-selected").status).toBe("pass");
+    expect(one(results, "links-reachable").status).toBe("pass");
+    expect(one(results, "credential-handling").status).toBe("pass");
+
+    // The checks that needed the definition say WHICH artifact was not read.
+    const agents = one(results, "agent-definitions");
+    expect(agents.status).toBe("not-demonstrated");
+    expect(agents.blockedBy).toBe("checker");
+    expect(agents.detail).not.toMatch(/no artifact of this site was read/);
+    expect(agents.detail).toMatch(/network definition/i);
+    expect(agents.detail).toMatch(/cdn\.fixture\.example/);
   });
 
   test("a run that reached nothing exits 4, not 1: no verdict about the site was reached", async () => {
@@ -221,15 +344,113 @@ describe("§3.3 presence: reachable by public GET", () => {
     const { results } = await run(unreachable);
     expect(exitCodeFor(results)).toBe(4);
 
-    // A real failure outranks it: a finding is a finding.
-    const mixed = conformingSite();
-    mixed[`${BASE}links.json`] = { throws: "ECONNREFUSED" };
-    const net = mixed[`${BASE}demo.network.json`]!.body as { tools: { name: string }[] };
-    net.tools[1]!.name = "demo agent with a space";
-    expect(exitCodeFor((await run(mixed)).results)).toBe(1);
-
     // And a clean run is still 0.
     expect(exitCodeFor((await run(conformingSite())).results)).toBe(0);
+  });
+
+  test("a real failure outranks an unreached artifact -- and the unreached artifact alone does not make one", async () => {
+    // THE EIGHTH TEST ON THIS PROJECT THAT PASSED FOR THE WRONG REASON, and the
+    // most pointed: its subject is the difference between two states and it passed
+    // identically in both.
+    //
+    // It set `links.json` to throw AND renamed an agent, then asserted exit 1.
+    // Deleting the rename left it passing, because at the time an unreachable
+    // `links.json` produced a failure all by itself. So it could not tell "a real
+    // finding outranks an unreached artifact" from "an unreached artifact
+    // manufactures a finding" -- the one distinction it existed to defend.
+    //
+    // Rebuilt as a pair of runs over the same unreachable artifact, where the ONLY
+    // difference is the real defect. Both halves are load-bearing: remove the
+    // rename and the first assertion must drop to 4, and if an unreached artifact
+    // ever manufactures a finding again the second assertion goes to 1.
+    const withRealFailure = conformingSite();
+    withRealFailure[`${BASE}links.json`] = { throws: "ECONNREFUSED" };
+    const broken = withRealFailure[`${BASE}demo.network.json`]!.body as { tools: { name: string }[] };
+    broken.tools[1]!.name = "demo agent with a space";
+    const withFailure = (await run(withRealFailure)).results;
+
+    const withoutRealFailure = conformingSite();
+    withoutRealFailure[`${BASE}links.json`] = { throws: "ECONNREFUSED" };
+    const withoutFailure = (await run(withoutRealFailure)).results;
+
+    // Same unreachable artifact in both. The rename is the only difference.
+    expect(exitCodeFor(withFailure)).toBe(1);
+    expect(exitCodeFor(withoutFailure)).toBe(4);
+    expect(withFailure.filter((r) => r.status === "fail").map((r) => r.check)).toEqual(["agent-definitions"]);
+    expect(withoutFailure.filter((r) => r.status === "fail")).toEqual([]);
+    // Both runs still report the artifact as never reached: the real failure does
+    // not paper over it.
+    expect(one(withFailure, "links-reachable").unreached).toBe(true);
+    expect(one(withoutFailure, "links-reachable").unreached).toBe(true);
+  });
+
+  test("the banner does not disclaim a real FAIL that is printed above it", async () => {
+    // THE MIRROR DEFECT, in the line a reader skims to. A run with one genuine
+    // failure and one unreachable artifact printed `FAIL §3.3 ...`, then
+    // `Result: 1 failed ... exit 1`, and then "it reached no verdict about the
+    // site at all. Nothing above is a finding about this site's conformance."
+    // A real site failure disclaimed as the checker's fault.
+    const files = conformingSite();
+    files[`${BASE}links.json`] = { throws: "ECONNREFUSED" };
+    const net = files[`${BASE}demo.network.json`]!.body as { tools: { name: string }[] };
+    net.tools[1]!.name = "demo agent with a space";
+    const { results } = await run(files);
+    const text = renderText(results, deriveTarget(NETWORK_URL));
+
+    expect(text).toContain("exit 1");
+    expect(text).toMatch(/\bFAIL\b/);
+    // The mixed state is real and a reader needs both halves, so neither sentence
+    // may be the one that is printed alone.
+    expect(text).not.toMatch(/Nothing above is a finding/);
+    expect(text).not.toMatch(/reached no verdict about the site at all/);
+    expect(text).toMatch(/finding(s)? above stand(s)?/i);
+    expect(text).toMatch(/never answered|got no answer/i);
+    // And the mixed branch's number is the artifact count too, not the count of
+    // blocked checks. Here one artifact never answered and it blocked two checks;
+    // asserting only the other two branches left this one's unit unpinned.
+    const artifacts = /(\d+) of this site's artifacts never answered/.exec(text);
+    expect(artifacts, "the mixed banner does not name an artifact count").toBeTruthy();
+    expect(artifacts![1]).toBe("1");
+    expect(results.filter((r) => r.unreached === true).length).toBe(2);
+    expect(text).toMatch(/2 checks could not be made/);
+  });
+
+  test("the banner's number counts artifacts that got no answer, with that unit", async () => {
+    // I QUOTED THIS NUMBER AS EVIDENCE THE FIX WAS WORKING. So did the
+    // coordinator. It was a count of CheckResults wearing the word "artifacts":
+    // 13 of them, for a fixture that publishes three. In a tool whose product is
+    // precision about what it did and did not see, the headline number in its
+    // loudest sentence is not cosmetic -- it is the one figure a reader repeats.
+    //
+    // The honest count is requests that got no answer. For a wholly unreachable
+    // site that is TWO, not three and not thirteen: the manifest and the link map
+    // were asked for, and the network definition never was, because its location
+    // is declared in the manifest nothing could read.
+    const whollyUnreachable = conformingSite();
+    for (const url of Object.keys(whollyUnreachable)) whollyUnreachable[url] = { throws: "ECONNREFUSED" };
+    const all = (await run(whollyUnreachable)).results;
+    const allText = renderText(all, deriveTarget(NETWORK_URL));
+    // Capture the number rather than forbidding particular wrong ones: my first
+    // version of this banned `/\b13 /` outright, which would also have banned a
+    // correct "13 checks could not be made". The defect was the unit, not the 13.
+    const artifactCount = /(\d+) of this site's artifacts/.exec(allText);
+    expect(artifactCount, "the banner does not name an artifact count").toBeTruthy();
+    expect(artifactCount![1]).toBe("2");
+    // ...and the blocked-check count is reported separately, as checks.
+    const blockedChecks = all.filter((r) => r.unreached === true).length;
+    expect(blockedChecks).toBeGreaterThan(2);
+    expect(allText).toContain(`${blockedChecks} check`);
+
+    // One unreachable artifact is singular, and says "artifact".
+    const oneUnreachable = conformingSite();
+    oneUnreachable[`${BASE}links.json`] = { throws: "ETIMEDOUT" };
+    const some = (await run(oneUnreachable)).results;
+    const someText = renderText(some, deriveTarget(NETWORK_URL));
+    expect(someText).toMatch(/\b1 of this site's artifacts\b/);
+    // The count of blocked CHECKS is a different number and is reported as checks.
+    const blocked = some.filter((r) => r.unreached === true).length;
+    expect(blocked).toBeGreaterThan(1);
+    expect(someText).toContain(`${blocked} check`);
   });
 
   test("the report tells a reader that nothing was contacted, rather than leaving them to infer it", async () => {
@@ -240,10 +461,15 @@ describe("§3.3 presence: reachable by public GET", () => {
     // The CLOSING SUMMARY has to say it, not just the per-check lines: that is the
     // line a reader skims to. Asserting only on `/never reached/i` passed while
     // the summary said nothing, because the per-check blocker lines contain the
-    // same words -- so the assertion is on the phrase only the summary uses.
-    expect(text).toMatch(/reached no verdict about the site/i);
-    expect(text).toMatch(/NEVER REACHED THE HOST/);
+    // same words -- so the assertion is on phrases only the summary uses.
+    expect(text).toMatch(/THIS RUN IS INCOMPLETE/);
+    expect(text).toMatch(/\d+ of this site's artifacts never answered/);
     expect(text).toContain("exit 4");
+    // And it does NOT overstate in the other direction either: "no verdict about
+    // the site at all" and "nothing above is a finding" were printed in runs where
+    // a dozen checks had passed, which is the same pattern as finding 3.
+    expect(text).not.toMatch(/no verdict about the site at all/);
+    expect(text).not.toMatch(/Nothing above is a finding/);
     // It must not tell them their site is broken.
     expect(text).not.toMatch(/blocked by the site/);
     expect(text).not.toMatch(/\bFAIL\b/);

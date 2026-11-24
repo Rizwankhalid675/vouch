@@ -83,9 +83,13 @@ export async function runChecksOn(target: Target, options: RunOptions = {}): Pro
   const links = await get(new URL("links.json", target.base).href);
 
   const agentNames = new Set(agentsOf(network?.json).map((a) => a.name).filter((n) => n !== ""));
-  const symbolicRefs = network?.json
-    ? [...new Set(toolRefsOf(network.json, agentNames).filter((r) => r.kind === "symbolic").map((r) => r.value))]
-    : [];
+  // NULL, not an empty array: "this network references nothing symbolically" and
+  // "I could not read the network" are different inputs and must not produce the
+  // same sentence in the link map's detail.
+  const symbolicRefs: string[] | null =
+    network?.json !== undefined
+      ? [...new Set(toolRefsOf(network.json, agentNames).filter((r) => r.kind === "symbolic").map((r) => r.value))]
+      : null;
 
   const artifacts = [manifest, ...(network ? [network] : []), links];
 
@@ -97,36 +101,49 @@ export async function runChecksOn(target: Target, options: RunOptions = {}): Pro
   // A request that never got an answer is not the site's fault and must not be
   // reported as such, so `blockedBy` is computed here rather than hard-coded, and
   // every downstream check inherits it. That hard-coded "site" was the bug.
-  const unreachedArtifact = manifest.status === null || network?.status === null;
-  const unavailable: Unavailable = unreachedArtifact
-    ? {
-        reason: "this checker never reached the host, so no artifact of this site was read.",
-        blockedBy: "checker",
-        unreached: true,
-      }
-    : manifest.status !== 200 || manifest.json === undefined
+  //
+  // NAME THE ARTIFACT. "No artifact of this site was read" was false whenever the
+  // manifest was read and only the hocon host refused -- which §3.2 expressly
+  // permits to be a different origin -- and six checks had already passed on
+  // artifacts that sentence said were not read.
+  const unavailable: Unavailable =
+    manifest.status === null
       ? {
-          reason: "the site manifest could not be read, so the network definition was never located.",
-          blockedBy: "site",
-          unreached: false,
+          reason: `the site manifest at ${manifest.url} never answered, so the network definition was never even located.`,
+          blockedBy: "checker",
+          unreached: true,
+          url: manifest.url,
         }
-      : !entry
+      : network?.status === null
         ? {
-            reason: "no manifest entry matched the requested network name, so no network definition was located.",
-            blockedBy: "site",
-            unreached: false,
+            reason: `the network definition at ${network.url} never answered. The site manifest was read; it is this one artifact that could not be, and §3.2 permits it to live on another origin.`,
+            blockedBy: "checker",
+            unreached: true,
+            url: network.url,
           }
-        : !hoconUrl
+        : manifest.status !== 200 || manifest.json === undefined
           ? {
-              reason: "the matching manifest entry declares no usable `hocon` location.",
+              reason: "the site manifest could not be read, so the network definition was never located.",
               blockedBy: "site",
               unreached: false,
             }
-          : {
-              reason: "the network definition at the location the manifest declares could not be read.",
-              blockedBy: "site",
-              unreached: false,
-            };
+          : !entry
+            ? {
+                reason: "no manifest entry matched the requested network name, so no network definition was located.",
+                blockedBy: "site",
+                unreached: false,
+              }
+            : !hoconUrl
+              ? {
+                  reason: "the matching manifest entry declares no usable `hocon` location.",
+                  blockedBy: "site",
+                  unreached: false,
+                }
+              : {
+                  reason: "the network definition at the location the manifest declares could not be read.",
+                  blockedBy: "site",
+                  unreached: false,
+                };
 
   return [
     checkManifest(target, manifest),

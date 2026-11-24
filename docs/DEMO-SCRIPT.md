@@ -43,12 +43,12 @@ you can watch, which is worth more than a demo you cannot reproduce.
 
 | # | Time | On screen | Voice-over |
 |---|---|---|---|
-| 1 | 0:00–0:10 | The deli, scrolling. Ingredients visible on every card. | "This is a deli. Thirty-four dishes, every ingredient listed. No agent involved yet — the site works with scripts off." |
+| 1 | 0:00–0:10 | The deli, scrolling. Ingredients visible on every card that has them. | "This is a deli. Thirty-four dishes, with every ingredient the kitchen knows listed — and where it doesn't know, the card says so. No agent involved yet — the site works with scripts off." |
 | 2 | 0:10–0:20 | Type a restriction in plain words: "I'm lactose intolerant." | "I'll tell the agent what I can't eat, in my own words." |
 | 3 | 0:20–0:40 | **The core shot.** The replayed reply appears with the claim withheld. On the Turkey club card, verbatim: **"✕ Unsafe for what you told us — Contains dairy, through Brioche bun → Brioche → Butter → Dairy. Checked against: Dairy-free."** | "The model said this was fine. It isn't — there is butter in the bun, three steps down, and no dairy anywhere in the ingredient line a person would read. The claim was withheld, and the verdict beside it came from the ingredient data, not from the model." |
 | 4 | 0:40–0:50 | A dish with an unknown ingredient → **unknown**. Then a clear dish, whose card reads **"✓ No conflict found"** — never "safe" — with the line every card carries: *"From the published ingredient list. Not a statement about the kitchen, and not medical advice."* | "When the data doesn't say, it says unknown — it never guesses in your favour. And when the data is clear it still won't say safe. It says it found no conflict, and tells you what it was not looking at." |
 | 5 | 0:50–1:05 | The five refusals, fast cuts. Paste `/broken/invalid`, `/broken/cycle-a`, then an origin outside the allow-list. The cycle shows its path as three fenced nodes: `cycle-a → cycle-b → cycle-a`. Let the panel's own line be readable once. | "The spec asks a runtime to fail visibly. Invalid network, composition cycle, over budget, denied origin, missing key — each says what it refused and why. These three are deliberately broken and published, so the refusals can be watched rather than taken on trust." |
-| 6 | 1:05–1:20 | Consent card naming the peer origin; approve; the peer's network loads and runs locally. Then the peer answers with confident prose → verdict **unknown**. | "A second site's agent network, loaded after approval and run in my browser. It answers with prose, so it gets unknown — a peer is not a source of truth." |
+| 6 | 1:05–1:20 | Consent card naming the peer origin; approve; the peer's network loads and runs locally. Then the peer's confident sentence about its own glaze is **withheld**, and the glazed donut's card beside it still reads **"We don't know"**. | "Another site's agent network, loaded after approval and run in my browser. Its answer goes through the same gate as my own model's — so the bakery's claim about its own glaze is withheld, and the card still says we don't know, because this site has not published what is in that glaze." |
 | 7 | 1:20–1:30 | Key panel: the key is set; network tab shows the key in the router request and absent from the peer request. Then delete the key. | "My key, my browser. It reaches the router I chose and nothing else, and I can delete it." |
 | 8 | 1:30–1:45 | Terminal: the conformance CLI against the deployed URL, passing, with NOT CHECKED lines visible. | "I built a conformance checker anyone can run against any agentic site. It also says which checks it can't make — that's the same discipline." |
 | 9 | 1:45–1:55 | Back to the card: withheld claim, verdict beside it. Hold. | "A model that can't be trusted to say 'safe' is still useful. It just doesn't get the last word." |
@@ -111,17 +111,22 @@ check the recording shows what the script claims.
   this site did not write them:" then the URL and the validator's words, each fenced.
 - **Cycle:** "Composition cycle refused: the chain below returns to a network already being
   composed. No further network was fetched and nothing was run."
-- **The panel's own explanation of the fixtures:** "This site publishes three deliberately
-  broken ones so that the refusals can be watched rather than taken on trust."
+- **The panel's own explanation of the fixtures:** "This site also publishes three deliberately
+  broken networks so that the refusals can be watched rather than taken on trust".
 
 **Before ticking a restriction there are no verdict cards at all** — 34 empty slots and a
 status line saying so. That is correct and worth one beat of screen time: the site does not
 pretend to have checked something you have not told it about.
 
-Shots 1-5 and 7 have been confirmed rendering on the built site, and shot 3 — the whole video
+Shots 1-5 have been confirmed rendering on the built site, and shot 3 — the whole video
 — was confirmed as **one frame**: the labelled replayed reply with its three withheld claims,
 and the turkey club's unsafe card naming the butter three steps down, both on screen together.
 The console was silent on load and after the turn. Shot 8 needs the deployed URL (Task 10).
+
+**Shot 7 is confirmed only as far as the panel's rendering.** The key panel was driven on the
+built site and reads correctly, but the shot as scripted shows a network tab with the key in a
+router request and absent from a peer request — that needs a real provider credential and a real
+router request, and neither has been made. Record it expecting to discover something.
 
 **There are three recorded replies, not one**, and the second is worth knowing about even
 though the script does not use it: `false_all_clear` (shot 3), `true_warning_also_withheld`,
@@ -129,12 +134,25 @@ and `describes_without_vouching`. The second one shows the gate refusing a model
 *right* — the cost `LIMITS.md` §2.1 admits in prose. If a judge asks "does it just suppress
 wrong answers?", that scenario is the answer, on screen, in about eight seconds.
 
-**Shot 6's prerequisite exists now** — Task 8 published the peer on a second origin and the
-runtime loads and runs it — but the shot itself has NOT been confirmed on the built site,
-because both origins have to be served for real before it can be. What a judge types in the
-"Load a published agent network" field is `marrow_point`; the consent card names the bakery's
-origin and says its agents will run in this browser. The peer exchange in the second half of
-the shot needs a provider key, because no recorded reply covers it (`LIMITS.md` §2.8a). The
-`unknown` verdict it ends on is the **glazed donut**, whose glaze is the bakery's own and
-carries no published ingredient list — so the one party who would actually know says
-dairy-free, and the card still reads "We don't know". That is the shot.
+**Shot 6 cannot be filmed yet, and one of its prerequisites is now a deploy step.** The runtime
+loads and runs a peer network and the peer's own site is built (`peer-dist/`), but the deli
+publishes **no peer**: `allowed_peers` is `[]`, `links.json` binds nothing, and
+`vouch.network.json` carries no symbolic reference, because the origin we had listed was a
+claimable `*.vercel.app` subdomain nobody here owns (`DECISIONS.md`). `OWNER-TODO.md` item 1
+deploys both origins and wires those three fields in one commit; until it has run, there is
+nothing for the compose field to load and no consent card to film. After it has run, what a
+judge types in the "Load a published agent network" field is `marrow_point`, and the consent card
+names the bakery's origin and says its agents will run in this browser.
+
+The peer exchange in the second half of the shot needs a provider key, because no recorded reply
+covers it (`LIMITS.md` §2.8a).
+
+**Why the donut ends on `unknown`, said precisely, because the obvious reading is wrong.** It is
+not that the peer's answers "get `unknown`" — a peer's prose goes through the **same gate** as our
+own model's (`showPeerText` and `showModelText` share one `renderGated`), so its safety claim is
+*withheld*, not converted into a verdict. Verdicts attach to dishes, not to answers, and nothing
+fetches a peer's ingredient data. The glazed donut reads "We don't know" because **this site's
+own** `data/menu.json` publishes `bakery_glaze` with `contentsUnknown: true`. So the one party who
+would actually know says dairy-free, that sentence is withheld, and the card beside it still says
+we don't know — and a peer claiming the *Reuben* were dairy-free would sit beside a card reading
+**unsafe**. That is the shot.

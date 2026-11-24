@@ -121,12 +121,20 @@ screen**, exactly as `gateSuggestions()` is in Fearless.
 
 ### 4.5 The peer
 
-A second origin, **Marrow Point Bakery**, publishing its own conforming network
-and ingredient data. Vouch calls it for items it does not make. The same rule
-applies across the boundary: a peer's *prose* about safety is never trusted —
-only its published, fetchable ingredient data is, and if that is absent the
-answer is `unknown`. This is the cross-origin half of §6, and it makes the point
-that trust does not transit a hyperlink.
+A second origin, **Marrow Point Bakery**, publishing its own conforming network.
+Vouch calls it for items it does not make. The same rule applies across the
+boundary, and it is the *same mechanism*, not an analogous one: a peer's prose
+goes through the **same gate** as our own model's — `showPeerText` and
+`showModelText` share one private `renderGated` — so a peer's safety claim is
+**withheld**, exactly like the model's. It is not converted into a verdict.
+Verdicts attach to dishes, not to answers, and **nothing fetches a peer's
+ingredient data**: a dish is `unknown` when this site's own published data does
+not say, however confident somebody else is. This is the cross-origin half of §6,
+and it makes the point that trust does not transit a hyperlink.
+
+The deli publishes no peer today. The allow-list entry, the binding and the
+symbolic reference go in when an origin we control exists — `docs/OWNER-TODO.md`
+item 1, and `docs/DECISIONS.md` for why they came out.
 
 ### 4.6 The community tool — `agentic-web-conformance`
 

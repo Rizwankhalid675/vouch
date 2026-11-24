@@ -1,8 +1,10 @@
 # Submission text — draft
 
 The Devpost form asks for "a text description of features and functionality". This is that text,
-ready to paste. Two placeholders remain, both marked `[…]`, and both fill themselves in the
-moment the site is deployed and the checker has been run against it.
+ready to paste. Three placeholders remain, all marked `[…]`. Two of them — the live site and the
+second origin — fill themselves the moment the site is deployed. The third, `[one-line command]`,
+does not: it waits on whether the conformance CLI is published to npm or installed from the repo,
+which is a decision, not a measurement (`docs/OWNER-TODO.md` item 4).
 
 Written to be read by a judge who has forty entries to get through and will decide in the first
 twenty seconds whether this one is interesting.
@@ -25,15 +27,19 @@ and it isn't, the claim is withheld from the page and the card beside that dish 
 **"✕ Unsafe for what you told us — Contains dairy, through Brioche bun → Brioche → Butter →
 Dairy."** Three steps down an ingredient tree, in a bun no one would think to check.
 
-The verdict cards are a pure function of the menu and what the guest said they avoid. Nothing
-reachable from the model can change what any card shows — not its verdict, not its text, not its
-presence, not its order. That is enforced by a type signature: rendering a model-supplied verdict
-does not compile.
+Every verdict card's contents are computed from the menu and what the guest said they avoid, and
+nothing reachable from the model can change them — not the verdict, not the text. The 34 cards
+beside the dishes are fixed in presence and order too. Where the model does get a say is which
+dishes its *withheld* claims put a card beside, in the refusal panel — and that only ever adds a
+card whose contents still come from the guest's own selection, so it cannot manufacture
+reassurance. Rendering a model-supplied verdict does not compile.
 
 ### What it does
 
-- **A real deli.** 34 dishes, every ingredient published, ingredient trees walked to their
-  leaves. It works with JavaScript off and with no agent involved at all.
+- **A real deli.** 34 dishes, every ingredient the deli knows published, ingredient trees walked
+  to their leaves — and where it does not know, the card says so: one dish lists no ingredients
+  at all and reads *"Ingredients — Not listed. Ask at the counter."*, and two ingredients are
+  published as contents-unknown. It works with JavaScript off and with no agent involved at all.
 - **Three verdicts, not two.** `safe` is never said. A clear dish reads "✓ No conflict found",
   and every card names what it was *not* looking at: "From the published ingredient list. Not a
   statement about the kitchen, and not medical advice." Where the data does not say, the answer
@@ -42,11 +48,14 @@ does not compile.
   composition cycle, an over-budget turn, a denied origin, and a missing provider key. Three
   deliberately broken networks are **published** at `/broken/`, so the refusals can be watched
   rather than taken on trust.
-- **Cross-origin composition behind real consent.** A second site's published agent network
-  loads after approval and runs locally, in the visitor's browser, on the visitor's own router.
-  Before approval, **zero network requests reach the other origin** — consent is a gate, not a
-  notice. A second contact asks again. The peer's answers get `unknown`: a peer is not a source
-  of truth.
+- **Cross-origin composition behind real consent.** Another site's published agent network loads
+  after approval and runs locally, in the visitor's browser, on the visitor's own router. Before
+  approval, **zero network requests reach the other origin** — consent is a gate, not a notice. A
+  second contact asks again. And a peer's prose is not a safety source that happens to be remote:
+  it goes through the **same gate** as our own model's, so a peer claiming a dish is dairy-free
+  has that claim *withheld* and the card beside the dish still shows this site's own verdict,
+  computed from this site's own ingredient data. Nothing fetches a peer's ingredient data; trust
+  does not transit a hyperlink.
 - **The visitor's key, the visitor's browser.** No key ships with the site and the site never
   pays for inference. The key reaches the router the visitor chose and nothing else, and they can
   delete it. The checker and the verdict cards work with no key at all, because they never call a

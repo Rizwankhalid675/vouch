@@ -34,7 +34,7 @@ import { runChecks, exitCodeFor, renderText, DECLINED_CHECKS } from "../src/inde
 import { deriveTarget } from "../src/discover.ts";
 import type { CheckResult } from "../src/types.ts";
 import { portabilityFindings } from "../src/rules.ts";
-import { BASE, NETWORK_URL, conformingSite, serve } from "./fixture.ts";
+import { BASE, NETWORK_URL, conformingSite, serve, siteWithAgents } from "./fixture.ts";
 
 /** One check by id. Throws rather than returning undefined: a missing check is a bug, not a pass. */
 function one(results: readonly CheckResult[], id: string): CheckResult {
@@ -284,12 +284,26 @@ describe("§2.1 minimum network content", () => {
   });
 
   test("a top-level `description` satisfies the requirement in place of `function.description`", async () => {
-    // The vendored reference is the authority here: "A shorter way to give the
-    // function description of an agent ... It is put into the agent's function".
-    // The fixture's second agent uses that form; requiring `function.description`
-    // would report a conforming site as broken.
-    const { results } = await run(conformingSite());
-    expect(one(results, "agent-definitions").status).toBe("pass");
+    // The vendored reference is the authority: "A shorter way to give the function
+    // description of an agent ... It is put into the agent's function". Requiring
+    // `function.description` would report a conforming site as broken.
+    //
+    // Built here rather than read off the shared fixture. This used to run
+    // `conformingSite()` unmodified, which tested the fixture's shape: the moment
+    // a fixture agent gained a `function.description`, the test would have gone on
+    // passing while checking nothing.
+    const bothForms = siteWithAgents([
+      { name: "front", function: { description: "Takes the question." }, instructions: "Route it.", tools: ["leaf"] },
+      { name: "leaf", description: "Answers it.", instructions: "Answer from what you are given." },
+    ]);
+    expect(one((await run(bothForms)).results, "agent-definitions").status).toBe("pass");
+
+    // ...and the top-level form alone is enough, for the front agent too.
+    const onlyTopLevel = siteWithAgents([
+      { name: "front", description: "Takes the question.", instructions: "Route it.", tools: ["leaf"] },
+      { name: "leaf", description: "Answers it.", instructions: "Answer from what you are given." },
+    ]);
+    expect(one((await run(onlyTopLevel)).results, "agent-definitions").status).toBe("pass");
   });
 
   test("two agents with the same name fail: §2.1 requires a unique name within the network", async () => {
@@ -324,10 +338,31 @@ describe("§2.1 minimum network content", () => {
   });
 
   test("a leaf agent with no `tools` key is not a failure: the reference says the list is optional", async () => {
-    // The fixture's `timetable` already has no `tools`. Requiring one would fail
-    // every network whose leaves are leaves.
-    const { results } = await run(conformingSite());
-    expect(one(results, "agent-definitions").status).toBe("pass");
+    // Requiring one would fail every network whose leaves are leaves.
+    //
+    // THE REVIEWER'S EXAMPLE, and the reason this is built here. It used to run the
+    // shared fixture and rely on one of its agents happening to omit `tools`.
+    // Adding `tools: []` to that agent made the test vacuous and left it green --
+    // a test that stops testing anything without going red.
+    const leafWithoutTools = siteWithAgents([
+      { name: "front", description: "Takes the question.", instructions: "Route it.", tools: ["leaf"] },
+      { name: "leaf", description: "Answers it.", instructions: "Answer from what you are given." },
+    ]);
+    expect(one((await run(leafWithoutTools)).results, "agent-definitions").status).toBe("pass");
+
+    // An empty list is equally fine, and is a different shape from an absent key.
+    const leafWithEmptyTools = siteWithAgents([
+      { name: "front", description: "Takes the question.", instructions: "Route it.", tools: ["leaf"] },
+      { name: "leaf", description: "Answers it.", instructions: "Answer.", tools: [] },
+    ]);
+    expect(one((await run(leafWithEmptyTools)).results, "agent-definitions").status).toBe("pass");
+
+    // ...and a `tools` that is not a list still fails, so this is not a blanket pass.
+    const wrongType = siteWithAgents([
+      { name: "front", description: "Takes the question.", instructions: "Route it.", tools: ["leaf"] },
+      { name: "leaf", description: "Answers it.", instructions: "Answer.", tools: "leaf" },
+    ]);
+    expect(one((await run(wrongType)).results, "agent-definitions").status).toBe("fail");
   });
 
   test("a single-agent network fails §6's two-agent minimum, and the finding gives the count", async () => {
@@ -367,8 +402,29 @@ describe("§2.1 invocation schemas", () => {
     // The reference synthesises a required `inquiry` string for a sub-agent that
     // declares none, so the request still reaches it. A tool that failed this
     // would be stricter than the runtime, which is not strictness, it is noise.
-    const { results } = await run(conformingSite());
+    //
+    // Built here: run against the shared fixture, this asserted a pass on a
+    // document whose agents all DO declare parameters, so it proved nothing about
+    // an agent that does not.
+    const noneAnywhere = siteWithAgents([
+      { name: "front", description: "Takes the question.", instructions: "Route it.", tools: ["leaf"] },
+      { name: "leaf", description: "Answers it.", instructions: "Answer from what you are given." },
+    ]);
+    const results = (await run(noneAnywhere)).results;
     expect(one(results, "invocation-schemas").status).toBe("pass");
+    expect(one(results, "invocation-schemas").detail).toMatch(/0 of 2/);
+
+    // An explicit null is the other way a publisher declares nothing.
+    const explicitNull = siteWithAgents([
+      {
+        name: "front",
+        function: { description: "Takes the question.", parameters: null },
+        instructions: "Route it.",
+        tools: ["leaf"],
+      },
+      { name: "leaf", description: "Answers it.", instructions: "Answer from what you are given." },
+    ]);
+    expect(one((await run(explicitNull)).results, "invocation-schemas").status).toBe("pass");
   });
 });
 
@@ -716,9 +772,39 @@ describe("§4 credential handling", () => {
     expect(findingsText(one(results, "credential-handling"))).not.toContain("SOMETHINGLONGENOUGHTOLOOKREAL");
   });
 
-  test("`requires_key: true` and an empty `byok_router` are not credentials", async () => {
-    const { results } = await run(conformingSite());
-    expect(one(results, "credential-handling").status).toBe("pass");
+  test("placeholders, short values and non-strings are not credentials", async () => {
+    // The old title claimed `requires_key: true` and an empty `byok_router`, and
+    // the test ran the clean fixture, where `byok_router` is a non-empty URL and
+    // `requires_key` is a boolean that `walk()` never visits. It asserted a clean
+    // pass on a clean document and named a case it did not construct. So: build
+    // the case, and keep the title to what is checked.
+    const files = conformingSite();
+    const manifest = files[`${BASE}agent-manifest.json`]!.body as { llm_router: Record<string, unknown> };
+    const placeholders = {
+      base_url: "https://router.fixture.example/v1",
+      byok_router: "",
+      requires_key: true,
+      api_key: "",
+      token: "<your token>",
+      secret: "REPLACE_ME",
+      password: "none",
+      authorization: "Bearer",
+      client_secret: "changeme",
+      private_key: "xxxxx",
+      // Short but NOT a placeholder, so only the length rule can excuse it. The
+      // title said "short values" before this line existed, which made the claim
+      // true of the title and false of the test.
+      access_token: "oauth2",
+    };
+    manifest.llm_router = placeholders;
+    const check = one((await run(files)).results, "credential-handling");
+    expect(check.status, findingsText(check)).toBe("pass");
+
+    // ...and the check is live on that same document: one real-looking value trips it.
+    const planted = conformingSite();
+    const plantedRouter = planted[`${BASE}agent-manifest.json`]!.body as { llm_router: Record<string, unknown> };
+    plantedRouter.llm_router = { ...placeholders, token: "ghp_0123456789abcdefghijklmnopqrstuvwx" };
+    expect(one((await run(planted)).results, "credential-handling").status).toBe("fail");
   });
 });
 
@@ -807,8 +893,11 @@ describe("the report a publisher reads", () => {
     const text = renderText(results, deriveTarget(NETWORK_URL));
     const checked = results.filter((r) => r.status !== "not-demonstrated").length;
     const declined = results.length - checked;
-    expect(text).toContain(`${checked} check`);
-    expect(text).toContain(`${declined} `);
+    expect(text).toContain(`${checked} checks made`);
+    // Not `${declined} ` -- that matched the bare number anywhere in the report,
+    // including inside a URL or a count of something else, and left the sibling
+    // assertion doing all the work.
+    expect(text).toContain(`${declined} not checked`);
     expect(text).toContain(NETWORK_URL);
   });
 

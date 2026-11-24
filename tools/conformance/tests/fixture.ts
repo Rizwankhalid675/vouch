@@ -146,3 +146,34 @@ export function serve(files: Record<string, Artifact>): {
   };
   return { fetchImpl, asked, origins };
 }
+
+/**
+ * A minimal conforming site around exactly the agents a test hands it.
+ *
+ * Three tests used to run the shared `conformingSite()` unmodified and assert
+ * `pass`, which tested the fixture's shape rather than the rule: adding
+ * `tools: []` to one fixture agent made the "a leaf with no tools is fine" test
+ * vacuous while leaving it green. A test that stops testing anything without
+ * going red is the quietest way for a suite to rot, and this project's running
+ * count of those is now seven.
+ *
+ * So a test that is about one agent shape builds that shape here and nothing
+ * else depends on it.
+ */
+export function siteWithAgents(agents: readonly Record<string, unknown>[]): Record<string, Artifact> {
+  const frontMan = agents[0]?.["name"];
+  return {
+    [`${BASE}agent-manifest.json`]: {
+      body: {
+        version: 1,
+        networks: [
+          { name: "demo", description: "A network built for one test.", front_man: frontMan, hocon: "demo.network.json" },
+        ],
+      },
+    },
+    [`${BASE}demo.network.json`]: {
+      body: { metadata: { description: "A network built for one test." }, tools: structuredClone(agents) },
+    },
+    [`${BASE}links.json`]: { body: { version: 1, networks: { demo: {} } } },
+  };
+}

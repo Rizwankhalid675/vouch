@@ -1,0 +1,36 @@
+agentic-web-conformance — a conformance checker for the Open Agentic Web MVP profile.
+
+Copyright 2026 Rizwankhalid675
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+-------------------------------------------------------------------------------
+
+This directory is part of a larger Apache-2.0 repository and carries the same
+licence as its parent, deliberately: a second, different licence in a
+subdirectory would re-open a question the parent repository's LICENSE and NOTICE
+were committed to close. The full licence text is in the LICENSE file at the root
+of this repository.
+
+No third-party code is vendored here, and this tool has no runtime dependencies.
+
+It does read two upstream documents as its authority for key names, without
+copying them: the Neuro SAN Agent Network HOCON File Reference and the Neuro SAN
+agent-network JSON Schema, both from Cognizant AI Lab and both Apache-2.0. Where
+this tool quotes either one, the quote is marked as such in the source.
+
+  - neuro-san   https://github.com/cognizant-ai-lab/neuro-san
+  - nsdeploy    https://github.com/cognizant-ai-lab/nsdeploy
+
+The specification this tool checks against is the Minimum Viable Specification
+for a Worldwide Agentic Web, MVP Profile 0.3, 18 November 2026, Cognizant AI Lab.
+Section references in the output ("§3.2", "§2.1") are to that document.

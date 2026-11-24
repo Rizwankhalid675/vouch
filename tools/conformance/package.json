@@ -1,0 +1,40 @@
+{
+  "name": "agentic-web-conformance",
+  "version": "0.1.0",
+  "description": "Checks a published agent network against the Open Agentic Web MVP profile, and says plainly which checks it cannot make.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "//engines": "22.18.0, not 22.0: this tool ships TypeScript and is run directly, which needs Node's type stripping, on by default from 22.18. There is no build step and nothing to compile.",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "bin": {
+    "agentic-web-conformance": "./cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "//dependencies": "Empty, and meant to stay that way. A conformance checker that drags in a tree of packages does not get run by the publishers it is for. Everything here is the standard library: fetch, URL, node:http in the tests.",
+  "dependencies": {},
+  "files": [
+    "cli.ts",
+    "src",
+    "tests",
+    "README.md",
+    "NOTICE"
+  ],
+  "keywords": [
+    "agentic-web",
+    "conformance",
+    "neuro-san",
+    "nsdeploy",
+    "agent-manifest",
+    "hocon",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rizwankhalid675/agenticweb-2027.git",
+    "directory": "tools/conformance"
+  }
+}

@@ -14,5 +14,7 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["contracts.ts", "src", "tests", "data", "vitest.config.ts", "vite.config.ts"]
+  // `tools` is in here on purpose: without it `npm run typecheck` passes while the
+  // conformance CLI is entirely untyped, which is the quietest way for a tool to rot.
+  "include": ["contracts.ts", "src", "tests", "data", "tools", "vitest.config.ts", "vite.config.ts"]
 }

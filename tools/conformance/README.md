@@ -225,6 +225,30 @@ instead of CORS.
 
 ---
 
+## How well tested this is, exactly
+
+61 tests. Each one was watched failing against a named one-line mutation of the implementation
+before it was kept, because a test nobody watched fail is not evidence. They run under the
+repository's root test runner, so `npm test` covers them and a change to this tool cannot be green
+in isolation.
+
+**One gap, and it is in the five tests that matter most.** The CORS tests bind a loopback port and
+read the header off a real HTTP response — the only place in this tool where a header comes from
+something other than an object the tests built themselves. Some environments refuse `listen()`
+outright, and there `npm test` **skips** them, loudly: the reason and the command to run them for
+real go to stderr, and Vitest counts them as skipped rather than passed, so the output can never be
+read as coverage obtained.
+
+```bash
+npm run test:cors     # demands a real server; fails rather than skipping
+```
+
+So, honestly: **as of 24 November 2026 those five are verified by manual runs outside the restricted
+environment — they pass — and by the CI workflow, which demands them.** They become automatic
+evidence once that workflow has a remote to run on. Everything else in the suite runs everywhere.
+
+---
+
 ## Licence
 
 Apache-2.0. See `NOTICE` in this directory and `LICENSE` at the root of the repository.

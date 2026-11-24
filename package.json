@@ -8,6 +8,8 @@
   },
   "scripts": {
     "test": "vitest run",
+    "//test:cors": "The conformance CLI's CORS tests, demanded rather than skipped. They bind a loopback port and read a CORS header off a real HTTP response; `npm test` SKIPS them loudly where listen() is refused, because a suite expected to be red is how a real failure gets ignored. This is the command that runs them for real, and it fails rather than skipping. CI runs both.",
+    "test:cors": "CONFORMANCE_CORS_REQUIRED=1 vitest run tools/conformance/tests/cors.test.ts",
     "typecheck": "tsc --noEmit",
     "//build": "Two origins means two deployments. `build` makes both; `build:site` and `build:peer` make one each, into separate output directories, so a deploy target can be pointed at either without the other coming with it.",
     "build": "npm run build:site && npm run build:peer",

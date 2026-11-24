@@ -24,10 +24,17 @@ jobs:
       - run: npm run typecheck
 
       # The conformance CLI has no test runner of its own: its tests run under this
-      # one, from tools/**/tests. One of them starts a real loopback HTTP server to
-      # read a real CORS header off a real response, and it fails rather than skips
-      # if the runner forbids listen().
+      # one, from tools/**/tests.
       - run: npm test
+
+      # `npm test` SKIPS the five real-server CORS tests, loudly, where listen() is
+      # refused -- a suite expected to be red is how a real failure gets ignored.
+      # This runner can bind, so here they are DEMANDED: CONFORMANCE_CORS_REQUIRED
+      # removes the skip, and a refused bind fails the build. This step is the only
+      # place a CORS header is read off something other than an object we built
+      # ourselves, so it is also the only automated evidence that check exists.
+      - name: CORS tests against a real loopback server, required
+        run: npm run test:cors
 
       - run: npm run build
       - run: npm run build:peer

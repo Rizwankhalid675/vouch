@@ -21,15 +21,82 @@
 // `globalThis.fetch`, and the assertions are on what the real responses produced.
 // Zero dependencies -- `node:http` ships with the runtime the tool already needs.
 //
-// IT MUST NOT SKIP. A sandbox that forbids `listen()` makes this test fail, not
-// pass and not skip. A fail-open default is how a suite ends up green while the
-// thing it guards is broken, and this project has already shipped one of those.
+// IT MUST NEVER PASS WITHOUT RUNNING. Where `listen()` is refused — a sandbox
+// with local port binding off answers EPERM — these five are SKIPPED, loudly,
+// with the reason and the command that runs them for real written to stderr.
+// Vitest counts skipped tests separately, so "5 skipped" can never be read as
+// coverage obtained, and `npm run test:cors` removes the skip so they run and
+// fail instead. The gate itself is tested below, outside the skippable block, so
+// the skip logic cannot quietly become a pass. loopback.ts says why it is a skip
+// rather than a hard failure: a suite that is expected to be red is how a real
+// failure gets ignored.
 
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, test } from "vitest";
 import { runChecks } from "../src/index.ts";
 import type { CheckResult } from "../src/types.ts";
 import { conformingSite } from "./fixture.ts";
+import { corsGate, corsRequired, probeLoopbackBind, type BindProbe } from "./loopback.ts";
+
+/* ================================================================== */
+/* The gate. These always run, whatever the environment can do.        */
+/* ================================================================== */
+
+describe("the loopback gate: a skip that can never read as a pass", () => {
+  const bindable: BindProbe = { ok: true, reason: "" };
+  const refused: BindProbe = { ok: false, reason: "EPERM: operation not permitted 127.0.0.1" };
+
+  test("when a port can be bound, nothing is skipped and there is nothing to announce", () => {
+    expect(corsGate(bindable, false)).toEqual({ skip: false, notice: null });
+    expect(corsGate(bindable, true)).toEqual({ skip: false, notice: null });
+  });
+
+  test("when a port cannot be bound, the tests are skipped and the notice says they did not run", () => {
+    const gate = corsGate(refused, false);
+    expect(gate.skip).toBe(true);
+    expect(gate.notice).toBeTruthy();
+    expect(gate.notice!).toContain("NOT RUN");
+    expect(gate.notice!).toContain("SKIPPED, not passed");
+    expect(gate.notice!).toContain("EPERM");
+    expect(gate.notice!).toContain("npm run test:cors");
+    expect(gate.notice!).toMatch(/Nothing about CORS has been verified/);
+  });
+
+  test("when they are REQUIRED, a refused port does not skip: they run and fail", () => {
+    // `npm run test:cors` exists to run them for real. A command that skipped
+    // when it could not do the one thing it is for would be the fail-open default
+    // in a new costume.
+    const gate = corsGate(refused, true);
+    expect(gate.skip).toBe(false);
+    expect(gate.notice!).toContain("REQUIRED");
+    expect(gate.notice!).toMatch(/FAIL rather than skip/);
+  });
+
+  test("REQUIRED is an explicit opt-in, so the default suite is never the demanding one", () => {
+    expect(corsRequired({})).toBe(false);
+    expect(corsRequired({ CONFORMANCE_CORS_REQUIRED: "" })).toBe(false);
+    expect(corsRequired({ CONFORMANCE_CORS_REQUIRED: "0" })).toBe(false);
+    expect(corsRequired({ CONFORMANCE_CORS_REQUIRED: "1" })).toBe(true);
+    expect(corsRequired({ CONFORMANCE_CORS_REQUIRED: "true" })).toBe(true);
+  });
+
+  test("the probe reports a refused bind as refused, with the reason, and never throws", async () => {
+    const thrown = await probeLoopbackBind(() => Promise.reject(new Error("EPERM: operation not permitted")));
+    expect(thrown.ok).toBe(false);
+    expect(thrown.reason).toContain("EPERM");
+
+    const fine = await probeLoopbackBind(() => Promise.resolve());
+    expect(fine).toEqual({ ok: true, reason: "" });
+  });
+});
+
+/* ================================================================== */
+/* The real thing.                                                     */
+/* ================================================================== */
+
+const probe = await probeLoopbackBind();
+const gate = corsGate(probe, corsRequired(process.env));
+if (gate.notice) process.stderr.write(`${gate.notice}\n`);
 
 /** The fixture's three artifacts, keyed by the path a real server would serve them at. */
 function artifactBodies(): Record<string, string> {
@@ -108,7 +175,7 @@ const corsCheck = (results: readonly CheckResult[]): CheckResult => {
   return found;
 };
 
-describe("§3.3/§3.4 CORS, read off a real response", () => {
+describe.skipIf(gate.skip)("§3.3/§3.4 CORS, read off a real response", () => {
   test("a server that really sends the header passes, and the probe really sent an Origin", async () => {
     running = await start(() => "*");
     const results = await runChecks(`${running.origin}/agents/demo`);

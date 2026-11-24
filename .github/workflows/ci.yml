@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22.18 is the floor: this repository and the conformance CLI both import
+          # .ts files directly, which needs Node's type stripping, on by default
+          # from 22.18.
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # The conformance CLI has no test runner of its own: its tests run under this
+      # one, from tools/**/tests. One of them starts a real loopback HTTP server to
+      # read a real CORS header off a real response, and it fails rather than skips
+      # if the runner forbids listen().
+      - run: npm test
+
+      - run: npm run build
+      - run: npm run build:peer
+
+      # A smoke test of the shipped CLI, not of this site: it must answer usefully
+      # for a URL that is not a conforming agent site, and must not crash. Exit 1
+      # (checks failed) is the expected answer here; exit 3 would mean the tool
+      # itself broke, and that is what this catches.
+      - name: conformance CLI runs and reports rather than crashing
+        run: |
+          set +e
+          node tools/conformance/cli.ts https://example.com/agents/not_a_real_network
+          code=$?
+          set -e
+          echo "exit $code"
+          test "$code" = "1"

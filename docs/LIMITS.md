@@ -62,10 +62,21 @@ loopback hosts; this site does not).
 
 ### 2.0 What a verdict card can and cannot be moved by
 
-A verdict card is a pure function of **(the menu, the guest's restriction set)**.
-Nothing reachable from the model may change what any card shows — not its verdict,
-not its text, not its **presence**, not its order. Cards re-render when the guest
-changes their restrictions, and at no other time.
+A verdict card's contents are a pure function of **(the menu, the guest's selected
+restrictions)**. Nothing reachable from the model may change what a card shows — not
+its verdict, not its text. Cards re-render when the guest changes their restrictions,
+and at no other time.
+
+**Two surfaces, and only one of them is fixed in presence and order.** The 34 slot
+cards beside the dishes are: one per published item, in menu order, every one present
+once a restriction is ticked and none before. The refusal panel also shows a card for
+each dish a withheld claim named, and **those are model-selected in presence and
+order** — the model chooses which dishes to talk about, and therefore which cards
+appear there and in what sequence. No false reassurance can come of it: each card's
+contents are still computed by `guestVerdictCard` from `selected()`, so the model can
+cause a card to appear and cannot cause one to say anything. This sentence used to
+claim "not its presence, not its order" of every card, which was true of the slots and
+false of the panel.
 
 *Presence* and *text* are both meant literally, and both are tested literally:
 
@@ -74,17 +85,42 @@ changes their restrictions, and at no other time.
   whose visible text is byte-identical to the checker's could still read a model's
   ungated claim to a screen-reader user. The assertions compare a card's whole
   readable surface — text nodes, every text-bearing attribute, form-control values
-  — against lines computed independently from `verdictFor` + `cardLines`.
+  — against lines computed independently from `verdictFor` and from the guest's own
+  selection. That oracle used to call `cardLines`, which shares both its text
+  computations with the renderer, so it could not disagree with the renderer about
+  half of a card; it now writes the mark, the headline, the scope line and the source
+  line itself.
 - **Presence** means presented, not in the DOM. `display:none`, the `hidden`
   attribute and `aria-hidden="true"` each hide a card while every existence check
-  still passes, so every card is asserted visible, on itself and on each ancestor.
-  A model that can hide every card blanks the safety channel as surely as one that
-  can overwrite it.
+  still passes, so every slot card is asserted visible, on itself and on each
+  ancestor. A model that can hide every card blanks the safety channel as surely as
+  one that can overwrite it.
 
-This is enforced by a signature, not by a convention: `renderVerdicts` takes the
-guest's `Restriction[]` and computes the verdicts itself; it has no parameter that
-would accept a `Finding`, and the card builder is module-private. `SiteContext`
-carries no display callback for an action handler to reach.
+**What the signature enforces, exactly.** `renderVerdicts` takes the guest's
+`Restriction[]` and computes the verdicts itself; it has no parameter that would
+accept a `Finding`, and the card builder is module-private. `SiteContext` carries no
+display callback for an action handler to reach. So the signature makes one property
+impossible to write: **no `Finding` can be injected into a card.** That is not the
+same as the whole property above, and this file said it was.
+
+It is now closer, because a second parameter went with it. `renderVerdicts` also took
+the **published** restriction list and passed it to the card, which reverse-derived
+the scope line — "Checked against: …" — by intersecting `Finding.covered` against
+every published restriction. `covered` is the union of the selected restrictions'
+`avoid` ids, so a published restriction sharing one id with a selected one was named
+as checked: with `peanut_free: ["peanut"]` beside `nut_free: ["peanut", "tree_nut"]`
+and only Peanut-free ticked, the walnut brownie rendered a green card saying
+"Checked against: Nut-free, Peanut-free." A card claiming **more** coverage than was
+performed, which is the dangerous direction, from a value originating **inside this
+repository** — so the revisit condition this section used to give ("if a card ever
+displays a value from outside the repository") would never have fired. Provenance was
+the wrong question.
+
+The published list is now not a parameter of anything in `verdict-cards.ts`: the only
+restriction list any function there takes is the guest's selection, and the compiler
+refused all five call sites when it was removed. The scope line is `selected.map(r =>
+r.name)` with nothing derived. What covers the rest of the property is the oracle
+above, not the signature.
 
 It is stated this plainly because the first version of this runtime got it wrong in
 a way that passed every test. `check_safety` is a `read` action, so it dispatches
@@ -491,11 +527,21 @@ them originates in this repository's own data files (`data/menu.json`,
 `data/restrictions.json`, through `src/safety/canon.ts`) and there is no runtime path
 by which a model, a peer or a provider sets one. Second, §2.0 asserts the cards' whole
 readable surface **byte-for-byte** against an independent computation from `verdictFor`
-+ `cardLines`; restructuring their DOM would mean rewriting the assertion that protects
-the product's central claim, to reduce a risk that has no path to it. If a card ever
-displays a value from outside the repository, this exception stops being defensible and
-must be revisited. That is a condition, not a hope — it is checkable by grepping
-`verdict-cards.ts` for anything it did not get from `canon.ts`.
+and the guest's selection; restructuring their DOM would mean rewriting the assertion
+that protects the product's central claim, to reduce a risk that has no path to it. If
+a card ever displays a value from outside the repository, this exception stops being
+defensible and must be revisited.
+
+**That revisit condition was the wrong one, and the scope line proved it.** It asked
+about *provenance*, and the first real defect in these two lines had impeccable
+provenance: the scope line named restrictions from `data/restrictions.json`, through
+`canon.ts`, set by nobody at runtime — and it named restrictions **the guest had not
+selected**, because the published list was being passed in beside the selection and
+intersected against `Finding.covered` (§2.0). A grep of `verdict-cards.ts` for a value
+it did not get from `canon.ts` would have come back empty every time. So the condition
+is now the other one: **if either line ever interpolates a value the guest's own
+selection and the menu do not determine together, this exception stops being
+defensible** — whatever repository it came from.
 
 **So: not "without exception". Two named exceptions, with a stated condition under
 which each becomes a defect.**

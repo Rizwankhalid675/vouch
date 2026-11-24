@@ -88,23 +88,45 @@ export function cardReason(f: Finding, menu: Menu): string {
   return `No ${list} in the published ingredients for this item.`;
 }
 
-/** The restriction ids a card speaks to, in the guest's words. Empty when nothing was checked. */
-export function checkedAgainst(f: Finding, restrictions: Restriction[]): string[] {
-  const covered = new Set(f.covered);
-  return restrictions.filter((r) => r.avoid.some((a) => covered.has(a))).map((r) => r.name);
+/**
+ * The restrictions a card says it was checked against: **the guest's own
+ * selection, in their words**. Nothing is derived and nothing is intersected.
+ *
+ * It used to be `checkedAgainst(f, published)` — a reverse derivation of the
+ * selection from `Finding.covered` against the *published* list:
+ *
+ *     restrictions.filter((r) => r.avoid.some((a) => covered.has(a)))
+ *
+ * `covered` is the union of the selected restrictions' `avoid` ids, so any
+ * published restriction sharing a single id with a selected one was named as
+ * checked. It was correct only because `data/restrictions.json` happens to have
+ * pairwise-disjoint `avoid` lists. Add `peanut_free: ["peanut"]` beside
+ * `nut_free: ["peanut", "tree_nut"]`, tick only Peanut-free, and the walnut
+ * brownie rendered a green card reading "Checked against: Nut-free, Peanut-free."
+ * — claiming MORE coverage than was performed, on a food-safety card, which is
+ * the dangerous direction.
+ *
+ * The derivation is deleted rather than corrected, and so is the parameter that
+ * carried the published list into this module: the guest's selection is the only
+ * restriction list any function here now takes, so the next instance of this
+ * cannot be written. `verdictFor` is computed over that same list, so the scope
+ * line and the verdict cannot describe different sets.
+ */
+function scopeNames(selected: Restriction[]): string[] {
+  return selected.map((r) => r.name);
 }
 
 /**
  * Every line of text a card shows, as data. Pure: a function of the Finding, the
- * menu and the published restriction list, and of nothing else.
+ * menu and **the guest's selected restrictions**, and of nothing else.
  *
  * It exists so that a test can assert a rendered card's `textContent` is EXACTLY
  * these lines and nothing more. That assertion is what catches text arriving in a
  * card from anywhere other than the checker.
  */
-export function cardLines(f: Finding, menu: Menu, restrictions: Restriction[] = []): string[] {
+export function cardLines(f: Finding, menu: Menu, selected: Restriction[] = []): string[] {
   const kind = cardKind(f);
-  const names = checkedAgainst(f, restrictions);
+  const names = scopeNames(selected);
   return [
     MARK[kind],
     HEADLINE[kind],
@@ -125,7 +147,7 @@ const MARK: Record<CardKind, string> = { unsafe: "✕", unknown: "?", safe: "✓
  * this module accepts a `Finding` from a caller and renders it, so there is no
  * signature through which a Finding the model asked for could reach a card.
  */
-function verdictCard(doc: Document, f: Finding, menu: Menu, restrictions: Restriction[] = []): HTMLElement {
+function verdictCard(doc: Document, f: Finding, menu: Menu, selected: Restriction[]): HTMLElement {
   const kind = cardKind(f);
   const el = doc.createElement("div");
   el.className = `verdict verdict-${kind}`;
@@ -150,7 +172,7 @@ function verdictCard(doc: Document, f: Finding, menu: Menu, restrictions: Restri
 
   el.append(head, reason);
 
-  const names = checkedAgainst(f, restrictions);
+  const names = scopeNames(selected);
   if (names.length > 0) {
     const scope = doc.createElement("p");
     scope.className = "verdict-scope";
@@ -169,9 +191,11 @@ function verdictCard(doc: Document, f: Finding, menu: Menu, restrictions: Restri
 /**
  * THE INVARIANT THIS SIGNATURE EXISTS TO ENFORCE
  *
- * The verdict cards are a pure function of (the menu, the guest's restriction set).
- * Nothing reachable from the model may change what any card shows — not its
- * verdict, not its text, not its presence, not its order.
+ * Every card's contents are a pure function of (the menu, the guest's restriction
+ * selection). Nothing reachable from the model may change what a card shows — not
+ * its verdict, not its text. The 34 slot cards are fixed in presence and order as
+ * well; the refusal panel's extra cards are not, and §2.0 of `LIMITS.md` says
+ * which is which.
  *
  * So this function **does not accept a `Finding`**. It takes the guest's selection
  * and computes the verdicts itself, through `verdictFor`, which is pure over
@@ -190,7 +214,7 @@ function verdictCard(doc: Document, f: Finding, menu: Menu, restrictions: Restri
  * An empty selection clears every slot: nothing was asked, so nothing is shown.
  * Returns the findings rendered, for the caller's own state and for the gate.
  */
-export function renderVerdicts(doc: Document, selected: Restriction[], menu: Menu, published: Restriction[] = []): Finding[] {
+export function renderVerdicts(doc: Document, selected: Restriction[], menu: Menu): Finding[] {
   if (selected.length === 0) {
     clearVerdicts(doc);
     return [];
@@ -200,7 +224,7 @@ export function renderVerdicts(doc: Document, selected: Restriction[], menu: Men
     const slot = doc.querySelector<HTMLElement>(`[data-verdict-slot="${cssEscape(f.item)}"]`);
     // Replaces only the contents of the slot this finding belongs to, so one
     // item's check cannot wipe another's.
-    slot?.replaceChildren(verdictCard(doc, f, menu, published));
+    slot?.replaceChildren(verdictCard(doc, f, menu, selected));
   }
   return findings;
 }
@@ -211,17 +235,11 @@ export function renderVerdicts(doc: Document, selected: Restriction[], menu: Men
  * panel does). Takes the guest's selection, never a Finding, for the same reason.
  * Returns null when nothing is selected, rather than inventing a verdict.
  */
-export function guestVerdictCard(
-  doc: Document,
-  itemId: string,
-  selected: Restriction[],
-  menu: Menu,
-  published: Restriction[] = [],
-): HTMLElement | null {
+export function guestVerdictCard(doc: Document, itemId: string, selected: Restriction[], menu: Menu): HTMLElement | null {
   if (selected.length === 0) return null;
   const item = menu.items.find((i) => i.id === itemId);
   if (!item) return null;
-  return verdictCard(doc, verdictFor(item, selected, menu), menu, published);
+  return verdictCard(doc, verdictFor(item, selected, menu), menu, selected);
 }
 
 /** Empty every slot. The CSS hides an empty slot, so the card disappears with it. */

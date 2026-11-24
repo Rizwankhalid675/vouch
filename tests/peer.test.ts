@@ -64,7 +64,7 @@ import { gate, REFUSAL_MARKER } from "../src/gate/gate.ts";
 import { mountShop } from "../src/site/shop.ts";
 import { boot, type BootOptions, type Runtime } from "../src/runtime/boot.ts";
 import { KEY_ITEM, type StorageLike } from "../src/runtime/key-store.ts";
-import { cardLines } from "../src/runtime/verdict-cards.ts";
+import { cardReason } from "../src/runtime/verdict-cards.ts";
 import { NOT_OURS, SITE_DATUM } from "../src/runtime/errors.ts";
 import { PEER_TOOL_DESCRIPTION, peerBindings, resolveSymbolicRefs, symbolicRefs } from "../src/runtime/peers.ts";
 import { SessionConsent, landingCheck } from "../src/runtime/composition.ts";
@@ -419,9 +419,35 @@ const card = (id: string): HTMLElement | null => document.querySelector<HTMLElem
 const slotTextOf = (id: string): string => document.querySelector<HTMLElement>(`[data-verdict-slot="${id}"]`)!.textContent ?? "";
 const DAIRY = RESTRICTIONS.find((r) => r.id === "dairy_free")!;
 
-/** What a card must say, computed from the pure functions and nothing else. */
-const expectedCardText = (itemId: string, selected: Restriction[]): string =>
-  cardLines(verdictFor(MENU.items.find((i) => i.id === itemId)!, selected, MENU), MENU, RESTRICTIONS).join("");
+/**
+ * What a card must say, BUILT FROM THE GUEST'S SELECTION HERE.
+ *
+ * It called `cardLines`, which shares `cardReason` and the scope-line derivation
+ * with the renderer, so it could not disagree with the renderer about half of a
+ * card — see the long note on the same function in `tests/runtime.test.ts`, which
+ * is where the proof is recorded. The mark, the headline, the scope line and the
+ * source line are written out here; `cardReason` is shared on purpose, and its own
+ * prose is pinned by literal elsewhere.
+ */
+const MARK_OF: Record<string, string> = { unsafe: "✕", unknown: "?", safe: "✓", unchecked: "–" };
+const HEADLINE_OF: Record<string, string> = {
+  unsafe: "Unsafe for what you told us",
+  unknown: "We don't know",
+  safe: "No conflict found",
+  unchecked: "Not checked",
+};
+
+const expectedCardText = (itemId: string, selected: Restriction[]): string => {
+  const f = verdictFor(MENU.items.find((i) => i.id === itemId)!, selected, MENU);
+  const kind = f.verdict === "safe" && f.covered.length === 0 ? "unchecked" : f.verdict;
+  return [
+    MARK_OF[kind]!,
+    HEADLINE_OF[kind]!,
+    cardReason(f, MENU),
+    ...(selected.length > 0 ? [`Checked against: ${selected.map((r) => r.name).join(", ")}.`] : []),
+    "From the published ingredient list. Not a statement about the kitchen, and not medical advice.",
+  ].join("");
+};
 
 /**
  * Every place a secret was found. One line per PLACE, so an assertion is an

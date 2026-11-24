@@ -368,16 +368,53 @@ function hiddenReason(el: Element | null): string | null {
 }
 
 /**
- * What a card for `item` under `selected` must say, derived INDEPENDENTLY of the
- * renderer from the pure functions: `verdictFor` from the safety layer and
- * `cardLines` from the card module. Neither can see a model.
+ * What a card for `item` under `selected` must say, BUILT FROM THE GUEST'S
+ * SELECTION HERE rather than asked of the renderer.
  *
- * An exact equality against this is the assertion that catches text reaching a
- * card from anywhere else — a mutant appending the model's reply to the reason
- * line, or replacing the headline, changes the string and fails.
+ * `LIMITS.md` §2.0 calls the exact equality against this "the assertion that
+ * protects the product's central claim", and for a review round it could not
+ * disagree with the renderer about half of a card. It called `cardLines`, which
+ * calls `cardReason` **and** `checkedAgainst` — the same two functions the
+ * renderer calls, with the same list. So it was independent of the card's DOM
+ * assembly and *not* independent of its text computation: it protected against a
+ * model string being ADDED to a card and against nothing wrong inside
+ * `cardLines`. The proof is on the record: the scope-line fix left this suite
+ * green, and the fix plus one overlapping restriction made this file's own
+ * "the guest's own selection is what repaints" FAIL — the suite actively
+ * rejecting the correct implementation.
+ *
+ * So the mark, the headline, the scope line and the source line are written out
+ * here, from `selected` directly. One line is still shared with the renderer,
+ * deliberately: `cardReason`, whose ingredient-path prose is 28 lines of
+ * derivation that a second implementation here would get wrong in its own way —
+ * this project has a recorded incident of exactly that ("a test reimplemented the
+ * consumer and was more forgiving than it"). What covers that line instead is
+ * literal: the turkey club's full "Contains dairy, through Brioche bun → Brioche
+ * → Butter → Dairy." is asserted character by character in A2 below, and
+ * `tests/verdict.test.ts` drives the derivation itself.
  */
-const expectedCardText = (itemId: string, selected: Restriction[]): string =>
-  cardLines(verdictFor(MENU.items.find((i) => i.id === itemId)!, selected, MENU), MENU, RESTRICTIONS).join("");
+const MARK_OF: Record<string, string> = { unsafe: "✕", unknown: "?", safe: "✓", unchecked: "–" };
+const HEADLINE_OF: Record<string, string> = {
+  unsafe: "Unsafe for what you told us",
+  unknown: "We don't know",
+  safe: "No conflict found",
+  unchecked: "Not checked",
+};
+
+const expectedCardText = (itemId: string, selected: Restriction[]): string => {
+  const f = verdictFor(MENU.items.find((i) => i.id === itemId)!, selected, MENU);
+  const kind = f.verdict === "safe" && f.covered.length === 0 ? "unchecked" : f.verdict;
+  return [
+    MARK_OF[kind]!,
+    HEADLINE_OF[kind]!,
+    cardReason(f, MENU),
+    // The scope the card may claim is the selection the guest made, and nothing
+    // is derived from `covered` to get it. This is the half that could not
+    // disagree before.
+    ...(selected.length > 0 ? [`Checked against: ${selected.map((r) => r.name).join(", ")}.`] : []),
+    "From the published ingredient list. Not a statement about the kitchen, and not medical advice.",
+  ].join("");
+};
 
 beforeEach(() => {
   document.documentElement.innerHTML = html;
@@ -455,7 +492,7 @@ describe("the verdict is displayed beside the dish, not through the chat", () =>
     expect(cardLines(nothing, MENU, RESTRICTIONS).join(" ")).not.toContain("No conflict found");
     // And the renderer never produces that Finding in the first place: an empty
     // selection clears every slot rather than painting 34 "not checked" cards.
-    expect(renderVerdicts(document, [], MENU, RESTRICTIONS)).toEqual([]);
+    expect(renderVerdicts(document, [], MENU)).toEqual([]);
     expect(document.querySelectorAll("[data-verdict-slot] [data-verdict]")).toHaveLength(0);
   });
 
@@ -1097,6 +1134,52 @@ describe("nothing reachable from the model can change what a card shows", () => 
     expect(claimedLabel("one two three four five six")).toBe("a phrase in that sentence");
   });
 
+  /**
+   * THE SCOPE LINE CLAIMS A SCOPE THAT WAS CHECKED, AND NOT ONE MORE.
+   *
+   * `renderVerdicts` held the guest's selection, computed the findings from it
+   * correctly, and then handed the **published** restriction list to the card, so
+   * `checkedAgainst` reverse-derived the scope by intersecting `Finding.covered`
+   * against every published restriction. `covered` is the union of the selected
+   * restrictions' `avoid` ids, so any published restriction sharing one id with a
+   * selected one was named as checked.
+   *
+   * Correct today only because `data/restrictions.json` happens to have pairwise
+   * disjoint `avoid` lists. Add a `peanut_free: ["peanut"]` beside the existing
+   * `nut_free: ["peanut", "tree_nut"]`, tick only Peanut-free, and the walnut
+   * brownie rendered a **green card over a walnut**:
+   *
+   *     ✓ No conflict found | No peanut in the published ingredients for this item.
+   *       Checked against: Nut-free, Peanut-free.
+   *
+   * claiming a scope nobody checked, in the dangerous direction — MORE coverage
+   * than was performed, on a food-safety card — while `boot.ts`'s status line
+   * above it named the real selection.
+   *
+   * The fix deleted the published list from the signature, so the next instance
+   * does not type-check. This test is what remains falsifiable afterwards: the
+   * scope line is the guest's selection, and a renderer that went back to deriving
+   * it from anything wider would name Nut-free here.
+   *
+   * BREAKS IF: the scope line is derived from anything but the selection handed in.
+   */
+  test("a card's scope line names the guest's selection, not a published restriction that overlaps it", () => {
+    const PEANUT_ONLY: Restriction = { id: "peanut_free", name: "Peanut-free", avoid: ["peanut"] };
+    const NUT_FREE = RESTRICTIONS.find((r) => r.id === "nut_free")!;
+    // The precondition the counterexample needs: the published list already has a
+    // restriction whose `avoid` overlaps this one. Asserted, so the test cannot go
+    // quiet if `nut_free` is ever narrowed.
+    expect(NUT_FREE.avoid).toContain("peanut");
+
+    renderVerdicts(document, [PEANUT_ONLY], MENU);
+    const text = slotReadable("walnut_brownie");
+    expect(text).toContain("Checked against: Peanut-free.");
+    expect(text).not.toContain(NUT_FREE.name);
+    // The whole card, against the oracle, so the scope line is not fixed in
+    // isolation while something else in it moves.
+    expect(text.replace(/\s+/g, " ").trim()).toBe(expectedCardText("walnut_brownie", [PEANUT_ONLY]).replace(/\s+/g, " ").trim());
+  });
+
   /** Changing the guest's own selection is the one thing that DOES repaint. */
   test("the guest's own selection is what repaints, and it repaints completely", async () => {
     const s = await session();
@@ -1384,7 +1467,7 @@ describe("check_safety is a registered site action, and the only source of a ver
     ["a prototype-polluting key", { ["__proto__"]: { x: 1 }, items: ["reuben"] }],
   ])("check_safety refuses %s", async (_label, args) => {
     const { registry, scope } = bareRegistry();
-    renderVerdicts(document, [DAIRY], MENU, RESTRICTIONS);
+    renderVerdicts(document, [DAIRY], MENU);
     const before = slotsText();
     await expect(registry.dispatch(scope, "check_safety", args, null, "t")).rejects.toThrow();
     expect(slotsText()).toEqual(before);
@@ -1397,7 +1480,7 @@ describe("check_safety is a registered site action, and the only source of a ver
    */
   test("check_safety answers the caller and touches no card", async () => {
     const { registry, scope } = bareRegistry();
-    renderVerdicts(document, [DAIRY], MENU, RESTRICTIONS);
+    renderVerdicts(document, [DAIRY], MENU);
     const before = slotsText();
     const got = await registry.dispatch(scope, "check_safety", { items: ["turkey_club"], restrictions: ["nut_free"] }, null, "t");
     expect(got.receipts![0]!.status).toBe("succeeded");

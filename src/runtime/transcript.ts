@@ -275,7 +275,7 @@ export class Transcript {
     cards.className = "refusal-verdicts";
     cards.setAttribute("data-refusal-verdicts", "");
     for (const id of items) {
-      const card = guestVerdictCard(this.doc, id, this.selected(), this.menu, this.restrictions);
+      const card = guestVerdictCard(this.doc, id, this.selected(), this.menu);
       if (!card) continue;
       const wrap = this.doc.createElement("div");
       wrap.className = "refusal-verdict";

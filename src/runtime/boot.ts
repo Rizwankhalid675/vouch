@@ -443,7 +443,7 @@ export async function boot(mount: HTMLElement, opts: BootOptions = {}): Promise<
 
   function check(): Finding[] {
     const chosen = selected();
-    findings = renderVerdicts(doc, chosen, menu, restrictions);
+    findings = renderVerdicts(doc, chosen, menu);
     if (chosen.length === 0) {
       verdictStatus.textContent =
         "Nothing is being checked yet. Tick what you avoid and a verdict appears beside every dish — no account, no key, no assistant.";

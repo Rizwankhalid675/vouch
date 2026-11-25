@@ -96,22 +96,30 @@ until then.
 
 ---
 
-## 2. The demo video — your voice, and the rules say so
+## 2. The demo video — the picture is cut, the voice is yours
 
-Under two minutes, public on YouTube, showing the site running in a browser, and the rules say it
-*"should include the Entrant explaining the Project"*. That means a voice-over by you. I cannot
-record one and should not fake one.
+**`docs/demo/vouch-demo.mp4` is built: 1920x1080, 92.5 seconds, silent.** Fourteen shots of the
+deployed site at `https://vouch-deli.netlify.app`, captured on 24 November 2026 by clicking the
+live site, with the captions set on-screen. Nothing in it is mocked up or re-rendered, and it was
+checked frame by frame after encoding rather than taken on trust — the first cut silently held one
+shot for twenty seconds and dropped the butter-chain shot entirely.
 
-**`docs/DEMO-SCRIPT.md` is written and ready to read aloud.** Nine shots, 1:55 with five seconds
-of margin, every line timed, and it says which shot to cut first if you run long. Every on-screen
-string it quotes has been read out of the live page rather than drafted, so you can check the
-recording shows what the script claims.
+**What is still yours: the voice.** The rules say the video *"should include the Entrant
+explaining the Project"*, so the narration has to be read by you. It cannot be synthesised and I
+will not fake one.
+
+`docs/demo/vouch-demo.srt` is the script — fourteen lines, each sized to the shot it sits over,
+generated from the same durations that cut the video. Read it over the silent file in any screen
+recorder or editor and export. If a line runs long, change that shot's duration in
+`tools/demo-video/build.py` and re-run `python3 tools/demo-video/build.py`; the subtitles move
+with it, so the script and the cut cannot drift apart.
 
 The central shot — a model saying something reassuring and wrong, the claim withheld, the
-contradicting verdict beside it — is confirmed rendering as a **single frame**. That shot is the
-whole video. If it is not legible, re-shoot it rather than narrating around it.
+contradicting verdict beside it — is shot 8, at 0:41, and it renders as a single legible frame.
+That shot is the whole video.
 
-Needs item 1 first: record the deployed site at a real width, not localhost in a narrow window.
+`docs/DEMO-SCRIPT.md` remains as the longer nine-shot script if you would rather record live
+screen capture yourself; `docs/demo/README.md` has the shot list and the rebuild instructions.
 
 ---
 

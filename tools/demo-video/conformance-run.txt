@@ -1,0 +1,157 @@
+agentic-web-conformance 0.1.0
+Open Agentic Web MVP Profile 0.3 (18 November 2026)
+
+network URL   https://vouch-deli.netlify.app/vouch
+site base     https://vouch-deli.netlify.app/
+network name  vouch
+
+14 checks made, 6 not checked.
+
+CHECKED — what this tool looked at
+
+  PASS         §3.3  Site manifest published and readable by a public GET
+                       Read from the site base derived from the network URL, and it lists 1
+                       network(s).
+                       - https://vouch-deli.netlify.app/agent-manifest.json: HTTP 200,
+                       application/json
+                       - publishes: vouch
+
+  PASS         §3.2  The requested network name matches a manifest entry exactly
+                       The manifest entry named `vouch` was selected.
+                       - vouch -> hocon: vouch.network.json
+
+  PASS         §3.3  Resolved network definition published and readable by a public GET
+                       Read from the location the manifest declares, with 4 agent(s).
+                       - https://vouch-deli.netlify.app/vouch.network.json: HTTP 200,
+                       application/json
+
+  PASS         §3.3  Peer-network link map published (links.json)
+                       Published and readable, with a `networks` binding map.
+                       - https://vouch-deli.netlify.app/links.json: HTTP 200, application/json
+
+  PASS         §2.1  Network identity: a stable name, a short description and a named front agent
+                       A name, a description and a named front agent are all published.
+                       - name: vouch
+                       - front agent: front_of_house
+
+  PASS         §2.1  Agent definitions: unique name, a description, instructions when it uses an LLM
+                       All 4 agent(s) carry a unique name, a description and instructions where an
+                       LLM is used.
+                       - agents: front_of_house, menu_guide, restriction_reader, order_builder
+
+  PASS         §6    A two-agent network is published (§6's first interoperability check)
+                       4 agents are published.
+                       - agents: front_of_house, menu_guide, restriction_reader, order_builder
+
+  PASS         §2.1  Invocation schemas are JSON-Schema compatible in the honoured form
+                       4 of 4 agent(s) declare `function.parameters`, and each declared schema uses
+                       the honoured `type: object` + `properties` form. An agent that declares none
+                       is not a failure: the reference synthesises a required `inquiry` string for
+                       it, so a caller's request still gets through.
+
+  PASS         §2.1  Private-context fields are named, not allowed in bulk
+                       No private-context field is allowed through at all, which is §2.1's
+                       deny-by-default and conformant. Whether the runtime honours it cannot be seen
+                       from here — see the private-context check below.
+
+  PASS         §2.2  Published definition is portable data: no includes, substitutions, env or publisher paths
+                       No include, substitution, environment reference or publisher-side path
+                       anywhere in the document.
+
+  PASS         §3.1  Every reference resolves: front agent, in-network agents, link-map bindings, URLs, MCP
+                       Front agent and all 4 tool reference(s) resolve.
+                       - front agent: front_of_house
+                       - tools[0] (`front_of_house`).tools[0]: menu_guide (internal)
+                       - tools[0] (`front_of_house`).tools[1]: restriction_reader (internal)
+                       - tools[0] (`front_of_house`).tools[2]: order_builder (internal)
+                       - tools[1] (`menu_guide`).tools[0]: marrow_point (symbolic)
+
+  PASS         §3.3  Served over HTTPS (loopback HTTP allowed for local development)
+                       The site base is HTTPS.
+                       - site base: https://vouch-deli.netlify.app/
+
+  PASS         §3.4  CORS header present on the real response for every public artifact
+                       Every reachable artifact answered a cross-origin GET (Origin:
+                       https://agentic-web-conformance.invalid) with a usable
+                       Access-Control-Allow-Origin.
+                       - https://vouch-deli.netlify.app/agent-manifest.json:
+                       Access-Control-Allow-Origin: *
+                       - https://vouch-deli.netlify.app/vouch.network.json:
+                       Access-Control-Allow-Origin: *
+                       - https://vouch-deli.netlify.app/links.json: Access-Control-Allow-Origin: *
+
+  PASS         §4    No credential in the published artifacts this run could read
+                       3 published artifact(s) carry no credential-shaped value. This is a pattern
+                       check, so it is evidence of nothing worse than the patterns it knows.
+
+NOT CHECKED — what this tool declined, and why
+
+  These are not passes and they are not failures. Each one needs something a command line does not
+  have. Nothing below has been verified by this run.
+
+  NOT CHECKED  §6    Run the network with the site's published default router, and the BYOK path too
+                       blocked by the checker and by the site: both reasons apply, and they are set out below
+                       This tool is a command line: it has no browser, no running agent loop and no
+                       model credential, so it cannot observe this. The manifest declares a default
+                       router, but nothing in it says that router works without a visitor-supplied
+                       key (no `requires_key: false`, no `publisher_funded: true`, no `mock: true`).
+                       §4's level is MAY — "A site MAY publish a default router and model that work
+                       without a visitor-supplied key" — so a key-required site is neither a pass
+                       nor a failure of this check, and this tool will not resolve that silence in
+                       either direction.
+                       - manifest declares llm_router: protocol, base_url, byok_router, mock,
+                       default, byok
+
+  NOT CHECKED  §6    Call an internal agent and a grounded capability through MCP or a site action
+                       blocked by the checker: a command line cannot observe this
+                       This tool is a command line: it has no browser, no running agent loop and no
+                       model credential, so it cannot observe this. What is declared can be read
+                       where the document was readable: 0 MCP descriptor(s) in the network and 4
+                       action(s) in the manifest. A declaration is not a call; whether either one
+                       answers, and whether the runtime validates its arguments, needs the page
+                       running.
+                       - MCP descriptors: 0 MCP descriptor(s)
+                       - declared site actions: 4 action(s)
+
+  NOT CHECKED  §6    After user approval, load an exact named network from a second origin and run it locally
+                       blocked by the checker: a command line cannot observe this
+                       This tool is a command line: it has no browser, no running agent loop and no
+                       model credential, so it cannot observe this. Consent is a browser interaction
+                       and local execution is a browser runtime; neither exists here. The link map
+                       and allow-list can be read where they were readable (1 allowed peer origin(s)
+                       declared), and this tool can be pointed at a peer's own network URL to check
+                       that peer's published artifacts — but running the peer in a caller's browser,
+                       after approval, is not something a shell observes.
+                       - allowed peer origins: 1 allowed peer origin(s) declared
+
+  NOT CHECKED  §6    With a user key active, the second site never receives it and cannot change the caller's router
+                       blocked by the checker: a command line cannot observe this
+                       This tool is a command line: it has no browser, no running agent loop and no
+                       model credential, so it cannot observe this. This is a claim about requests a
+                       running page makes with a live credential. It can only be shown by capturing
+                       those requests in a browser; a static read of published files cannot see
+                       where a key goes at runtime. The published-file half of §4 — that no
+                       credential is in the artifacts themselves — is checked above as
+                       `credential-handling`, and is a much weaker statement than this one.
+
+  NOT CHECKED  §6    Private context is absent at the peer unless a named field is explicitly allowed
+                       blocked by the checker: a command line cannot observe this
+                       This tool is a command line: it has no browser, no running agent loop and no
+                       model credential, so it cannot observe this. What the network declares is
+                       checked above as `private-context-rules`. Whether the runtime honours those
+                       declarations — that the field really is absent in the request that reaches
+                       the peer — is a property of a live invocation, and a declaration is not the
+                       behaviour.
+
+  NOT CHECKED  §6    An invalid network, a cycle, an over-budget request and a denied origin all stop with a visible error
+                       blocked by the checker: a command line cannot observe this
+                       This tool is a command line: it has no browser, no running agent loop and no
+                       model credential, so it cannot observe this. Each of the four needs a runtime
+                       to refuse something and a page to show the refusal. This tool can check that
+                       the artifacts of a *valid* network are valid; it cannot watch an invalid one
+                       being refused, and it will not read the presence of a broken fixture on a
+                       site as evidence that anything refuses it.
+
+Result: 0 failed, 14 passed, 6 NOT CHECKED — exit 0
+No check that this tool is able to make has failed. That is not the same as conformance:
+6 of the specification's checks were not made at all. See above for which.

@@ -9,6 +9,7 @@ rendering a model-supplied verdict does not compile.
 
 - **Live:** <https://vouch-deli.netlify.app>
 - **The peer site it composes with:** <https://marrow-point-bakery.netlify.app>
+- **Demo video:** <https://www.youtube.com/watch?v=7CxnNG95PgM>
 
 Built for the [Open Agentic Web Challenge](https://cognizant-agenticweb.devpost.com/) against the
 MVP profile pinned at [`docs/mvp-spec-2026-11-23.md`](docs/mvp-spec-2026-11-23.md).

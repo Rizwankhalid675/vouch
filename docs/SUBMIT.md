@@ -63,7 +63,18 @@ it is.
 
 ---
 
-## Step 2 — Upload to YouTube
+## Step 2 — Upload to YouTube — DONE, 25 November 2026
+
+**<https://www.youtube.com/watch?v=7CxnNG95PgM>** — the silent cut, Public, titled and described from `YOUTUBE.md`, marked
+not made for kids, chapters accepted (YouTube renders the chapter bar).
+
+Verified without a session rather than from the signed-in page: YouTube's oEmbed
+endpoint answers an unauthenticated request for it with the right title, and
+400s for a bogus id, so the check can tell the difference. The Studio listing
+also shows Visibility: Public.
+
+<details><summary>What was pasted, if it ever needs redoing</summary>
+
 
 Everything to paste is in [`docs/demo/YOUTUBE.md`](demo/YOUTUBE.md): the title,
 the description, and the chapter list inside it.
@@ -84,7 +95,7 @@ as what was saved:
 - the chapter bar appears on the scrubber (if not, YouTube rejected the list —
   usually a chapter under ten seconds)
 
-Copy the watch URL. Step 4 needs it.
+</details>
 
 ---
 
@@ -101,8 +112,19 @@ Copy the watch URL. Step 4 needs it.
 
 ## Step 4 — The Devpost form
 
-Open the hackathon and click **Enter a submission**:
-<https://cognizant-agenticweb.devpost.com/>
+### First, one click that is yours: **Join hackathon**
+
+<https://cognizant-agenticweb.devpost.com/> → **Join hackathon**.
+
+The submission form is gated behind it — *"You must register for this challenge
+before entering a submission"* — and I will not click it for you. Registering is
+not a formality: Rules §4 says *"Entry in the Hackathon constitutes consent for
+the Sponsor and Devpost to collect and maintain an entrant's personal
+information"*, and the Rules open with *"SUBMISSION OF ANY ENTRY CONSTITUTES
+AGREEMENT TO THESE OFFICIAL RULES AS A CONTRACT"*. That is you entering a
+contract and consenting to your data being held, so it is yours to click.
+
+Then **Enter a submission** and the fields below.
 
 I have not seen this form — it is behind a login, and signing in as you is not
 something I do — so these are the fields a Devpost hackathon form normally
@@ -156,7 +178,9 @@ source, which is also the home of the shared tool.
 
 ### Video demo link
 
-The watch URL from step 2.
+```text
+https://www.youtube.com/watch?v=7CxnNG95PgM
+```
 
 ### Image gallery
 
@@ -181,7 +205,7 @@ anyone's behalf.
 
 ## Before you press Submit
 
-- [ ] The video link opens in a private window — i.e. it really is Public
+- [x] The video link opens without a session — checked via oEmbed, 25 Nov 2026
 - [ ] <https://vouch-deli.netlify.app> loads in a private window
 - [ ] <https://marrow-point-bakery.netlify.app> loads in a private window
 - [ ] <https://github.com/Rizwankhalid675/vouch> loads while signed out

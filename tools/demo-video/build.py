@@ -356,6 +356,22 @@ def check_listing(doc: pathlib.Path, chapter_text: str) -> None:
         )
 
 
+def write_card(video: pathlib.Path, path: pathlib.Path) -> None:
+    """Crop the title card out of the finished video as a 3:2 gallery image.
+
+    Devpost shows a project card in a gallery of two thousand entries, and its
+    default is a stock placeholder. The title card is the one frame in this
+    video that is legible at thumbnail size, so it is cut from the encoded
+    file rather than drawn again -- the card on the gallery page is then the
+    same card the video opens with, by construction.
+    """
+    run([
+        "ffmpeg", "-y", "-loglevel", "error", "-ss", "3.5", "-i", str(video),
+        "-frames:v", "1", "-vf", "crop=1350:900:285:98,scale=1200:800",
+        "-q:v", "2", str(path),
+    ])
+
+
 def write_script(path: pathlib.Path, durations: list[float]) -> None:
     """The narration as something to read, rather than as subtitle data.
 
@@ -651,6 +667,8 @@ def main() -> int:
     write_chapters(chapters, durations)
     shots = out.with_name(out.stem + ".shots.md")
     write_shots(shots, durations)
+    card = out.with_name("vouch-card.jpg")
+    write_card(out, card)
     script = out.with_name(out.stem + ".read-aloud.txt")
     write_script(script, durations)
     prompter = here / "teleprompter.html"
@@ -662,6 +680,7 @@ def main() -> int:
     print(f"{srt}  narration for {len(NARRATION)} shots")
     print(f"{chapters}  {len(CHAPTERS)} YouTube chapters")
     print(f"{shots}  shot table")
+    print(f"{card}  gallery card, {card.stat().st_size // 1024} KB")
     print(f"{script}  the narration as a script to read")
     print(f"{prompter}  teleprompter")
     return 0

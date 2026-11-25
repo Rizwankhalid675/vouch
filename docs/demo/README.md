@@ -7,6 +7,7 @@
 | `vouch-demo.chapters.txt` | The YouTube chapter list, paste-ready. |
 | `vouch-demo.shots.md` | The shot table with timecodes. |
 | `vouch-demo.read-aloud.txt` | The narration as a script to read, without subtitle noise. |
+| `vouch-card.jpg` | The title card cut to 3:2, used as the Devpost gallery thumbnail. |
 | `../../tools/demo-video/teleprompter.html` | Plays the picture and shows the line due over each shot. |
 
 Every frame came from `https://vouch-deli.netlify.app` by clicking the live

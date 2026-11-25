@@ -131,8 +131,12 @@ functionality, the video link, and one or more screenshots.
 
 The text description is written and ready to paste: `docs/SUBMISSION-TEXT.md`.
 
+The YouTube title, description and chapter list are written too:
+`docs/demo/YOUTUBE.md`. Both are paste-only.
+
 Check the video upload is set to **Public**, not Unlisted — an unlisted video answers a link
-check and is still invisible to a judge who searches.
+check and is still invisible to a judge who searches. Check it on the video's own page rather
+than the upload confirmation, which shows what you selected rather than what was saved.
 
 ### The screenshots are done — `docs/screenshots/`
 

@@ -1,10 +1,14 @@
 # Submission text — draft
 
 The Devpost form asks for "a text description of features and functionality". This is that text,
-ready to paste. One placeholder remains, `[one-line command]`: it waits on whether the
-conformance CLI is published to npm or installed from the repo, which is a decision, not a
-measurement (`docs/OWNER-TODO.md` item 4). The two URLs are filled in — both origins are
-deployed — and they point at the Netlify sites, so they change if a custom domain is added.
+ready to paste, with no placeholders left. The conformance CLI is cited as a clone-and-run from
+the repository rather than an npm package: publishing a package is an outward-facing release
+that is yours to make, and the clone route needs no decision from anyone. It was checked rather
+than assumed — a fresh `--depth 1` clone of the public repository, with no `npm install`, ran the
+CLI against the live site and returned `0 failed, 14 passed, 6 NOT CHECKED — exit 0`.
+
+The three URLs are filled in. Two point at Netlify subdomains, so they change if a custom domain
+is ever added.
 
 Written to be read by a judge who has forty entries to get through and will decide in the first
 twenty seconds whether this one is interesting.
@@ -14,7 +18,8 @@ twenty seconds whether this one is interesting.
 ## Vouch — a deli whose assistant may never tell you the food is safe
 
 **Live site:** `https://vouch-deli.netlify.app` · **Second origin (the bakery):**
-`https://marrow-point-bakery.netlify.app`
+`https://marrow-point-bakery.netlify.app` · **Source (Apache-2.0):**
+`https://github.com/Rizwankhalid675/vouch`
 
 ### The one idea
 
@@ -66,7 +71,12 @@ reassurance. Rendering a model-supplied verdict does not compile.
 - **A conformance checker anyone can run**, against any agentic site, not just this one. It
   reports what it cannot check as **NOT CHECKED** with the reason, because "I did not look",
   "I looked and it is wrong" and "this cannot be checked from here" are three different
-  statements. Apache 2.0. `[one-line command]`
+  statements. Apache 2.0, no runtime dependencies, nothing to install:
+
+  ```
+  git clone https://github.com/Rizwankhalid675/vouch
+  node vouch/tools/conformance/cli.ts https://your-site.example/agents/your_network
+  ```
 
 ### Why the refusals are the point
 

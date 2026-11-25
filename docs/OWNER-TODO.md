@@ -129,7 +129,7 @@ Yours, because it includes eligibility declarations and I will not complete an a
 your behalf. The required fields are the public URL, a text description of features and
 functionality, the video link, and one or more screenshots.
 
-The text description is written and ready to paste: `docs/SUBMISSION-TEXT.md`.
+The text description is written and ready to paste, with no placeholders left: `docs/SUBMISSION-TEXT.md`. The conformance CLI is cited there as a clone-and-run rather than an npm package — publishing a package is an outward-facing release that is yours to make, and the clone route was verified from a fresh shallow clone with no `npm install`.
 
 The YouTube title, description and chapter list are written too:
 `docs/demo/YOUTUBE.md`. Both are paste-only.

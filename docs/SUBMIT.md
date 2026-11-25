@@ -1,5 +1,20 @@
 # Submitting — the whole thing, in order
 
+> **SUBMITTED, 25 November 2026.** <https://devpost.com/software/vouch-jgytlc>
+> reads *"Submitted to: Open Agentic Web Challenge"* and its button is now *Edit
+> hackathon submission* rather than *Continue your submission*. The page also
+> returns 200 with the right title and the video embed to a request carrying no
+> session, so it is reachable by a judge who is not signed in as the entrant.
+>
+> (The public project gallery was checked too and showed nothing — but it
+> renders client-side, and a fetch of it contains no project links *at all*.
+> That instrument cannot see any entry, so its silence is not evidence about
+> this one. The two checks above are the ones that carry weight.)
+>
+> The entry can still be edited until **11 January 2027, 08:00 PT / 16:00 UTC**.
+> The steps below are the record of how it was filled.
+
+
 Everything that could be built is built, committed and live. What is left is
 four steps, and three of them are paste-and-click. Allow forty minutes, most of
 it the recording.

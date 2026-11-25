@@ -1,5 +1,11 @@
 # The four things only you can do
 
+> **All four are done. The entry was submitted on 25 November 2026:**
+> <https://devpost.com/software/vouch-jgytlc>. Hosting, video, Devpost form and
+> public repository, in that order. What is below is the record of how each one
+> got there, including what was wrong about it on the way.
+
+
 > **If you only open one file, open [`SUBMIT.md`](SUBMIT.md).** It is the live, ordered,
 > paste-and-click list: record, upload, fill, submit. This file is the *record* of how these
 > four items got to where they are — what blocked each one, what was wrong about it along the

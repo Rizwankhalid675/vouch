@@ -35,60 +35,60 @@ SHOTS = [
         "Vouch",
         "A deli whose assistant may describe the food, rank it and talk about it —",
         "but may never tell you it is safe to eat.",
-    ], 6.0),
+    ]),
     ("shot", "f01.jpg", "NOTHING TICKED", [
         "Nothing is being checked yet, so no dish carries a verdict.",
         "The site does not pretend to have checked something you never asked about.",
-    ], 5.5),
+    ]),
     ("shot", "f02.jpg", "THE MENU", [
         "Thirty-four dishes, each with its published ingredient list.",
         "No account, no key, no assistant — this all works with JavaScript off.",
-    ], 5.0),
+    ]),
     ("shot", "f03.jpg", "TICK DAIRY-FREE", [
         "Checked 34 dishes: 15 unsafe, 3 we cannot tell, 16 with no conflict found.",
         "Where an ingredient list was never published, the answer is “We don’t know”.",
-    ], 6.5),
+    ]),
     ("shot", "f04.jpg", "TWO OF THE THREE VERDICTS", [
         "Reuben: unsafe, through Swiss cheese → Dairy.",
         "Pastrami: “No conflict found”. There is no verdict in this system called safe.",
-    ], 6.5),
+    ]),
     ("shot", "f05.jpg", "THE FIND THAT JUSTIFIES THE PROJECT", [
         "Turkey club: dairy, through Brioche bun → Brioche → Butter → Dairy.",
         "Butter three steps down a derivation chain, inside a bun, invisible in the line you read.",
-    ], 7.5),
+    ]),
     ("card", None, "NOW LET A MODEL ANSWER", [
         "The model proposes.",
         "A deterministic gate decides what reaches the guest.",
-    ], 4.5),
+    ]),
     ("shot", "f06.jpg", "A REPLAYED REPLY GIVING A FALSE ALL-CLEAR", [
         "Three claims withheld. One because the checker found a conflict;",
         "two it could not derive — and each says so: “That does not mean it is false.”",
-    ], 8.0),
+    ]),
     ("shot", "f07.jpg", "A REFUSAL, WATCHED RATHER THAN TAKEN ON TRUST", [
         "A deliberately broken network is published so the refusal can be demonstrated.",
         "The validator’s words are quoted exactly, kept apart from ours.",
-    ], 6.5),
+    ]),
     ("shot", "f08.jpg", "COMPOSING WITH ANOTHER SITE", [
         "Running a stranger’s agents asks first, names the origin, and says what it does:",
         "“This runs their code in this browser.” Nothing is fetched before you answer.",
-    ], 7.5),
+    ]),
     ("shot", "f09.jpg", "APPROVED", [
         "The bakery’s network loads from its own origin and its agents join the conversation.",
         "Nothing it says can change the verdict beside a dish.",
-    ], 6.0),
+    ]),
     ("shot", "f10.jpg", "WHAT THIS RAN", [
         "Sixteen events, written down: every router choice, every action, every receipt —",
         "the refusal and the consent among them. The evidence survives the answer.",
-    ], 7.5),
+    ]),
     ("term", None, "THE PART THAT IS USEFUL TO OTHER PEOPLE", [
         "A dependency-light CLI that checks any agentic site against the spec — and names",
         "the six checks it did not make, because “I did not look” and “this cannot be",
         "checked from here” are different statements.",
-    ], 9.0),
+    ]),
     ("card", None, "VOUCH", [
         "Model proposes. Gate decides. Evidence survives.",
         "vouch-deli.netlify.app · conformance CLI: 14 of 14 machine-checkable checks, exit 0",
-    ], 6.5),
+    ]),
 ]
 
 
@@ -204,31 +204,97 @@ def term_svg(label: str, lines: list[str]) -> str:
 # One line of narration per shot, in the same order and emitted as a subtitle
 # file timed from the durations above -- so a change to a shot's length moves
 # its line with it, and the script a person reads can never drift from the cut.
+# One line per shot, and the cut is derived from them: see shot_seconds().
 NARRATION = [
-    "This is Vouch. A deli site whose assistant may never tell you food is safe to eat.",
-    "Nothing is ticked, so nothing is checked. No dish carries a verdict it was not asked for.",
+    "Vouch is a deli site whose assistant may never tell you food is safe to eat.",
+    "Nothing is ticked, so nothing is checked. No dish carries a verdict nobody asked for.",
     "Thirty-four dishes, every ingredient published. All of this works with JavaScript off.",
-    "Tick dairy-free. Thirty-four dishes checked: fifteen unsafe, three we cannot tell, "
+    "Tick dairy-free. Thirty-four dishes: fifteen unsafe, three we can't tell, "
     "sixteen with no conflict found.",
-    "The Reuben is unsafe, through Swiss cheese. The Pastrami says no conflict found. "
+    "The Reuben: unsafe, through Swiss cheese. The Pastrami: no conflict found. "
     "Nothing here is ever called safe.",
-    "And the Turkey club: dairy, through brioche bun, brioche, butter. Three steps down a "
-    "chain, inside a bun, invisible in the line you would read.",
+    "The Turkey club: dairy, through brioche bun, brioche, butter. Three steps down, "
+    "inside a bun, invisible in the line you'd read.",
     "Now let a model answer. The model proposes; a deterministic gate decides.",
-    "Here is a replayed reply giving a false all-clear. Three claims withheld: one the checker "
-    "contradicted, two it could not derive. The gate suppresses true statements too.",
+    "A replayed reply giving a false all-clear. Three claims withheld: one the checker "
+    "contradicted, two it couldn't derive. The gate suppresses true statements too.",
     "A deliberately broken network, refused. The validator's words are quoted exactly, "
     "kept apart from ours.",
-    "Running another site's agents asks first. It names the origin and says plainly: "
+    "Running another site's agents asks first, names the origin, and says plainly: "
     "this runs their code in your browser.",
-    "Approved. The bakery's network loads from its own origin, and nothing it says "
+    "Approved. The bakery's network loads from its own origin. Nothing it says "
     "changes a verdict.",
     "Sixteen events, written down: every router choice, every action, every receipt. "
     "The refusal and the consent among them.",
     "The conformance CLI checks any agentic site against the spec. Fourteen of fourteen "
-    "here, and it names the six checks it did not make.",
+    "here, and it names the six it didn't make.",
     "Model proposes. Gate decides. Evidence survives. Apache-2.0, and live now.",
 ]
+
+# The entrant reads the narration over the picture, so every shot must be long
+# enough to say its line in. The first cut was timed for *reading* captions:
+# ten of the fourteen lines then needed between 160 and 200 words a minute to
+# fit, faster than anyone narrates, so the voice would have overrun the picture
+# on almost every shot. These numbers make the cut a consequence of the script
+# rather than a claim made beside it.
+WORDS_PER_MINUTE = 145   # an unhurried read; 160+ is a rush, 120 is a drawl
+AIR = 0.5                # a breath at each shot boundary
+MIN_SECONDS = 4.0        # below this a caption cannot be read at all
+MAX_TOTAL = 115.0        # the rules ask for under two minutes; this is the margin
+
+
+def shot_seconds() -> list[float]:
+    """How long each shot holds: as long as its narration line takes to say.
+
+    Raises rather than returning a cut the narration does not fit, because a
+    video whose voice runs past its picture is the failure this function
+    exists to prevent, and a comment saying so would not stop a build.
+    """
+    secs = [
+        round(max(MIN_SECONDS, len(line.split()) / WORDS_PER_MINUTE * 60 + AIR), 1)
+        for line in NARRATION
+    ]
+    total = sum(secs)
+    if total > MAX_TOTAL:
+        raise SystemExit(
+            f"narration needs {total:.1f}s at {WORDS_PER_MINUTE} wpm, over the "
+            f"{MAX_TOTAL:.0f}s budget: shorten the lines, do not raise the rate"
+        )
+    return secs
+
+
+# YouTube chapters, as (index of the first shot, title). Generated rather than
+# written down beside the video, because the timecodes are a consequence of the
+# durations: the hand-written list in YOUTUBE.md was already one cut out of date.
+# YouTube's own rules: the first chapter starts at 0:00, there are at least
+# three, and none is shorter than ten seconds.
+CHAPTERS = [
+    (0, "The claim, and a menu with nothing checked"),
+    (3, "Tick dairy-free: 34 dishes, three kinds of answer, butter three steps down"),
+    (6, "A false all-clear, and a refusal you can watch"),
+    (9, "Consent before a stranger's code runs"),
+    (11, "Evidence that survives, and a CLI for any agentic site"),
+]
+MIN_CHAPTER_SECONDS = 10.0
+
+
+def write_chapters(path: pathlib.Path, durations: list[float]) -> None:
+    """Write the paste-ready chapter list, and refuse to write an invalid one."""
+    if not CHAPTERS or CHAPTERS[0][0] != 0:
+        raise SystemExit("the first chapter must start at the first shot")
+    if len(CHAPTERS) < 3:
+        raise SystemExit("YouTube wants at least three chapters")
+    starts = [sum(durations[:i]) for i, _ in CHAPTERS]
+    bounds = starts[1:] + [sum(durations)]
+    lines = []
+    for (i, title), start, end in zip(CHAPTERS, starts, bounds):
+        if end - start < MIN_CHAPTER_SECONDS:
+            raise SystemExit(
+                f"chapter {title!r} runs {end - start:.1f}s, under YouTube's "
+                f"{MIN_CHAPTER_SECONDS:.0f}s minimum: merge it with a neighbour"
+            )
+        lines.append(f"{int(start) // 60}:{int(start) % 60:02d} {title}")
+    path.write_text("\n".join(lines) + "\n")
 
 
 def srt_time(seconds: float) -> str:
@@ -246,6 +312,41 @@ def write_srt(path: pathlib.Path, durations: list[float]) -> None:
         out.append(f"{i}\n{srt_time(at)} --> {srt_time(at + secs)}\n{line}\n")
         at += secs
     path.write_text("\n".join(out))
+
+
+def check_listing(doc: pathlib.Path, chapter_text: str) -> None:
+    """Fail the build if the pasteable listing disagrees with the real cut.
+
+    YOUTUBE.md has to carry the chapter lines inside its description block --
+    the point of that file is that it pastes in one go -- so the lines exist in
+    two places. The hand-written copy went stale the first time a shot was
+    re-timed, and the document itself carried a sentence warning that it would.
+    A warning is not a mechanism; this is.
+    """
+    if not doc.exists():
+        raise SystemExit(f"{doc} is missing: the submission listing is part of the build")
+    body = doc.read_text()
+    missing = [ln for ln in chapter_text.strip().splitlines() if ln not in body]
+    if missing:
+        raise SystemExit(
+            f"{doc} does not carry this cut's chapters. Missing:\n  "
+            + "\n  ".join(missing)
+            + "\nCopy them from the generated chapters file into its description block."
+        )
+
+
+def write_shots(path: pathlib.Path, durations: list[float]) -> None:
+    """Write the shot table, so no document has to restate the timecodes."""
+    rows = ["| # | Start | Held | Shot |", "|---|-------|------|------|"]
+    at = 0.0
+    for i, ((_, _, label, _), secs) in enumerate(zip(SHOTS, durations), start=1):
+        rows.append(f"| {i} | {int(at)//60}:{int(at)%60:02d} | {secs:.1f}s | {label} |")
+        at += secs
+    path.write_text(
+        "<!-- Generated by tools/demo-video/build.py. Do not edit by hand. -->\n\n"
+        + "\n".join(rows)
+        + f"\n\nFourteen shots, {at:.1f}s in all.\n"
+    )
 
 
 def run(cmd: list[str]) -> None:
@@ -270,8 +371,11 @@ def main() -> int:
     (work / "cards").mkdir(parents=True, exist_ok=True)
     (work / "shots").mkdir(parents=True, exist_ok=True)
 
+    durations = shot_seconds()
+    assert len(durations) == len(SHOTS) == len(NARRATION), "one line and one duration per shot"
+
     segments: list[tuple[pathlib.Path, float]] = []
-    for i, (kind, src, label, lines, secs) in enumerate(SHOTS):
+    for i, ((kind, src, label, lines), secs) in enumerate(zip(SHOTS, durations)):
         svg = work / "cards" / f"{i:02d}.svg"
         png = work / "cards" / f"{i:02d}.png"
         maker = {"card": card_svg, "term": term_svg}.get(kind, plate_svg)
@@ -321,11 +425,18 @@ def main() -> int:
         "-i", str(listing), "-c", "copy", "-movflags", "+faststart", str(out),
     ])
     srt = out.with_suffix(".srt")
-    write_srt(srt, [secs for _, _, _, _, secs in SHOTS])
+    write_srt(srt, durations)
+    chapters = out.with_name(out.stem + ".chapters.txt")
+    write_chapters(chapters, durations)
+    shots = out.with_name(out.stem + ".shots.md")
+    write_shots(shots, durations)
+    check_listing(out.parent / "YOUTUBE.md", chapters.read_text())
 
     total = sum(s for _, s in segments)
     print(f"{out}  {out.stat().st_size/1_000_000:.1f} MB  {total:.1f}s  {len(segments)} shots")
     print(f"{srt}  narration for {len(NARRATION)} shots")
+    print(f"{chapters}  {len(CHAPTERS)} YouTube chapters")
+    print(f"{shots}  shot table")
     return 0
 
 

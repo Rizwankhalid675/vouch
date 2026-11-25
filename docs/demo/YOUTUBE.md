@@ -1,8 +1,10 @@
 # YouTube listing — ready to paste
 
-Upload `vouch-demo.mp4` with your narration recorded over it. Set visibility to
-**Public**, not Unlisted: an unlisted video satisfies a link check and is still
-invisible to a judge who searches.
+Upload `vouch-demo-narrated.mp4` — the file `tools/demo-video/add-voice.sh`
+writes once you have recorded the narration — or `vouch-demo.mp4` if you are
+submitting it silent. Either way set visibility to **Public**, not Unlisted: an
+unlisted video satisfies a link check and is still invisible to a judge who
+searches.
 
 ---
 
@@ -56,19 +58,23 @@ Source (Apache-2.0): https://github.com/Rizwankhalid675/vouch
 
 Chapters
 0:00 The claim, and a menu with nothing checked
-0:16 Tick dairy-free: 34 dishes, three kinds of answer
-0:29 Butter, three steps down a chain
-0:41 A false all-clear, and a refusal you can watch
-0:56 Consent before a stranger's code runs
-1:09 Evidence that survives, and a CLI for any agentic site
+0:19 Tick dairy-free: 34 dishes, three kinds of answer, butter three steps down
+0:42 A false all-clear, and a refusal you can watch
+1:05 Consent before a stranger's code runs
+1:20 Evidence that survives, and a CLI for any agentic site
 ```
 
 The chapter list is formatted the way YouTube requires: the first starts at
 `0:00`, there are at least three, and none is shorter than ten seconds. Paste
 it inside the description and YouTube will render the chapter bar on the
-scrubber by itself. If you re-time any shot in `tools/demo-video/build.py`, the
-`.srt` regenerates but **this list does not** — re-check it against the shot
-table in `README.md`.
+scrubber by itself.
+
+That list used to be written here by hand, and the sentence that stood in
+this spot admitted they would go stale if any shot were re-timed — which is
+exactly what happened the first time a shot was re-timed. They are now copied
+from `vouch-demo.chapters.txt`, which the build generates from the durations,
+and `build.py` **fails** if this file and that one disagree. Nothing here has to
+be remembered.
 
 ---
 

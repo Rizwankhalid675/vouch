@@ -1,28 +1,54 @@
 # The demo video
 
-`vouch-demo.mp4` — 1920×1080, 92.5 s, silent. Fourteen shots of the **deployed**
-site at `https://vouch-deli.netlify.app`, captured on 24 November 2026 by
-clicking the live site in the order the captions describe. Nothing in it is
-mocked up, re-rendered or staged.
+| File | What it is |
+|---|---|
+| `vouch-demo.mp4` | 1920×1080, 102.5s, **silent**. Fourteen shots of the deployed site. |
+| `vouch-demo.srt` | The narration — one line per shot, timed to the cut. |
+| `vouch-demo.chapters.txt` | The YouTube chapter list, paste-ready. |
+| `vouch-demo.shots.md` | The shot table with timecodes. |
 
-`vouch-demo.srt` — the narration, one line per shot, timed to the cut.
+Every frame came from `https://vouch-deli.netlify.app` by clicking the live
+site in the order the captions describe, captured on 24 November 2026. Nothing
+in it is mocked up, re-rendered or staged. The last three files are **generated
+by the build**, so no document restates a timecode that could go stale.
 
-## What is still yours to do
+## Adding your voice
 
-**The voice.** The rules require the Entrant to explain the project, so the
-narration has to be read by you, not synthesised. The `.srt` is the script:
-fourteen lines, each sized to the shot it sits over. Read it over the silent
-video in any screen recorder or editor and export.
+```bash
+tools/demo-video/add-voice.sh ~/Desktop/narration.m4a
+```
 
-If a line runs long, don't fight it — change that shot's duration in
-`tools/demo-video/build.py` (the last number in its `SHOTS` row) and re-run the
-build. The subtitle timings are generated from the same numbers, so the script
-and the cut cannot drift apart.
+Record `vouch-demo.srt` — read aloud, in order, one line per shot — into any
+audio file, then run that. It writes `vouch-demo-narrated.mp4` and leaves the
+silent cut alone, so a bad take costs nothing: record again and re-run.
+
+**The cut is paced for speaking, not for reading.** Every shot is held as long
+as its line takes to say at about 145 words a minute, which is an unhurried
+read. The first version of this video was timed for *reading* the captions: ten
+of the fourteen lines then needed between 160 and 200 words a minute to fit,
+faster than anyone narrates, and the voice would have overrun the picture on
+almost every shot. `shot_seconds()` in `build.py` now derives each duration
+from its line's word count and refuses to build a cut the narration does not
+fit — the subtitles and the chapters come from the same numbers, so the three
+cannot drift apart.
+
+If your read runs a little long, `add-voice.sh` holds the closing card to cover
+it rather than cutting a sentence off. If it runs more than 120 seconds in
+total it refuses to write the file and says so, because the rules ask for under
+two minutes.
+
+**The voice has to be yours, and it has to be real.** The hackathon's front
+page says the video *"must include the Entrant explaining the Project (not AI
+generated)"*; the Official Rules say *"should"*. `docs/EVENT.md` records both
+and which governs. Either way the narration is not synthesised and not mine to
+record — it is a hundred seconds of reading, in your own voice, and it is the
+last thing this entry is waiting on.
 
 ## Rebuilding
 
 ```bash
 python3 tools/demo-video/build.py
+python3 tools/demo-video/verify.py
 ```
 
 Needs `rsvg-convert` (librsvg) and `ffmpeg` with `libx264`. This ffmpeg has no
@@ -30,27 +56,22 @@ Needs `rsvg-convert` (librsvg) and `ffmpeg` with `libx264`. This ffmpeg has no
 composited, which is also why the type is the site's own serif rather than a
 terminal font.
 
+**Run `verify.py` every time.** The first cut of this video was wrong in a way
+the encoder reported as success: fed the stills directly, the concat demuxer
+held one shot for twenty seconds and dropped three others, the butter-chain
+frame among them. Exit code 0 and the right total duration both looked fine.
+`verify.py` samples the midpoint of every shot, compares it to the still that
+shot was built from, and insists each sample is measurably closer to its own
+source than to any other shot's — so if the comparison could not tell the shots
+apart, it fails rather than passing everywhere.
+
 The frames live in `tools/demo-video/frames/`. To re-shoot a beat, replace its
 file and rebuild; nothing else in the pipeline reads the site.
 
 ## The shots
 
-| # | Start | Shot |
-|---|-------|------|
-| 1 | 0:00 | Title |
-| 2 | 0:06 | Nothing ticked — no dish carries a verdict |
-| 3 | 0:11 | The menu, every ingredient published |
-| 4 | 0:16 | Dairy-free ticked: 15 unsafe, 3 we cannot tell, 16 no conflict |
-| 5 | 0:23 | Reuben unsafe; Pastrami "no conflict found" — never *safe* |
-| 6 | 0:29 | Turkey club: Brioche bun → Brioche → Butter → Dairy |
-| 7 | 0:37 | Card: the model proposes, a gate decides |
-| 8 | 0:41 | A replayed false all-clear — three claims withheld |
-| 9 | 0:49 | `/broken/invalid` refused, in the validator's own words |
-| 10 | 0:56 | The consent card before any peer code runs |
-| 11 | 1:03 | Approved — the bakery's network loads from its own origin |
-| 12 | 1:09 | "What this ran": sixteen events, refusal and consent among them |
-| 13 | 1:17 | The conformance CLI: 14/14, and the six it did not make |
-| 14 | 1:26 | Closing |
+See [`vouch-demo.shots.md`](vouch-demo.shots.md) — generated, so it is never a
+cut behind.
 
 Shot 13 is a terminal card rather than a browser frame, built from the real
 output of a run against the live site on 24 November 2026; the full transcript

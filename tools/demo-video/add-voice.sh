@@ -26,7 +26,19 @@ if [[ -z $VOICE ]]; then
   echo "  the script to read is $ROOT/docs/demo/vouch-demo.srt" >&2
   exit 64
 fi
-[[ -f $VOICE ]] || { echo "no such file: $VOICE" >&2; exit 66; }
+if [[ ! -f $VOICE ]]; then
+  cat >&2 <<EOF
+no such file: $VOICE
+
+That path was an example, not a file that exists. Record first:
+  1. open $ROOT/docs/demo/vouch-demo.srt -- fourteen lines, one per shot
+  2. read it aloud into Voice Memos, QuickTime or your phone, in order
+  3. save or export the audio anywhere, then pass that file to this script
+
+Any format ffmpeg reads will do: m4a, mp3, wav, aac, caf.
+EOF
+  exit 66
+fi
 [[ -f $SILENT ]] || { echo "build the picture first: python3 tools/demo-video/build.py" >&2; exit 69; }
 command -v ffmpeg >/dev/null || { echo "ffmpeg not found" >&2; exit 69; }
 

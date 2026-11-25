@@ -215,9 +215,14 @@ A judge cannot score a tool they cannot find.
 
 For completeness, so this list does not read as though the entry is stalled: the site, the
 deterministic checker, the gate, five published refusals, cross-origin peer composition behind
-consent, key isolation, the conformance checker, the limits document and the decision record are
-either done or in progress and need nothing from you. One qualification, because it is the one
-piece of built work that is *switched off* in what we publish rather than merely unmeasured:
-cross-origin peer composition is written and tested, and the three fields that point it at a
-peer are empty until item 1 above. The only tasks that touch these four items
-are the deploy-and-measure pass and the submission itself.
+consent, key isolation, the conformance checker, the limits document, the decision record, the
+screenshots, the public repository and the silent demo video are done and need nothing from you.
+
+The qualification that used to sit here -- that cross-origin peer composition was built but
+*switched off*, its three fields empty for want of a second origin -- no longer applies. Both
+sites are deployed, the allow-list points at an origin we hold, and the composition runs
+cross-origin against it; shots 10 and 11 of the demo video are that path executing.
+
+What is left is exactly the three items above, and each is yours because of who must do it
+rather than because the work is unfinished: a voice the rules require to be the Entrant's, an
+upload to your YouTube account, and a form carrying eligibility attestations.

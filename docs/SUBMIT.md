@@ -9,7 +9,18 @@ step 4 can be opened and left half-finished.
 
 ---
 
-## Step 1 — Record the narration (the only step that is work)
+## Step 1 — The video
+
+**You can upload `docs/demo/vouch-demo.mp4` as it is.** It is silent, and every
+word of the explanation is already on screen — all fourteen shots are captioned,
+including the one that matters most, which now reads *"Three claims withheld:
+one the checker contradicted, two it could not derive — each saying 'That does
+not mean it is false.' It suppresses true statements too."* The Official Rules
+make the narration a `should`, so a captioned silent cut is a valid submission.
+Skip to step 2 if that is what you want.
+
+**It will score better with your voice on it**, and that costs about a hundred
+seconds. If you want to:
 
 **Open `tools/demo-video/teleprompter.html`** (double-click it). It plays the
 silent picture and shows you the line to say over each shot, in big type, with

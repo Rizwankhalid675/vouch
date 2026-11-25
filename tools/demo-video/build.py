@@ -63,8 +63,8 @@ SHOTS = [
         "A deterministic gate decides what reaches the guest.",
     ]),
     ("shot", "f06.jpg", "A REPLAYED REPLY GIVING A FALSE ALL-CLEAR", [
-        "Three claims withheld. One because the checker found a conflict;",
-        "two it could not derive — and each says so: “That does not mean it is false.”",
+        "Three claims withheld: one the checker contradicted, two it could not derive —",
+        "each saying “That does not mean it is false.” It suppresses true statements too.",
     ]),
     ("shot", "f07.jpg", "A REFUSAL, WATCHED RATHER THAN TAKEN ON TRUST", [
         "A deliberately broken network is published so the refusal can be demonstrated.",
@@ -125,7 +125,26 @@ def card_svg(label: str, lines: list[str]) -> str:
 
 
 def plate_svg(label: str, lines: list[str]) -> str:
-    """The dark plate a screenshot is laid onto, with its caption already set."""
+    """The dark plate a screenshot is laid onto, with its caption already set.
+
+    The caption band is fixed: the rule and label sit above it and the frame
+    ends below it, so there is room for two lines and no more. A third renders
+    at y=1100 in a 1080-tall frame -- off the bottom, silently, with the build
+    still reporting success. I added one and only noticed by doing the
+    arithmetic afterwards, so the arithmetic is here now instead.
+    """
+    floor = H - 24
+    if lines and CAP_Y + (len(lines) - 1) * CAP_LEAD > floor:
+        raise SystemExit(
+            f"caption for {label!r} has {len(lines)} lines; the last would sit at "
+            f"y={CAP_Y + (len(lines) - 1) * CAP_LEAD}, past the frame at y={floor}. "
+            f"Say it in fewer lines."
+        )
+    # Georgia at 33px averages about half an em per character. An estimate, like
+    # headline_size()'s, and like it an estimate that errs small.
+    for l in lines:
+        if len(l) * 0.5 * 33 > W - 2 * SHOT_X:
+            raise SystemExit(f"caption line runs past the frame edge: {l!r}")
     body = "".join(
         f'<text x="{SHOT_X}" y="{CAP_Y + i*CAP_LEAD}" font-family="{SERIF}" '
         f'font-size="33" fill="{CREAM}">{escape(l)}</text>'

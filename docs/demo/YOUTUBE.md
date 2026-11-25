@@ -1,10 +1,14 @@
 # YouTube listing — ready to paste
 
-Upload `vouch-demo-narrated.mp4` — the file `tools/demo-video/add-voice.sh`
-writes once you have recorded the narration — or `vouch-demo.mp4` if you are
-submitting it silent. Either way set visibility to **Public**, not Unlisted: an
-unlisted video satisfies a link check and is still invisible to a judge who
-searches.
+Upload `vouch-demo.mp4` (silent, fully captioned — a valid submission) or
+`vouch-demo-narrated.mp4` (the file `tools/demo-video/add-voice.sh` writes once
+you have recorded a voice-over, and the stronger of the two). Either way set
+visibility to **Public**, not Unlisted: an unlisted video satisfies a link check
+and is still invisible to a judge who searches.
+
+The description below has a first line to keep or delete depending on which you
+upload. A judge who opens a silent video with no explanation assumes the audio
+is broken; one who is told it is captioned reads the captions.
 
 ---
 
@@ -22,6 +26,9 @@ search results or on the Devpost embed.
 ## Description
 
 ```text
+[If you upload the silent cut, keep this first line. If you recorded a voice-over, delete it.]
+This video has no narration — every word of the explanation is captioned on screen.
+
 Vouch is a deli website whose assistant may describe the food, rank it, summarise it and
 talk about it — but may never assert that something is safe to eat. A deterministic checker
 owns every safety verdict. The model proposes, a gate decides, and the evidence survives.

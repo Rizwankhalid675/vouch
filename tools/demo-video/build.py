@@ -379,6 +379,7 @@ def write_teleprompter(path: pathlib.Path, durations: list[float], video: str) -
         cues.append({"t": round(at, 2), "d": secs, "text": line})
         at += secs
     data = json.dumps(cues, ensure_ascii=False)
+    total = sum(durations)
     path.write_text(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -430,6 +431,7 @@ def write_teleprompter(path: pathlib.Path, durations: list[float], video: str) -
   </div>
   <div>
     <video id="v" src="{video}" muted playsinline preload="auto"></video>
+    <p class="note" id="warn" hidden></p>
     <p class="note">
       The video is silent on purpose &mdash; this page shows you what to say over
       it. Start your recorder first (Voice Memos, QuickTime), then press
@@ -442,14 +444,33 @@ def write_teleprompter(path: pathlib.Path, durations: list[float], video: str) -
 </main>
 <div id="lead"></div>
 <script>
-const CUES = {data};
+const CUES = {data}, TOTAL = {total:.1f};
 const v = document.getElementById('v'), line = document.getElementById('line'),
       next = document.getElementById('next'), n = document.getElementById('n'),
       clock = document.getElementById('clock'), fill = document.getElementById('fill'),
-      lead = document.getElementById('lead');
-let shown = -1;
+      lead = document.getElementById('lead'), warn = document.getElementById('warn');
+
+// The video is the clock while it works, because then the words cannot drift
+// from the frames. But the page's job is to show the right line at the right
+// second, and a video that will not load must not take that down with it --
+// browsers differ about what a page opened from the filesystem may play, and
+// a teleprompter that silently sits on line one is worse than one with no
+// picture. So: fall back to a plain timer, and say so on screen.
+let shown = -1, mode = 'video', acc = 0, startedAt = 0, running = false, done = false;
+
+function now() {{
+  if (mode === 'video') return v.currentTime;
+  return acc + (running ? (performance.now() - startedAt) / 1000 : 0);
+}}
+function finish() {{
+  done = true; running = false;
+  line.textContent = 'Done. Stop your recorder.';
+  next.textContent = 'tools/demo-video/add-voice.sh <your-file>';
+}}
 function paint() {{
-  const t = v.currentTime;
+  if (done) return;
+  const t = now();
+  if (mode === 'timer' && running && t >= TOTAL) return finish();
   let i = CUES.length - 1;
   while (i > 0 && CUES[i].t > t) i--;
   if (i !== shown) {{
@@ -459,17 +480,22 @@ function paint() {{
     n.textContent = i + 1;
   }}
   clock.textContent = t.toFixed(1);
-  fill.style.width = (100 * (t - CUES[i].t) / CUES[i].d).toFixed(1) + '%';
+  fill.style.width = Math.min(100, 100 * (t - CUES[i].t) / CUES[i].d).toFixed(1) + '%';
 }}
 setInterval(paint, 100);          // not rAF: that stops with the video, and a
 v.addEventListener('seeked', paint);  // seek then leaves the page showing a
 v.addEventListener('timeupdate', paint);  // line that is no longer due
-async function start() {{
-  if (v.paused) {{ if (v.currentTime === 0) await countIn(); await v.play(); }}
-  else v.pause();
-  paint();
+
+function useTimer(why) {{
+  if (mode === 'timer') return;
+  mode = 'timer'; acc = 0; running = false; v.hidden = true;
+  warn.hidden = false;
+  warn.textContent = 'The picture did not load (' + why + '), so this is running '
+    + 'on a plain timer instead. The lines keep exactly the schedule the video '
+    + 'has, so the recording will still line up.';
 }}
-function restart() {{ v.pause(); v.currentTime = 0; shown = -1; paint(); }}
+v.addEventListener('error', () => useTimer('media error'));
+
 async function countIn() {{
   for (const k of [3, 2, 1]) {{
     lead.textContent = k; lead.style.display = 'grid';
@@ -477,17 +503,36 @@ async function countIn() {{
   }}
   lead.style.display = 'none';
 }}
+async function start() {{
+  if (done) return;
+  if (mode === 'video') {{
+    if (!v.paused) {{ v.pause(); return paint(); }}
+    if (v.currentTime === 0) await countIn();
+    try {{ await v.play(); }} catch (e) {{ useTimer(e.name || 'playback refused'); }}
+    if (mode === 'video' && v.readyState < 2) useTimer('nothing to play');
+    if (mode === 'timer') {{ startedAt = performance.now(); running = true; }}
+  }} else if (running) {{
+    acc = now(); running = false;
+  }} else {{
+    if (acc === 0) await countIn();
+    startedAt = performance.now(); running = true;
+  }}
+  paint();
+}}
+function restart() {{
+  done = false; shown = -1;
+  v.pause(); try {{ v.currentTime = 0; }} catch (e) {{}}
+  acc = 0; running = false;
+  paint();
+}}
 addEventListener('keydown', e => {{
   if (e.key === ' ') {{ e.preventDefault(); start(); }}
   if (e.key === 'r') restart();
 }});
 document.getElementById('go').addEventListener('click', start);
 document.getElementById('again').addEventListener('click', restart);
+v.addEventListener('ended', finish);
 paint();
-v.addEventListener('ended', () => {{
-  line.textContent = 'Done. Stop your recorder.';
-  next.textContent = 'tools/demo-video/add-voice.sh <your-file>';
-}});
 </script></body></html>
 """)
 

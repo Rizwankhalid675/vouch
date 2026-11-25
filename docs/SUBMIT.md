@@ -110,7 +110,30 @@ as what was saved:
 
 ---
 
-## Step 4 — The Devpost form
+## Step 4 — The Devpost form — FILLED, 25 November 2026
+
+**<https://devpost.com/software/vouch-jgytlc>** — 4 of 5 steps done, status
+*INCOMPLETE SUBMISSION*. Everything below is entered and saved; what is left is
+the fifth step, and it is one checkbox and one button:
+
+> **Terms & conditions** — *"I, and all of my team members, have read and agree
+> to be bound by the Official Rules and the Devpost Terms of Service."*
+> → then **Submit project**
+
+That is a declaration that **you** have read and agree to be bound, so it is not
+mine to tick, exactly like the Join hackathon click before it. Open
+<https://devpost.com/submit-to/32026-open-agentic-web-challenge/manage/submissions/1320592-vouch/finalization>,
+tick it, press Submit. You can still edit the project after submitting, up to
+the deadline.
+
+Verified by reading the saved project page back rather than trusting the editor:
+the story renders in full with its headings, bullets and code block; nine Built
+With tags; three Try it out links; the video embedded as the first gallery item
+with the right title; four captioned screenshots after it.
+
+<details><summary>What was entered, if it ever needs redoing</summary>
+
+
 
 ### First, one click that is yours: **Join hackathon**
 
@@ -200,6 +223,8 @@ property, not an oversight. Nothing is scored on these fields.
 
 Yours. They are attestations about who you are, and I do not complete those on
 anyone's behalf.
+
+</details>
 
 ---
 

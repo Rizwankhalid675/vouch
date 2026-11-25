@@ -100,6 +100,14 @@ itself if its own record were tidied. `docs/DECISIONS.md` keeps the mistakes too
 consent card that once said "This reads only." about running a stranger's code, and the test that
 passed while it did.
 
+### Newly created inside the submission period
+
+The rules ask entrants to say how a project was significantly updated during the submission
+period. This one was not updated during it — it was **built** during it, from nothing. The
+submission period opened on 11 November 2026; the repository's first commit is dated
+**23 November 2026**, and every one of its 130 commits falls inside the period. `git log` is
+the whole account: the spec on the first day, then the plan, then the tasks in order.
+
 ### Built on
 
 The specification's own vocabulary throughout, with the Neuro SAN agent-network schema and the

@@ -75,10 +75,44 @@ link them in their Submission."* That is a scored line item most people will ski
   - optionally, an interface to configure LLMs and keys
   - the network should interact with the website, and/or other agentic websites, and/or be callable by them
 - A text description of features and functionality
-- **A demo video under two (2) minutes**, public on **YouTube**, showing it running
-  in a browser — and *"should include the Entrant explaining the Project"*. That
-  line means a voice-over by the entrant, not a silent screen capture.
+- **A demo video**, public on **YouTube**, showing the project running in a
+  browser. Under two (2) minutes — *"Judges are not required to watch beyond two
+  minutes"*.
+
+  **The two pages disagree about the narration, and the stricter one is the one
+  to obey.** The hackathon's front page, under WHAT TO SUBMIT:
+
+  > must include the Entrant explaining the Project (not AI generated)
+
+  The Official Rules, §4 Submission Requirements, same list:
+
+  > should include the Entrant explaining the Project
+
+  Rules §11 settles which governs: *"If there is any discrepancy or
+  inconsistency between the terms and conditions of the Official Rules and
+  disclosures or other statements contained in any Hackathon materials,
+  including but not limited to the Hackathon Submission form, Hackathon
+  Website, or advertising, the terms and conditions of the Official Rules shall
+  prevail."* So on the contract, the narration is a **should**.
+
+  That is not a reason to skip it. The front page is what the judges read, it
+  says **must**, and it adds a condition the Rules do not: **not AI generated**.
+  Record it in your own voice. A synthesised voice is the one option both pages
+  rule out, and the cheapest way to lose an entry is to argue a precedence
+  clause at a judge.
+
+  Checked against both pages on 25 November 2026. An earlier version of this
+  file asserted the voice-over was required, and a later one asserted it was
+  optional; each had read exactly one of the two pages.
 - One or more screenshots
+- **If the project uses Mozilla Otari** (the front page only): the email on the
+  Otari account, and a sentence or two on a problem hit while using it. **This
+  one does not apply to us.** The site's router is whatever
+  `llm_router.byok_router` in the published manifest names — `api.openai.com` —
+  and a visitor asking for a different router is *refused* rather than quietly
+  redirected, which is a security property of the design, not an oversight. So
+  pointing the site at Otari would mean republishing the manifest. Leave both
+  Otari fields empty; nothing is scored on them.
 
 ## 6. The specification, in the form that matters
 

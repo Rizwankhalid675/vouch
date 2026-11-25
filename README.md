@@ -72,7 +72,7 @@ Node 22.18+.
 
 ```bash
 npm install
-npm test          # 520 tests
+npm test          # 521 tests
 npm run build     # the deli  -> dist/
 npm run build:peer # the bakery -> peer-dist/
 ```

@@ -1,12 +1,16 @@
 # The four things only you can do
 
-Everything else in this entry is buildable without you, and most of it is built. These four are
-not, and three of them are hard gates: without them there is no valid submission, however good
-the code is.
+> **If you only open one file, open [`SUBMIT.md`](SUBMIT.md).** It is the live, ordered,
+> paste-and-click list: record, upload, fill, submit. This file is the *record* of how these
+> four items got to where they are — what blocked each one, what was wrong about it along the
+> way, and what is still open. Three of the four are now done.
 
-**48 days left** as of 24 November 2026. The deadline is **11 January 2027, 08:00 PT**. None of
-these is urgent today. All four are cheap if done with a month to spare and expensive in the
-last week, and the first one blocks measurements the rest of the work depends on.
+Everything else in this entry is buildable without you, and most of it is built. These four were
+not.
+
+**47 days left** as of 25 November 2026. The deadline is **11 January 2027, 08:00 PT /
+16:00 UTC**. None of this is urgent today. All of it is cheap with a month to spare and
+expensive in the last week.
 
 ---
 
@@ -98,41 +102,78 @@ until then.
 
 ## 2. The demo video — the picture is cut, the voice is yours
 
-**`docs/demo/vouch-demo.mp4` is built: 1920x1080, 92.5 seconds, silent.** Fourteen shots of the
+**`docs/demo/vouch-demo.mp4` is built: 1920x1080, 102.5 seconds, silent.** Fourteen shots of the
 deployed site at `https://vouch-deli.netlify.app`, captured on 24 November 2026 by clicking the
 live site, with the captions set on-screen. Nothing in it is mocked up or re-rendered, and it was
 checked frame by frame after encoding rather than taken on trust — the first cut silently held one
 shot for twenty seconds and dropped the butter-chain shot entirely.
 
-**What is still yours: the voice.** The rules say the video *"should include the Entrant
-explaining the Project"*, so the narration has to be read by you. It cannot be synthesised and I
-will not fake one.
+**What is still yours: the voice.** And it is a stricter requirement than this file said for
+two days. The hackathon's front page: the video *"must include the Entrant explaining the
+Project (not AI generated)"*. The Official Rules, in the same list: *"should include the Entrant
+explaining the Project"*. `docs/EVENT.md` now records both verbatim and which governs. Either
+way it is read by you, it is not synthesised, and I will not fake one.
 
-`docs/demo/vouch-demo.srt` is the script — fourteen lines, each sized to the shot it sits over,
-generated from the same durations that cut the video. Read it over the silent file in any screen
-recorder or editor and export. If a line runs long, change that shot's duration in
-`tools/demo-video/build.py` and re-run `python3 tools/demo-video/build.py`; the subtitles move
-with it, so the script and the cut cannot drift apart.
+`docs/demo/vouch-demo.srt` is the script — fourteen lines, one per shot. Record it into any
+audio file and run **one command**:
+
+```bash
+tools/demo-video/add-voice.sh ~/Desktop/narration.m4a
+```
+
+That writes `vouch-demo-narrated.mp4`, leaves the silent cut untouched so a bad take costs
+nothing, holds the closing card if your read runs a little long, and refuses to write a file
+over two minutes.
+
+**The first cut could not have been narrated at all, and it took measuring to see it.** It was
+timed for *reading* captions: ten of its fourteen lines needed between 160 and 200 words a
+minute to fit, which is faster than anyone speaks, so the voice would have overrun the picture
+on nearly every shot — and nothing about the file would have shown that until you tried to read
+over it. The cut is now *derived* from the script: `shot_seconds()` holds each shot as long as
+its line takes to say at 145 words a minute, and refuses to build a cut the narration does not
+fit. The runtime went 92.5s → 102.5s; the subtitles and the YouTube chapters come from the same
+numbers, so the three cannot drift. `tools/demo-video/verify.py` then checks every shot is
+actually where the cut says it is — the check that caught the first cut silently dropping the
+butter-chain frame.
 
 The central shot — a model saying something reassuring and wrong, the claim withheld, the
 contradicting verdict beside it — is shot 8, at 0:41, and it renders as a single legible frame.
 That shot is the whole video.
 
 `docs/DEMO-SCRIPT.md` remains as the longer nine-shot script if you would rather record live
-screen capture yourself; `docs/demo/README.md` has the shot list and the rebuild instructions.
+screen capture yourself; `docs/demo/README.md` has the rebuild instructions and
+`docs/demo/vouch-demo.shots.md` the shot table, generated so it is never a cut behind.
 
 ---
 
 ## 3. The Devpost form
 
 Yours, because it includes eligibility declarations and I will not complete an attestation on
-your behalf. The required fields are the public URL, a text description of features and
-functionality, the video link, and one or more screenshots.
+your behalf. **[`SUBMIT.md`](SUBMIT.md) is the field-by-field version** — every value to paste,
+in the order the form asks for it.
 
-The text description is written and ready to paste, with no placeholders left: `docs/SUBMISSION-TEXT.md`. The conformance CLI is cited there as a clone-and-run rather than an npm package — publishing a package is an outward-facing release that is yours to make, and the clone route was verified from a fresh shallow clone with no `npm install`.
+I have not seen the form: it is behind a login, and signing in as you is not something I do. So
+`SUBMIT.md` lists the fields a Devpost hackathon form normally carries and says plainly to match
+them by meaning rather than by name. One field it adds that nothing in this repository had yet:
+the **elevator pitch**, which Devpost caps at 200 characters and which is the only line most
+judges read before deciding whether to open the video. It is written, and it is 188 characters.
 
-The YouTube title, description and chapter list are written too:
-`docs/demo/YOUTUBE.md`. Both are paste-only.
+The text description is written and ready to paste, with no placeholders left:
+`docs/SUBMISSION-TEXT.md`. The conformance CLI is cited there as a clone-and-run rather than an
+npm package — publishing a package is an outward-facing release that is yours to make, and the
+clone route was verified from a fresh shallow clone with no `npm install`. It now also answers
+the rules' *New & Existing* item, which nothing in the submission had addressed: this project was
+not updated during the submission period, it was built inside it, and the commit dates say so.
+
+The YouTube title, description and chapter list are written too: `docs/demo/YOUTUBE.md`, all
+paste-only. The chapter list used to be hand-written there, with a sentence underneath admitting
+it would go stale if any shot were re-timed — which is precisely what happened when the shots
+were re-timed for the narration. It is generated now, and `build.py` **fails** if the listing and
+the cut disagree. The warning became a mechanism.
+
+The front page asks two Otari questions the Rules page does not. They do not apply: the site's
+router is whatever the published manifest names, and a visitor requesting a different one is
+refused rather than quietly redirected. Leave those fields empty.
 
 Check the video upload is set to **Public**, not Unlisted — an unlisted video answers a link
 check and is still invisible to a judge who searches. Check it on the video's own page rather
@@ -228,5 +269,10 @@ sites are deployed, the allow-list points at an origin we hold, and the composit
 cross-origin against it; shots 10 and 11 of the demo video are that path executing.
 
 What is left is exactly the three items above, and each is yours because of who must do it
-rather than because the work is unfinished: a voice the rules require to be the Entrant's, an
-upload to your YouTube account, and a form carrying eligibility attestations.
+rather than because the work is unfinished: a voice the rules require to be the Entrant's and
+not AI generated, an upload to your YouTube account, and a form carrying eligibility
+attestations. [`SUBMIT.md`](SUBMIT.md) walks all three in order.
+
+Verified again on 25 November 2026 against the deployed sites rather than a local build: both
+origins return 200, and the conformance CLI scores 14 of 14 machine-checkable checks with 6 NOT
+CHECKED, exit 0.

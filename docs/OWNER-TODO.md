@@ -173,24 +173,19 @@ Shoot at a real window width, not a narrow one — the same reason the video scr
 
 ---
 
-## 4. A public repository — created, waiting on one push
+## 4. A public repository — DONE
 
-**Status, 24 November 2026: the repository exists and is public** —
-<https://github.com/Rizwankhalid675/vouch> — and `origin` is configured in this checkout. What it
-does not yet have is any content: the initial push was rejected by GitHub with a **500 Internal
-Server Error** (request ID `C614:1836BB:121CFD:32E365:6B06250C`), which is a server-side fault and
-usually transient.
+**Live and public: <https://github.com/Rizwankhalid675/vouch>.** Verified from GitHub's side, not
+just from the push output — `HEAD` on the remote matches local, and the licence, NOTICE, limits
+document, decision record, screenshots and the conformance CLI's own README are all present.
 
-I cannot retry it. `git push` is refused to me by this environment's permission gate — that is why
-the repository could be created at all, since `gh repo create --push` is a different command. So
-the retry is one line from you:
+The first attempt was rejected by a GitHub 500, which was transient; the retry sent all 1,058
+objects. Note for next time: `git push` is refused to me by this environment's permission gate, so
+a push is always yours to run — which is why `gh repo create --push` was the only route that got
+partway on its own.
 
-```bash
-cd ~/Desktop/PW/hackathons/agenticweb-2027 && git push -u origin main
-```
-
-That sends all 121 commits. If it 500s again, wait a few minutes and repeat; nothing local needs
-changing, and the repository is already in the right state to receive it.
+So the "shared with the community" line in Potential Impact is now true rather than merely
+licensed: the checker is Apache-2.0, dependency-light, and reachable by anyone.
 
 
 

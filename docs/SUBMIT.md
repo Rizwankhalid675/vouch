@@ -11,9 +11,14 @@ step 4 can be opened and left half-finished.
 
 ## Step 1 — Record the narration (the only step that is work)
 
-The script is [`docs/demo/vouch-demo.srt`](demo/vouch-demo.srt): fourteen lines,
-one per shot, in order. Read it aloud into any recorder — Voice Memos, QuickTime,
-your phone — in one take if you can. Then:
+**Open `tools/demo-video/teleprompter.html`** (double-click it). It plays the
+silent picture and shows you the line to say over each shot, in big type, with
+the next one underneath and a three-second count-in. Start your recorder first —
+Voice Memos, QuickTime, your phone — then press **space** on that page and read.
+One take: the line is always on screen before its shot ends.
+
+If you would rather read off paper, [`docs/demo/vouch-demo.read-aloud.txt`](demo/vouch-demo.read-aloud.txt)
+is the same script without the subtitle indices and timecodes. Then:
 
 ```bash
 tools/demo-video/add-voice.sh ~/Desktop/narration.m4a
@@ -28,11 +33,15 @@ Don't hurry to hit the cuts; the script tells you if you ran long, and holds the
 closing card to cover a small overrun. It refuses to write a file over two
 minutes, because the rules ask for under that.
 
-**It has to be your own voice.** The hackathon's front page says the video
-*"must include the Entrant explaining the Project (not AI generated)"*. The
-Official Rules say *"should"*. `docs/EVENT.md` records both, and which governs —
-but a synthesised voice is the one thing both pages rule out, so there is
-nothing to weigh here.
+**It has to be your own voice — ElevenLabs is out.** The hackathon's front page
+says the video *"must include the Entrant explaining the Project (not AI
+generated)"*. The Official Rules say *"should"*, and §11 makes the Rules govern,
+so a **silent** cut is a valid submission. But a synthesised voice is not the
+lenient reading of that disagreement: it is the one option both documents
+exclude, and the organisers put "not AI generated" in parentheses because they
+expected it to be tried. `docs/DECISIONS.md` has the full reasoning. If you
+truly will not record, upload the silent cut — that is the fallback, not a
+generated voice.
 
 Watch it once before you upload. If a line reads badly, change it in
 `tools/demo-video/build.py` and re-run `python3 tools/demo-video/build.py` — the

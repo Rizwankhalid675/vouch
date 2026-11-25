@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vouch narration teleprompter</title>
+<style>
+  :root { color-scheme: dark; --ink: #FAF6EC; --dim: #7E776B; --gold: #C8A96A; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #14110E; color: var(--ink);
+         font: 400 17px/1.5 Georgia, 'Times New Roman', serif;
+         min-height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap;
+            padding: 14px 16px; border-bottom: 1px solid #2B251D;
+            font-family: 'SF Mono', Menlo, monospace; font-size: 12px;
+            letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  header b { color: var(--gold); font-weight: 400; }
+  main { flex: 1; display: grid; grid-template-columns: minmax(0,1fr) 340px;
+          gap: 24px; padding: 24px 16px; align-items: start; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  #line { font-size: clamp(26px, 4.4vw, 50px); line-height: 1.25; min-height: 4.4em;
+           display: flex; align-items: center; }
+  #next { color: var(--dim); font-size: clamp(15px, 1.7vw, 20px); min-height: 3em;
+           border-top: 1px solid #2B251D; padding-top: 14px; }
+  video { width: 100%; border: 1px solid #2B251D; background: #000; }
+  #bar { height: 3px; background: #2B251D; }
+  #fill { height: 3px; width: 0; background: var(--gold); transition: width .1s linear; }
+  .note { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; line-height: 1.7;
+           color: var(--dim); margin-top: 14px; }
+  kbd { font-family: inherit; color: var(--ink); border: 1px solid #3A332A;
+         border-radius: 3px; padding: 0 4px; }
+  button { font: inherit; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--ink); background: #221D17; border: 1px solid #3A332A;
+            border-radius: 3px; padding: 5px 12px; cursor: pointer; }
+  button:hover { border-color: var(--gold); color: var(--gold); }
+  #lead { position: fixed; inset: 0; display: none; place-items: center;
+           background: #14110Eee; font-size: 22vw; color: var(--gold); }
+</style></head><body>
+<header>
+  <span>Shot <b id="n">-</b> of <b>14</b></span>
+  <span><b id="clock">0.0</b>s / 102.5s</span>
+  <button id="go">start &middot; pause</button>
+  <button id="again">back to the top</button>
+  <span>or <kbd>space</kbd> and <kbd>r</kbd></span>
+</header>
+<div id="bar"><div id="fill"></div></div>
+<main>
+  <div>
+    <div id="line">Press <kbd>space</kbd>. Three seconds of lead-in, then read.</div>
+    <div id="next"></div>
+  </div>
+  <div>
+    <video id="v" src="../../docs/demo/vouch-demo.mp4" muted playsinline preload="auto"></video>
+    <p class="note">
+      The video is silent on purpose &mdash; this page shows you what to say over
+      it. Start your recorder first (Voice Memos, QuickTime), then press
+      <kbd>space</kbd> here and read each line as it comes up. One take is
+      enough; the line is always on screen before the shot it belongs to ends.
+      <br><br>
+      Then: <b>tools/demo-video/add-voice.sh &lt;your-file&gt;</b>
+    </p>
+  </div>
+</main>
+<div id="lead"></div>
+<script>
+const CUES = [{"t": 0.0, "d": 7.1, "text": "Vouch is a deli site whose assistant may never tell you food is safe to eat."}, {"t": 7.1, "d": 6.7, "text": "Nothing is ticked, so nothing is checked. No dish carries a verdict nobody asked for."}, {"t": 13.8, "d": 5.5, "text": "Thirty-four dishes, every ingredient published. All of this works with JavaScript off."}, {"t": 19.3, "d": 6.7, "text": "Tick dairy-free. Thirty-four dishes: fifteen unsafe, three we can't tell, sixteen with no conflict found."}, {"t": 26.0, "d": 7.5, "text": "The Reuben: unsafe, through Swiss cheese. The Pastrami: no conflict found. Nothing here is ever called safe."}, {"t": 33.5, "d": 9.2, "text": "The Turkey club: dairy, through brioche bun, brioche, butter. Three steps down, inside a bun, invisible in the line you'd read."}, {"t": 42.7, "d": 5.5, "text": "Now let a model answer. The model proposes; a deterministic gate decides."}, {"t": 48.2, "d": 10.4, "text": "A replayed reply giving a false all-clear. Three claims withheld: one the checker contradicted, two it couldn't derive. The gate suppresses true statements too."}, {"t": 58.6, "d": 6.7, "text": "A deliberately broken network, refused. The validator's words are quoted exactly, kept apart from ours."}, {"t": 65.3, "d": 8.4, "text": "Running another site's agents asks first, names the origin, and says plainly: this runs their code in your browser."}, {"t": 73.7, "d": 6.7, "text": "Approved. The bakery's network loads from its own origin. Nothing it says changes a verdict."}, {"t": 80.4, "d": 7.9, "text": "Sixteen events, written down: every router choice, every action, every receipt. The refusal and the consent among them."}, {"t": 88.3, "d": 9.6, "text": "The conformance CLI checks any agentic site against the spec. Fourteen of fourteen here, and it names the six it didn't make."}, {"t": 97.9, "d": 4.6, "text": "Model proposes. Gate decides. Evidence survives. Apache-2.0, and live now."}];
+const v = document.getElementById('v'), line = document.getElementById('line'),
+      next = document.getElementById('next'), n = document.getElementById('n'),
+      clock = document.getElementById('clock'), fill = document.getElementById('fill'),
+      lead = document.getElementById('lead');
+let shown = -1;
+function paint() {
+  const t = v.currentTime;
+  let i = CUES.length - 1;
+  while (i > 0 && CUES[i].t > t) i--;
+  if (i !== shown) {
+    shown = i;
+    line.textContent = CUES[i].text;
+    next.textContent = CUES[i + 1] ? 'next: ' + CUES[i + 1].text : '(last line)';
+    n.textContent = i + 1;
+  }
+  clock.textContent = t.toFixed(1);
+  fill.style.width = (100 * (t - CUES[i].t) / CUES[i].d).toFixed(1) + '%';
+}
+setInterval(paint, 100);          // not rAF: that stops with the video, and a
+v.addEventListener('seeked', paint);  // seek then leaves the page showing a
+v.addEventListener('timeupdate', paint);  // line that is no longer due
+async function start() {
+  if (v.paused) { if (v.currentTime === 0) await countIn(); await v.play(); }
+  else v.pause();
+  paint();
+}
+function restart() { v.pause(); v.currentTime = 0; shown = -1; paint(); }
+async function countIn() {
+  for (const k of [3, 2, 1]) {
+    lead.textContent = k; lead.style.display = 'grid';
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  lead.style.display = 'none';
+}
+addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); start(); }
+  if (e.key === 'r') restart();
+});
+document.getElementById('go').addEventListener('click', start);
+document.getElementById('again').addEventListener('click', restart);
+paint();
+v.addEventListener('ended', () => {
+  line.textContent = 'Done. Stop your recorder.';
+  next.textContent = 'tools/demo-video/add-voice.sh <your-file>';
+});
+</script></body></html>

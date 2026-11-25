@@ -11,6 +11,8 @@ Usage: python3 tools/demo-video/build.py [--frames DIR] [--out FILE]
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -335,6 +337,161 @@ def check_listing(doc: pathlib.Path, chapter_text: str) -> None:
         )
 
 
+def write_script(path: pathlib.Path, durations: list[float]) -> None:
+    """The narration as something to read, rather than as subtitle data.
+
+    The .srt is the right artifact for an editor and the wrong one for a
+    person: three quarters of its lines are indices and timecodes, and the
+    first thing anyone does is try to read around them.
+    """
+    out = [
+        "VOUCH - narration script",
+        "",
+        f"{sum(len(l.split()) for l in NARRATION)} words, {sum(durations):.1f} seconds, "
+        f"about {WORDS_PER_MINUTE} words a minute. One line per shot, in order.",
+        "Read it in your own voice: the hackathon requires the entrant's narration",
+        "and says in as many words that it must not be AI generated.",
+        "",
+        "Open tools/demo-video/teleprompter.html to read along with the picture.",
+        "",
+        "-" * 72,
+        "",
+    ]
+    at = 0.0
+    for i, (line, secs) in enumerate(zip(NARRATION, durations), start=1):
+        out.append(f"{i:>2}.  [{int(at) // 60}:{int(at) % 60:02d}, {secs:.1f}s]")
+        out.append(f"    {line}")
+        out.append("")
+        at += secs
+    path.write_text("\n".join(out))
+
+
+def write_teleprompter(path: pathlib.Path, durations: list[float], video: str) -> None:
+    """A page that plays the silent cut and shows the line due over each shot.
+
+    The video element is the clock, so the words cannot drift from the picture
+    however the browser schedules anything. Self-contained: the lines are built
+    into the page rather than fetched, because a page opened from the
+    filesystem cannot read a sibling file.
+    """
+    at, cues = 0.0, []
+    for line, secs in zip(NARRATION, durations):
+        cues.append({"t": round(at, 2), "d": secs, "text": line})
+        at += secs
+    data = json.dumps(cues, ensure_ascii=False)
+    path.write_text(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vouch narration teleprompter</title>
+<style>
+  :root {{ color-scheme: dark; --ink: #FAF6EC; --dim: #7E776B; --gold: #C8A96A; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin: 0; background: #14110E; color: var(--ink);
+         font: 400 17px/1.5 Georgia, 'Times New Roman', serif;
+         min-height: 100vh; display: flex; flex-direction: column; }}
+  header {{ display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap;
+            padding: 14px 16px; border-bottom: 1px solid #2B251D;
+            font-family: 'SF Mono', Menlo, monospace; font-size: 12px;
+            letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }}
+  header b {{ color: var(--gold); font-weight: 400; }}
+  main {{ flex: 1; display: grid; grid-template-columns: minmax(0,1fr) 340px;
+          gap: 24px; padding: 24px 16px; align-items: start; }}
+  @media (max-width: 860px) {{ main {{ grid-template-columns: 1fr; }} }}
+  #line {{ font-size: clamp(26px, 4.4vw, 50px); line-height: 1.25; min-height: 4.4em;
+           display: flex; align-items: center; }}
+  #next {{ color: var(--dim); font-size: clamp(15px, 1.7vw, 20px); min-height: 3em;
+           border-top: 1px solid #2B251D; padding-top: 14px; }}
+  video {{ width: 100%; border: 1px solid #2B251D; background: #000; }}
+  #bar {{ height: 3px; background: #2B251D; }}
+  #fill {{ height: 3px; width: 0; background: var(--gold); transition: width .1s linear; }}
+  .note {{ font-family: 'SF Mono', Menlo, monospace; font-size: 12px; line-height: 1.7;
+           color: var(--dim); margin-top: 14px; }}
+  kbd {{ font-family: inherit; color: var(--ink); border: 1px solid #3A332A;
+         border-radius: 3px; padding: 0 4px; }}
+  button {{ font: inherit; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--ink); background: #221D17; border: 1px solid #3A332A;
+            border-radius: 3px; padding: 5px 12px; cursor: pointer; }}
+  button:hover {{ border-color: var(--gold); color: var(--gold); }}
+  #lead {{ position: fixed; inset: 0; display: none; place-items: center;
+           background: #14110Eee; font-size: 22vw; color: var(--gold); }}
+</style></head><body>
+<header>
+  <span>Shot <b id="n">-</b> of <b>{len(cues)}</b></span>
+  <span><b id="clock">0.0</b>s / {sum(durations):.1f}s</span>
+  <button id="go">start &middot; pause</button>
+  <button id="again">back to the top</button>
+  <span>or <kbd>space</kbd> and <kbd>r</kbd></span>
+</header>
+<div id="bar"><div id="fill"></div></div>
+<main>
+  <div>
+    <div id="line">Press <kbd>space</kbd>. Three seconds of lead-in, then read.</div>
+    <div id="next"></div>
+  </div>
+  <div>
+    <video id="v" src="{video}" muted playsinline preload="auto"></video>
+    <p class="note">
+      The video is silent on purpose &mdash; this page shows you what to say over
+      it. Start your recorder first (Voice Memos, QuickTime), then press
+      <kbd>space</kbd> here and read each line as it comes up. One take is
+      enough; the line is always on screen before the shot it belongs to ends.
+      <br><br>
+      Then: <b>tools/demo-video/add-voice.sh &lt;your-file&gt;</b>
+    </p>
+  </div>
+</main>
+<div id="lead"></div>
+<script>
+const CUES = {data};
+const v = document.getElementById('v'), line = document.getElementById('line'),
+      next = document.getElementById('next'), n = document.getElementById('n'),
+      clock = document.getElementById('clock'), fill = document.getElementById('fill'),
+      lead = document.getElementById('lead');
+let shown = -1;
+function paint() {{
+  const t = v.currentTime;
+  let i = CUES.length - 1;
+  while (i > 0 && CUES[i].t > t) i--;
+  if (i !== shown) {{
+    shown = i;
+    line.textContent = CUES[i].text;
+    next.textContent = CUES[i + 1] ? 'next: ' + CUES[i + 1].text : '(last line)';
+    n.textContent = i + 1;
+  }}
+  clock.textContent = t.toFixed(1);
+  fill.style.width = (100 * (t - CUES[i].t) / CUES[i].d).toFixed(1) + '%';
+}}
+setInterval(paint, 100);          // not rAF: that stops with the video, and a
+v.addEventListener('seeked', paint);  // seek then leaves the page showing a
+v.addEventListener('timeupdate', paint);  // line that is no longer due
+async function start() {{
+  if (v.paused) {{ if (v.currentTime === 0) await countIn(); await v.play(); }}
+  else v.pause();
+  paint();
+}}
+function restart() {{ v.pause(); v.currentTime = 0; shown = -1; paint(); }}
+async function countIn() {{
+  for (const k of [3, 2, 1]) {{
+    lead.textContent = k; lead.style.display = 'grid';
+    await new Promise(r => setTimeout(r, 1000));
+  }}
+  lead.style.display = 'none';
+}}
+addEventListener('keydown', e => {{
+  if (e.key === ' ') {{ e.preventDefault(); start(); }}
+  if (e.key === 'r') restart();
+}});
+document.getElementById('go').addEventListener('click', start);
+document.getElementById('again').addEventListener('click', restart);
+paint();
+v.addEventListener('ended', () => {{
+  line.textContent = 'Done. Stop your recorder.';
+  next.textContent = 'tools/demo-video/add-voice.sh <your-file>';
+}});
+</script></body></html>
+""")
+
+
 def write_shots(path: pathlib.Path, durations: list[float]) -> None:
     """Write the shot table, so no document has to restate the timecodes."""
     rows = ["| # | Start | Held | Shot |", "|---|-------|------|------|"]
@@ -430,6 +587,10 @@ def main() -> int:
     write_chapters(chapters, durations)
     shots = out.with_name(out.stem + ".shots.md")
     write_shots(shots, durations)
+    script = out.with_name(out.stem + ".read-aloud.txt")
+    write_script(script, durations)
+    prompter = here / "teleprompter.html"
+    write_teleprompter(prompter, durations, os.path.relpath(out, prompter.parent))
     check_listing(out.parent / "YOUTUBE.md", chapters.read_text())
 
     total = sum(s for _, s in segments)
@@ -437,6 +598,8 @@ def main() -> int:
     print(f"{srt}  narration for {len(NARRATION)} shots")
     print(f"{chapters}  {len(CHAPTERS)} YouTube chapters")
     print(f"{shots}  shot table")
+    print(f"{script}  the narration as a script to read")
+    print(f"{prompter}  teleprompter")
     return 0
 
 

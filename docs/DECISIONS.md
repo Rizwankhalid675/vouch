@@ -388,3 +388,37 @@ the question *what would make this one go the same way?*
    That is the honest residual: this entry is safe because of an account, and the repository
    cannot check an account. A custom domain we register would move the fact out of Netlify's
    control and is the only way to retire that caveat.
+
+## The narration is read by the entrant, and a synthetic voice was declined
+
+**25 November 2026.** Asked to generate the narration with ElevenLabs, as this machine has done
+for other projects. Declined, and the reason is the hackathon's own words rather than a taste.
+
+The front page, under WHAT TO SUBMIT, on the video: *"must include the Entrant explaining the
+Project (**not AI generated**)"*. The Official Rules say *"should include the Entrant explaining
+the Project"* and §11 makes the Rules govern any inconsistency — so on the contract it is a
+`should`, and a silent cut is a valid submission. But a synthesised voice is not the lenient
+reading of that disagreement. It is the one thing **both** documents exclude: the front page
+names it, and the Rules' "the Entrant explaining the Project" is not satisfied by a voice the
+entrant did not speak. Submitting one would mean the entry's single most visible artifact
+quietly failing a condition the organisers wrote in parentheses because they expected it to be
+tried.
+
+There is also the matter of what this project is. The whole argument is that a model may
+describe, rank and converse but may never assert the thing a person is relying on, and that the
+difference between *said* and *verified* has to survive into what the user sees. An entry
+arguing that, narrated by a model pretending to be its author, would be refuted by its own
+submission before a judge read a line of it.
+
+So the cost was moved instead of paid. The read is 231 words and about 100 seconds; everything
+around it is now machinery:
+
+- the cut is derived from the script, so every shot is held long enough to say its line at an
+  unhurried pace (`shot_seconds()`), where the first cut needed up to 202 words a minute
+- `tools/demo-video/teleprompter.html` plays the silent picture and shows the line due over each
+  shot, driven by the video element's own clock so the words cannot drift from the frames
+- `vouch-demo.read-aloud.txt` is the script without subtitle indices and timecodes
+- `add-voice.sh` muxes the recording in one command, holds the closing card over a small
+  overrun, and refuses to write anything past two minutes
+
+One take, in the entrant's own voice, is the remaining cost. That is the right place for it.

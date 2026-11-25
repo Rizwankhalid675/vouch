@@ -1,0 +1,51 @@
+VOUCH - narration script
+
+231 words, 102.5 seconds, about 145 words a minute. One line per shot, in order.
+Read it in your own voice: the hackathon requires the entrant's narration
+and says in as many words that it must not be AI generated.
+
+Open tools/demo-video/teleprompter.html to read along with the picture.
+
+------------------------------------------------------------------------
+
+ 1.  [0:00, 7.1s]
+    Vouch is a deli site whose assistant may never tell you food is safe to eat.
+
+ 2.  [0:07, 6.7s]
+    Nothing is ticked, so nothing is checked. No dish carries a verdict nobody asked for.
+
+ 3.  [0:13, 5.5s]
+    Thirty-four dishes, every ingredient published. All of this works with JavaScript off.
+
+ 4.  [0:19, 6.7s]
+    Tick dairy-free. Thirty-four dishes: fifteen unsafe, three we can't tell, sixteen with no conflict found.
+
+ 5.  [0:26, 7.5s]
+    The Reuben: unsafe, through Swiss cheese. The Pastrami: no conflict found. Nothing here is ever called safe.
+
+ 6.  [0:33, 9.2s]
+    The Turkey club: dairy, through brioche bun, brioche, butter. Three steps down, inside a bun, invisible in the line you'd read.
+
+ 7.  [0:42, 5.5s]
+    Now let a model answer. The model proposes; a deterministic gate decides.
+
+ 8.  [0:48, 10.4s]
+    A replayed reply giving a false all-clear. Three claims withheld: one the checker contradicted, two it couldn't derive. The gate suppresses true statements too.
+
+ 9.  [0:58, 6.7s]
+    A deliberately broken network, refused. The validator's words are quoted exactly, kept apart from ours.
+
+10.  [1:05, 8.4s]
+    Running another site's agents asks first, names the origin, and says plainly: this runs their code in your browser.
+
+11.  [1:13, 6.7s]
+    Approved. The bakery's network loads from its own origin. Nothing it says changes a verdict.
+
+12.  [1:20, 7.9s]
+    Sixteen events, written down: every router choice, every action, every receipt. The refusal and the consent among them.
+
+13.  [1:28, 9.6s]
+    The conformance CLI checks any agentic site against the spec. Fourteen of fourteen here, and it names the six it didn't make.
+
+14.  [1:37, 4.6s]
+    Model proposes. Gate decides. Evidence survives. Apache-2.0, and live now.

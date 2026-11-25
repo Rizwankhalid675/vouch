@@ -21,11 +21,11 @@
   },
   "allowed_peers": [],
   "peer_policy": {
-    "allowed_peers": [],
     "consent": "required_before_contact",
     "private_context": "deny_by_default"
   },
   "deployment": {
     "mode": "static"
-  }
+  },
+  "//allowed_peers": "The only place this site's allow-list lives. It was published twice \u2014 here and nested under peer_policy \u2014 which is two stories in one document, so a reader consulting the nested block saw something different from what the runtime reads. Harmless only while both were empty. The deli's manifest had the same defect and lost it first; this one kept it because the test that forbids it read only the deli. tests/artifacts.test.ts now reads both."
 }

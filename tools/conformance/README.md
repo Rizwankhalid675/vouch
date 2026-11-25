@@ -301,11 +301,16 @@ read as coverage obtained.
 npm run test:cors     # demands a real server; fails rather than skipping
 ```
 
-So, honestly: **as of 24 November 2026 those five are verified by manual runs outside the restricted
-environment — they pass — and by nothing else.** `.github/workflows/ci.yml` runs them, and that
-workflow **has never run**: this repository has no remote. Every "CI runs it" claim here is about
-the file, not about a run that happened. They become automatic evidence once that workflow has a
-remote to run on. Everything else in the suite runs everywhere.
+**Updated 25 November 2026: CI has now run, and it demands them.** This paragraph previously said
+the workflow had never executed, because the repository had no remote. It has one now, and
+`.github/workflows/ci.yml` has run twice on `main` — both green — with a step that sets
+`CONFORMANCE_CORS_REQUIRED=1` so the five cannot skip. GitHub run `45519525620` shows
+`cors.test.ts (10 tests)` passing under that flag, plus a smoke test that starts a real loopback
+server and checks the CLI reports against it rather than crashing.
+
+So those five are now verified by a run that happened, on a machine that allows `listen()`, every
+time `main` moves — not by a file that describes one. Everything else in the suite runs
+everywhere.
 
 A test count is the kind of number that goes stale quietly, so: `npx vitest run tools/conformance`
 prints the current one.

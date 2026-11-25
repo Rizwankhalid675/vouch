@@ -212,6 +212,26 @@ describe("agent-manifest.json (§3.3)", () => {
     expect(manifest["//allowed_peers"]).toMatch(/only place/i);
   });
 
+  /**
+   * THE SAME RULE, ON THE PEER'S OWN MANIFEST.
+   *
+   * The test above was written for the deli and read only the deli, so the peer
+   * kept publishing `allowed_peers` twice — the identical defect, in the identical
+   * shape, in the file next door. It was harmless only because both copies were
+   * empty, and would have become two stories the first time the bakery bound
+   * anything.
+   *
+   * This is the third time on this project that a test looked only where the fix
+   * had been applied, so it reads BOTH manifests from disk rather than naming one.
+   *
+   * BREAKS IF: either site publishes a nested copy again.
+   */
+  test("neither site publishes the allow-list twice", () => {
+    const peer = JSON.parse(readFileSync(resolve(import.meta.dirname, "..", "peer", "public", "agents", "agent-manifest.json"), "utf8"));
+    for (const [label, doc] of [["deli", manifest], ["peer", peer]] as const)
+      expect(Object.keys(doc.peer_policy ?? {}), `${label} publishes a nested allowed_peers`).not.toContain("allowed_peers");
+  });
+
   test("declares the site actions, and none of them is an agent", () => {
     const acts = manifest.actions.map((x: any) => x.name);
     expect(acts).toEqual(["get_menu_state", "check_safety", "add_to_cart", "checkout_demo_order"]);

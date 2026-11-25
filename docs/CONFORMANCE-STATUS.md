@@ -229,10 +229,13 @@ left in a report:
 
 1. The five tests that assert on a real CORS response prove **the checker reads a real header
    correctly**. They say nothing whatever about our deployed site.
-2. `.github/workflows/ci.yml` has **never run**, because this repository has no remote. Every
-   "CI runs it" claim in the project is about the file, not about a run that happened. The five
-   CORS tests are, today, verified by manual runs outside the restricted local environment —
-   they pass — and nothing else.
+2. **Corrected 25 November 2026.** This said `.github/workflows/ci.yml` had **never run**, and
+   that every "CI runs it" claim was about the file rather than a run. True when written, false
+   now: the repository gained a remote, and CI has run twice on `main`, both green. Run
+   `45519525620` executed `npm test` (12 files), then `npm run test:cors` with
+   `CONFORMANCE_CORS_REQUIRED=1` so the five cannot skip — `cors.test.ts (10 tests)` passed — and
+   then a smoke test against a real loopback server. The five CORS tests are now verified by a
+   run that happened, on every push to `main`.
 
 ---
 

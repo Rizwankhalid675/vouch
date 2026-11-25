@@ -217,8 +217,20 @@ host. It is settled by **B2** and by nothing else.
 
 1. The five tests that assert on a real CORS response prove **the checker reads a real
    header correctly**. They say nothing whatever about our deployed site.
-2. `.github/workflows/ci.yml` has **never run**: the repository has no remote. Every
-   "CI runs it" claim in this project is about the file, not about a run that happened.
+2. **Corrected 25 November 2026.** This said `.github/workflows/ci.yml` had **never run**,
+   because the repository had no remote. It has one now —
+   <https://github.com/Rizwankhalid675/vouch> — and CI has run twice on `main`, both green:
+
+   | Run | Commit | Result |
+   |---|---|---|
+   | `45519235428` | `fd6d4ff` | success, 22s |
+   | `45519525620` | `025872a` | success, 25s |
+
+   Run `45519525620` executed `npm test` (12 files passed), then `npm run test:cors` with
+   `CONFORMANCE_CORS_REQUIRED=1` — the flag that makes the five refuse to skip —
+   `cors.test.ts (10 tests)` passed, then a smoke test that starts a loopback server and asserts
+   the CLI reports against it rather than crashing. So the five are evidence from a run now, not
+   from a file describing one.
 
 ---
 

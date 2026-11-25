@@ -12,7 +12,7 @@ invisible to a judge who searches.
 Vouch — a deli site whose AI may never tell you food is safe to eat
 ```
 
-66 characters. Fits YouTube's 100-character limit and is not truncated in
+67 characters. Fits YouTube's 100-character limit and is not truncated in
 search results or on the Devpost embed.
 
 ---
@@ -58,7 +58,7 @@ Chapters
 0:00 The claim, and a menu with nothing checked
 0:16 Tick dairy-free: 34 dishes, three kinds of answer
 0:29 Butter, three steps down a chain
-0:41 A model gives a false all-clear
+0:41 A false all-clear, and a refusal you can watch
 0:56 Consent before a stranger's code runs
 1:09 Evidence that survives, and a CLI for any agentic site
 ```
